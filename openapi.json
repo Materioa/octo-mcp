@@ -1,0 +1,271 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Materio Course Materials API",
+    "description": "API for accessing Materio's engineering course materials library. Browse semesters, subjects, chapters, assignments, question banks, previous year papers, and get PDF download links.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://your-deployment-url.com",
+      "description": "Production server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/api/semesters": {
+      "get": {
+        "operationId": "listSemesters",
+        "summary": "List all available semesters",
+        "description": "Returns all semester numbers available in the Materio course library. Use this as the first step to discover content.",
+        "responses": {
+          "200": {
+            "description": "List of semesters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "semesters": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Array of semester identifiers"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "description": "Total number of semesters"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subjects": {
+      "get": {
+        "operationId": "listSubjects",
+        "summary": "List subjects for a semester",
+        "description": "Returns all subjects available in a specific semester.",
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": true,
+            "description": "Semester number (e.g. '1', '2', '3', '4', '5', '6')",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of subjects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "semester": { "type": "string" },
+                    "subjects": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resources": {
+      "get": {
+        "operationId": "listResources",
+        "summary": "List all resources for a subject",
+        "description": "Returns all course materials (chapters, assignments, question banks, previous year papers, etc.) for a specific subject in a semester. Each item includes the topic name and PDF download URL.",
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": true,
+            "description": "Semester number",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "description": "Subject name or partial match (case-insensitive)",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "semester": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "semester": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "sectionType": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "pdfUrl": { "type": "string", "format": "uri" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "searchResources",
+        "summary": "Search course materials",
+        "description": "Search across ALL semesters, subjects, and topics in the Materio library. Matches against subject names, section types (Chapters, Assignments, Question Banks, etc.), and topic names. This is the best tool for finding specific content.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "description": "Search query. Matches case-insensitively against subject names, section types, and topic names. Examples: 'Deadlocks', 'Question Bank', 'Python', 'Sorting'",
+            "schema": { "type": "string", "minLength": 2 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "semester": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "sectionType": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "pdfUrl": { "type": "string", "format": "uri" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pdf-url": {
+      "get": {
+        "operationId": "resolvePdfUrl",
+        "summary": "Get PDF download URL",
+        "description": "Resolve the correct download URL for a specific PDF. Automatically detects pointer files (≤1KB) and returns the API proxy URL instead of the direct CDN URL.",
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved PDF URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "semester": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "topic": { "type": "string" },
+                    "pdfUrl": { "type": "string", "format": "uri" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/index": {
+      "get": {
+        "operationId": "getFullIndex",
+        "summary": "Get full library index",
+        "description": "Get a compact overview of the entire Materio course library. Returns all semesters, subjects, and section types with resource counts.",
+        "responses": {
+          "200": {
+            "description": "Full library index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalSubjects": { "type": "integer" },
+                    "library": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "semester": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "sections": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "type": { "type": "string" },
+                                "count": { "type": "integer" }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

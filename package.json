@@ -1,0 +1,19 @@
+{
+  "name": "materio-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Materio course materials — connects to Perplexity, Claude, and ChatGPT",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12"
+  }
+}
