@@ -13,6 +13,7 @@ import {
   getFullIndex,
   getResourceLibrary,
 } from "../services/resources.js";
+import { queryDeepThinkRAG, queryVectorlessRAG } from "../services/rag.js";
 import { CHARACTER_LIMIT } from "../constants.js";
 
 // ────────── Schemas ──────────
@@ -63,6 +64,18 @@ const GetTopicContentSchema = {
   topic: z
     .string()
     .describe("Topic / file name within the subject to explain"),
+};
+
+const DeepThinkSchema = {
+  query: z.string().describe("The user's specific question that requires deep RAG search"),
+  semester: z.string().describe("Semester number"),
+  subject: z.string().describe("Subject name to scope the search context"),
+};
+
+const VectorlessSearchSchema = {
+  query: z.string().describe("Keyword search query for finding specific text content across course materials"),
+  semester: z.string().optional().describe("Optional semester to narrow search"),
+  subject: z.string().optional().describe("Optional subject to narrow search")
 };
 
 // ────────── Register all tools ──────────
@@ -604,6 +617,127 @@ Examples:
               text: `Error getting full index: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
+        };
+      }
+    }
+  );
+
+  // ──── 8. vectorless_search_tool ────
+  server.registerTool(
+    "vectorless_search_tool",
+    {
+      title: "Primary Vectorless Search (FTS)",
+      description: `The new primary tool for extremely fast, non-semantic keyword matching across all course material text chunks. 
+Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
+Use this for 90% of search queries before resorting to deep_think_tool.
+Returns chunk texts, topic names, and pdf URLs.
+
+Args:
+  - query: Keywords to search for.
+  - semester: (Optional) Limit search to semester.
+  - subject: (Optional) Limit search to subject.
+`,
+      inputSchema: VectorlessSearchSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ query, semester, subject }) => {
+      try {
+        const results = await queryVectorlessRAG(query, semester, subject, 10);
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No results found in the Vectorless Search. You may want to try broader terminology or use deep_think_tool as a fallback."
+              }
+            ]
+          };
+        }
+
+        const contextText = results.map((r, i) => `[Result ${i + 1}] Topic: ${r.topic} (Similarity Score: ${r.similarity?.toFixed(2) ?? 'N/A'}) [Subject: ${r.subject}]\\n---\\n${r.content}`).join("\\n\\n");
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Vectorless Full-Text Search Results:\\n\\n${contextText}\\n\\nUse this context to formulate a response to the user's question.`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Vectorless Search error: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ]
+        };
+      }
+    }
+  );
+
+  // ──── 9. deep_think_tool ────
+  server.registerTool(
+    "deep_think_tool",
+    {
+      title: "Deep Think RAG Tool",
+      description: `Power tool for complex questions when PDF fetch fails or the document is OCR-unreadable.
+This tool performs a semantic Deep RAG search over the Materio vector database (pgvector).
+Use it when standard context retrieval isn't enough, or when an error occurs fetching standard PDFs.
+
+Args:
+  - query: Exact question being asked.
+  - semester: The semester.
+  - subject: The specific subject context.
+`,
+      inputSchema: DeepThinkSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ query, semester, subject }) => {
+      try {
+        const results = await queryDeepThinkRAG(query, semester, subject, 5);
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Deep Think failed to find any relevant context for the query based on the subject and semester provided."
+              }
+            ]
+          };
+        }
+
+        const contextText = results.map((r, i) => `[Context ${i + 1}] Topic: ${r.topic} (Similarity: ${r.similarity?.toFixed(2) ?? 'N/A'})\n${r.content}`).join("\\n\\n");
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Deep Think Context Received:\\n\\n${contextText}\\n\\nUse this context to formulate a response to the user's question: "${query}"`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Deep Think Tool error: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ]
         };
       }
     }
