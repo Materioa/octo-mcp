@@ -100,6 +100,58 @@ async function runHTTP(): Promise<void> {
   });
 
   // ════════════════════════════════════════════════════
+  //  Authenticated MCP JSON-RPC endpoint — POST /mcp/secure
+  //  Requires Basic Auth, validates against Materio API.
+  // ════════════════════════════════════════════════════
+  app.post("/mcp/secure", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
+      return res.status(401).json({ error: "Missing or invalid Basic Auth header" });
+    }
+
+    try {
+      const base64str = authHeader.substring(6);
+      const decoded = Buffer.from(base64str, "base64").toString("utf-8");
+      const [username, ...passParts] = decoded.split(":");
+      const password = passParts.join(":");
+
+      const loginRes = await fetch("https://materioa.vercel.app/api/v2/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+
+      if (!loginRes.ok) {
+        return res.status(401).json({ error: "Unauthorized: Invalid credentials" });
+      }
+    } catch (e) {
+      console.error("Auth verification error:", e);
+      return res.status(500).json({ error: "Auth service unavailable" });
+    }
+
+    try {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+
+      res.on("close", () => transport.close());
+
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error("Secure MCP JSON-RPC error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
+  });
+
+  // ════════════════════════════════════════════════════
   //  Health check
   // ════════════════════════════════════════════════════
   app.get("/health", (_req, res) => {
@@ -201,12 +253,14 @@ async function runHTTP(): Promise<void> {
   app.listen(port, () => {
     console.error(`✅ Materio MCP server running on http://localhost:${port}`);
     console.error(`   ┌─────────────────────────────────────────────────────┐`);
-    console.error(`   │  MCP (JSON-RPC 2.0):  POST http://localhost:${port}/mcp  │`);
+    console.error(`   │  MCP (Unauth):        POST http://localhost:${port}/mcp  │`);
+    console.error(`   │  MCP (Secure):        POST http://localhost:${port}/mcp/secure │`);
     console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
     console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
     console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
     console.error(`   └─────────────────────────────────────────────────────┘`);
-    console.error(`\n   Perplexity / Claude → POST /mcp (Streamable HTTP, JSON-RPC 2.0)`);
+    console.error(`\n   Perplexity / Claude → POST /mcp or /mcp/secure (Streamable HTTP)`);
+    console.error(`   (For /mcp/secure, use Basic Auth headers)`);
     console.error(`   ChatGPT Custom GPT  → GET  /api/* (REST, via openapi.json)`);
   });
 }

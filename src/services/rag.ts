@@ -47,7 +47,7 @@ async function getPerplexityEmbedding(text: string): Promise<number[]> {
       // The user specified they index using context model. 
       // Usually queries might use pplx-embed-v1, but sticking to user's specified model
       model: "pplx-embed-context-v1-0.6b",
-      input: text
+      input: [[text]]
     })
   });
 
