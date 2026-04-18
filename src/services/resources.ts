@@ -58,7 +58,28 @@ export function buildPdfUrl(
 ): string {
   const base = useApi ? API_BASE : CDN_BASE;
   const prefix = useApi ? "/api/pdfs" : "/pdfs";
+  if (semester === "9999") {
+    return `${base}${prefix}/${semester}/${slugify(subject)}/vault/${slugify(topic)}.pdf`;
+  }
   return `${base}${prefix}/${slugify(semester)}/${slugify(subject)}/${slugify(topic)}.pdf`;
+}
+
+export async function generateMaskedUrl(actualUrl: string): Promise<string> {
+  try {
+    const response = await fetch("https://materioa.vercel.app/api/v2/features?action=pdf-share&subAction=create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actualUrl })
+    });
+    if (response.ok) {
+      const data = (await response.json()) as any;
+      if (data && data.maskId) {
+        return `https://materioa.vercel.app/?share=${data.maskId}`;
+      }
+    }
+  } catch (err) { }
+  // Fallback
+  return actualUrl;
 }
 
 /**

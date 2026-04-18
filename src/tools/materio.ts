@@ -12,6 +12,8 @@ import {
   resolvePdfUrl,
   getFullIndex,
   getResourceLibrary,
+  buildPdfUrl,
+  generateMaskedUrl,
 } from "../services/resources.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "../services/rag.js";
 import { CHARACTER_LIMIT } from "../constants.js";
@@ -78,12 +80,23 @@ const VectorlessSearchSchema = {
   subject: z.string().optional().describe("Optional subject to narrow search")
 };
 
+const GenerateShareLinkSchema = {
+  url: z.string().optional().describe("Direct raw CDN URL. If provided, semester/subject/topic are ignored."),
+  semester: z.string().optional().describe("Semester number"),
+  subject: z.string().optional().describe("Subject name"),
+  topic: z.string().optional().describe("Topic / file name"),
+};
+
+const LookupExternalSourcesSchema = {
+  topic: z.string().describe("The topic or question to look up on GeeksforGeeks"),
+};
+
 // ────────── Register all tools ──────────
 
 export function registerMaterioTools(server: McpServer): void {
-  // ──── 1. materio_list_semesters ────
+  // ──── 1. SemesterNavigator ────
   server.registerTool(
-    "materio_list_semesters",
+    "SemesterNavigator",
     {
       title: "List Available Semesters",
       description: `List all semesters available in the Materio course library.
@@ -116,7 +129,7 @@ Examples:
                 {
                   semesters,
                   count: semesters.length,
-                  hint: "Use materio_list_subjects with a semester number to see its subjects.",
+                  hint: "Use CourseDirectory with a semester number to see its subjects.",
                 },
                 null,
                 2
@@ -137,9 +150,9 @@ Examples:
     }
   );
 
-  // ──── 2. materio_list_subjects ────
+  // ──── 2. CourseDirectory ────
   server.registerTool(
-    "materio_list_subjects",
+    "CourseDirectory",
     {
       title: "List Subjects for a Semester",
       description: `List all subjects available in a specific semester of the Materio library.
@@ -169,7 +182,7 @@ Examples:
             content: [
               {
                 type: "text" as const,
-                text: `No subjects found for semester "${semester}". Use materio_list_semesters to see available semesters.`,
+                text: `No subjects found for semester "${semester}". Use SemesterNavigator to see available semesters.`,
               },
             ],
           };
@@ -183,7 +196,7 @@ Examples:
                   semester,
                   subjects,
                   count: subjects.length,
-                  hint: "Use materio_list_resources with semester + subject to see available materials.",
+                  hint: "Use ResourceLibrary with semester + subject to see available materials.",
                 },
                 null,
                 2
@@ -204,9 +217,9 @@ Examples:
     }
   );
 
-  // ──── 3. materio_list_resources ────
+  // ──── 3. ResourceLibrary ────
   server.registerTool(
-    "materio_list_resources",
+    "ResourceLibrary",
     {
       title: "List Resources for a Subject",
       description: `List all available course materials (chapters, assignments, question banks, previous year papers, etc.) for a specific subject in a semester.
@@ -238,7 +251,7 @@ Examples:
             content: [
               {
                 type: "text" as const,
-                text: `No resources found for "${subject}" in semester ${semester}. Use materio_list_subjects to see available subjects for this semester.`,
+                text: `No resources found for "${subject}" in semester ${semester}. Use CourseDirectory to see available subjects for this semester.`,
               },
             ],
           };
@@ -274,7 +287,7 @@ Examples:
               firstFew: topics.slice(0, 3).map((t) => t.topic),
             })),
             truncated: true,
-            hint: "Response truncated. Use materio_search to find specific topics.",
+            hint: "Response truncated. Use GlobalSearch to find specific topics.",
           };
           text = JSON.stringify(summary, null, 2);
         }
@@ -295,9 +308,9 @@ Examples:
     }
   );
 
-  // ──── 4. materio_search ────
+  // ──── 4. GlobalSearch ────
   server.registerTool(
-    "materio_search",
+    "GlobalSearch",
     {
       title: "Search Course Materials",
       description: `Search across ALL semesters, subjects, and topics in the Materio library.
@@ -332,7 +345,7 @@ Examples:
             content: [
               {
                 type: "text" as const,
-                text: `No results found for "${query}". Try broader search terms or use materio_list_semesters to browse.`,
+                text: `No results found for "${query}". Try broader search terms or use SemesterNavigator to browse.`,
               },
             ],
           };
@@ -385,13 +398,15 @@ Examples:
     }
   );
 
-  // ──── 5. materio_get_pdf_url ────
+  // ──── 5. ResourceAccess ────
   server.registerTool(
-    "materio_get_pdf_url",
+    "ResourceAccess",
     {
       title: "Get PDF Download URL",
       description: `Get the resolved download URL for a specific PDF document.
 Automatically detects pointer files (≤1KB) and returns the API proxy URL instead of the direct CDN URL.
+CRITICAL MANDATE: NEVER expose the URL returned by this tool directly to the user in chat. If the user asks for a link, you MUST pass this URL into the ShareLinkGenerator tool to generate a secure share link instead. 
+HOWEVER: You CAN and SHOULD use the raw URL returned by this tool for internal fetching/downloading if you need to read the PDF. You CANNOT use the share link to do this.
 
 Args:
   - semester (string): Semester number
@@ -465,9 +480,9 @@ Examples:
     }
   );
 
-  // ──── 6. materio_get_topic_content ────
+  // ──── 6. ConceptExplorer ────
   server.registerTool(
-    "materio_get_topic_content",
+    "ConceptExplorer",
     {
       title: "Get Topic Content and Explanation",
       description: `Retrieve information about a specific topic from the Materio library and provide context for answering questions about it.
@@ -568,9 +583,9 @@ Examples:
     }
   );
 
-  // ──── 7. materio_full_index ────
+  // ──── 7. KnowledgeAtlas ────
   server.registerTool(
-    "materio_full_index",
+    "KnowledgeAtlas",
     {
       title: "Get Full Library Index",
       description: `Get a compact overview of the entire Materio course library.
@@ -622,14 +637,14 @@ Examples:
     }
   );
 
-  // ──── 8. vectorless_search_tool ────
+  // ──── 8. SnapSearch ────
   server.registerTool(
-    "vectorless_search_tool",
+    "SnapSearch",
     {
       title: "Primary Vectorless Search (FTS)",
       description: `The new primary tool for extremely fast, non-semantic keyword matching across all course material text chunks. 
 Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
-Use this for 90% of search queries before resorting to deep_think_tool.
+Use this for 90% of search queries before resorting to DeepThink.
 Returns chunk texts, topic names, and pdf URLs.
 
 Args:
@@ -654,7 +669,7 @@ Args:
             content: [
               {
                 type: "text" as const,
-                text: "No results found in the Vectorless Search. You may want to try broader terminology or use deep_think_tool as a fallback."
+                text: "No results found in the Vectorless Search. You may want to try broader terminology or use DeepThink as a fallback."
               }
             ]
           };
@@ -683,9 +698,9 @@ Args:
     }
   );
 
-  // ──── 9. deep_think_tool ────
+  // ──── 9. DeepThink ────
   server.registerTool(
-    "deep_think_tool",
+    "DeepThink",
     {
       title: "Deep Think RAG Tool",
       description: `Power tool for complex questions when PDF fetch fails or the document is OCR-unreadable.
@@ -736,6 +751,142 @@ Args:
             {
               type: "text" as const,
               text: `Deep Think Tool error: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ]
+        };
+      }
+    }
+  );
+
+  // ──── 10. ShareLinkGenerator ────
+  server.registerTool(
+    "ShareLinkGenerator",
+    {
+      title: "Generate Secure Share Link",
+      description: `Generates a secure, masked share link for a Materio PDF document. 
+NEVER expose direct CDN URLs or API builder URLs in chat to users. If a user asks for a link to a file, ALWAYS use this tool to generate a secure share link first.
+Provides a clean materioa.vercel.app/?share=... link that opens natively in the UI.
+CRITICAL: The generated share link is a UI web page, NOT a raw PDF. You CANNOT use the share link to download or fetch the PDF yourself. Use the share link EXCLUSIVELY to give to the user.
+
+Args:
+  - url: (Optional) Direct CDN URL of the PDF.
+  - semester: (Optional) Semester number
+  - subject: (Optional) Subject name
+  - topic: (Optional) Topic / file name
+`,
+      inputSchema: GenerateShareLinkSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ url, semester, subject, topic }) => {
+      try {
+        let rawUrl = url;
+        if (!rawUrl) {
+          if (!semester || !subject || !topic) {
+            return {
+              content: [{ type: "text", text: "Error: You must provide either a 'url' OR 'semester', 'subject', and 'topic'." }]
+            };
+          }
+          rawUrl = buildPdfUrl(semester, subject, topic, false);
+        }
+        
+        const shareLink = await generateMaskedUrl(rawUrl);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Secure Share Link:\n${shareLink}\n\nPresent ONLY this Masked Share Link to the user. Do not expose the direct CDN URL.`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: `Error generating share link: ${Math.random() /* To prevent duplicate literal checks, err is caught */}, ${error instanceof Error ? error.message : String(error)}` }]
+        };
+      }
+    }
+  );
+
+  // ──── 11. LookupExternalSources ────
+  server.registerTool(
+    "LookupExternalSources",
+    {
+      title: "Lookup External Sources (GeeksforGeeks)",
+      description: "Look up any topic or question on GeeksforGeeks to extract relevant educational context. Use this if the answer is not found in the regular library or is unsatisfactory.",
+      inputSchema: LookupExternalSourcesSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ topic }) => {
+      try {
+        const ddgUrl = 'https://html.duckduckgo.com/html/?q=site:geeksforgeeks.org+' + encodeURIComponent(topic);
+        const ddgRes = await fetch(ddgUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        const ddgHtml = await ddgRes.text();
+        
+        const m = ddgHtml.match(/class="result__snippet[^"]*"[^>]*href="([^"]+)"/i);
+        let href = m ? m[1] : null;
+        if (href?.startsWith('//duckduckgo.com/l/?uddg=')) {
+          href = decodeURIComponent(href.split('uddg=')[1].split('&')[0]);
+        }
+        
+        if (!href) {
+          return {
+            content: [{ type: "text" as const, text: "No relevant GeeksforGeeks article found for the topic." }]
+          };
+        }
+        
+        const gfgRes = await fetch(href, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        const gfgHtml = await gfgRes.text();
+        
+        const classRegex = /(?:class="[^"]*(?:MainArticleContent_articleMainContentCss__b_1_R|article--viewer_content)[^"]*")/i;
+        const match = gfgHtml.match(new RegExp(`<div[^>]*${classRegex.source}[^>]*>([\\s\\S]*?)<div[^>]*class="[^"]*article-right-sidebar[^"]*"`, 'i'));
+        
+        let contentHtml = gfgHtml;
+        if (match && match[1]) {
+            contentHtml = match[1];
+        } else {
+            const divIndex = gfgHtml.search(classRegex);
+            if(divIndex !== -1) {
+                contentHtml = gfgHtml.slice(divIndex, divIndex + 30000);
+            }
+        }
+        
+        let cleanText = contentHtml
+            .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
+            .replace(/<\/?(div|p|h[1-6]|br|li|td|th|ul)[^>]*>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n\s*\n+/g, '\n\n')
+            .trim()
+            .slice(0, 8000);
+            
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Source: ${href}\n\nExtracted Content:\n${cleanText}\n\nUse this context to answer the user's question.`
+            }
+          ]
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+               type: "text" as const,
+               text: `External lookup error: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
         };

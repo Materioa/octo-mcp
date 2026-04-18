@@ -18,7 +18,7 @@
   "paths": {
     "/api/semesters": {
       "get": {
-        "operationId": "listSemesters",
+        "operationId": "SemesterNavigator",
         "summary": "List all available semesters",
         "description": "Returns all semester numbers available in the Materio course library. Use this as the first step to discover content.",
         "responses": {
@@ -48,7 +48,7 @@
     },
     "/api/subjects": {
       "get": {
-        "operationId": "listSubjects",
+        "operationId": "CourseDirectory",
         "summary": "List subjects for a semester",
         "description": "Returns all subjects available in a specific semester.",
         "parameters": [
@@ -84,7 +84,7 @@
     },
     "/api/resources": {
       "get": {
-        "operationId": "listResources",
+        "operationId": "ResourceLibrary",
         "summary": "List all resources for a subject",
         "description": "Returns all course materials (chapters, assignments, question banks, previous year papers, etc.) for a specific subject in a semester. Each item includes the topic name and PDF download URL.",
         "parameters": [
@@ -137,7 +137,7 @@
     },
     "/api/search": {
       "get": {
-        "operationId": "searchResources",
+        "operationId": "GlobalSearch",
         "summary": "Search course materials",
         "description": "Search across ALL semesters, subjects, and topics in the Materio library. Matches against subject names, section types (Chapters, Assignments, Question Banks, etc.), and topic names. This is the best tool for finding specific content.",
         "parameters": [
@@ -182,7 +182,7 @@
     },
     "/api/pdf-url": {
       "get": {
-        "operationId": "resolvePdfUrl",
+        "operationId": "ResourceAccess",
         "summary": "Get PDF download URL",
         "description": "Resolve the correct download URL for a specific PDF. Automatically detects pointer files (≤1KB) and returns the API proxy URL instead of the direct CDN URL.",
         "parameters": [
@@ -227,7 +227,7 @@
     },
     "/api/index": {
       "get": {
-        "operationId": "getFullIndex",
+        "operationId": "KnowledgeAtlas",
         "summary": "Get full library index",
         "description": "Get a compact overview of the entire Materio course library. Returns all semesters, subjects, and section types with resource counts.",
         "responses": {

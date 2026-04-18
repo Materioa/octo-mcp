@@ -45,7 +45,7 @@ async function getPerplexityEmbedding(text: string): Promise<number[]> {
     },
     body: JSON.stringify({
       // The user specified they index using context model. 
-      // Usually queries might use pplx-embed-v1, but sticking to user's specified model
+      // Contextual models require a highly specific double-nested array format even for a single query.
       model: "pplx-embed-context-v1-0.6b",
       input: [[text]]
     })
@@ -55,8 +55,13 @@ async function getPerplexityEmbedding(text: string): Promise<number[]> {
     throw new Error(`Perplexity API error: ${response.status} ${await response.text()}`);
   }
 
-  const result = (await response.json()) as { data: Array<{ embedding: number[] }> };
-  return result.data[0].embedding;
+  const result = (await response.json()) as any;
+  // Contextualized embeddings return a nested format: data[0].data[0].embedding
+  // We handle both nested and standard formats safely.
+  if (result.data && result.data[0] && Array.isArray(result.data[0].data)) {
+    return result.data[0].data[0].embedding;
+  }
+  return result.data?.[0]?.embedding || [];
 }
 
 /**
