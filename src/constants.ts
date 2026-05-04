@@ -6,7 +6,7 @@
 export const CDN_BASE = "https://cdn-materioa.vercel.app";
 
 /** API proxy base for pointer / tiny files */
-export const API_BASE = "https://cdn-materioa.vercel.app";
+export const API_BASE = "https://materioa.vercel.app";
 
 /** Resource library index URL */
 export const RESOURCE_LIB_URL = `${CDN_BASE}/databases/beta/resource.lib.json`;

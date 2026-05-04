@@ -11,12 +11,23 @@ import {
   searchResources,
   resolvePdfUrl,
   getFullIndex,
-  getResourceLibrary,
-  buildPdfUrl,
   generateMaskedUrl,
 } from "../services/resources.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "../services/rag.js";
 import { CHARACTER_LIMIT } from "../constants.js";
+import { registerDiagramTools } from "./diagrams.js";
+import { registerDiagramGeneratorTools } from "./diagram-generator.js";
+import { lookupGfG } from "./gfg.js";
+import fs from "fs";
+
+// ── Load share-link policy prompt for tool descriptions ──
+let SHARE_LINK_POLICY = "";
+try {
+  const policyPath = new URL("../../prompts/share-link-policy.md", import.meta.url).pathname;
+  if (fs.existsSync(policyPath)) {
+    SHARE_LINK_POLICY = fs.readFileSync(policyPath, "utf8");
+  }
+} catch { /* ignore */ }
 
 // ────────── Schemas ──────────
 
@@ -94,6 +105,9 @@ const LookupExternalSourcesSchema = {
 // ────────── Register all tools ──────────
 
 export function registerMaterioTools(server: McpServer): void {
+  // Register diagram generation tools (Mermaid, Graphviz)
+  registerDiagramTools(server);
+  registerDiagramGeneratorTools(server);
   // ──── 1. SemesterNavigator ────
   server.registerTool(
     "SemesterNavigator",
@@ -402,11 +416,17 @@ Examples:
   server.registerTool(
     "ResourceAccess",
     {
-      title: "Get PDF Download URL",
+      title: "Get PDF Download URL (Internal Use Only)",
       description: `Get the resolved download URL for a specific PDF document.
 Automatically detects pointer files (≤1KB) and returns the API proxy URL instead of the direct CDN URL.
-CRITICAL MANDATE: NEVER expose the URL returned by this tool directly to the user in chat. If the user asks for a link, you MUST pass this URL into the ShareLinkGenerator tool to generate a secure share link instead. 
-HOWEVER: You CAN and SHOULD use the raw URL returned by this tool for internal fetching/downloading if you need to read the PDF. You CANNOT use the share link to do this.
+
+## SHARE LINK POLICY (MANDATORY)
+${SHARE_LINK_POLICY ? SHARE_LINK_POLICY.slice(0, 1500) : `
+- NEVER expose the URL returned by this tool directly to the user in chat.
+- If the user asks for a link, you MUST pass this URL into ShareLinkGenerator to generate a masked share link.
+- You CAN use the raw URL for internal fetching/downloading if you need to read the PDF.
+- Share links (materioa.vercel.app/?share=...) are UI pages, NOT raw PDFs. You CANNOT fetch/read PDFs via share links.
+`}
 
 Args:
   - semester (string): Semester number
@@ -415,6 +435,7 @@ Args:
 
 Returns:
   JSON with the resolved PDF URL (direct CDN or API proxy depending on file size).
+  This URL is for INTERNAL use: fetching content, passing to ShareLinkGenerator, etc.
 
 Examples:
   - "Get the PDF for Deadlocks in OS sem 4" → semester="4", subject="Operating System", topic="Deadlocks"
@@ -434,8 +455,7 @@ Examples:
         const match = items.find(
           (i) =>
             i.topic.toLowerCase() === topic.toLowerCase() ||
-            i.topic.toLowerCase().includes(topic.toLowerCase()) ||
-            topic.toLowerCase().includes(i.topic.toLowerCase())
+            i.topic.toLowerCase().includes(topic.toLowerCase())
         );
 
         let resolvedUrl: string;
@@ -460,6 +480,7 @@ Examples:
                   topic: match?.topic ?? topic,
                   pdfUrl: resolvedUrl,
                   sectionType: match?.sectionType ?? "unknown",
+                  _policy: "INTERNAL URL — do NOT show to user. Use ShareLinkGenerator for user-facing links. Use this URL only for fetching/reading PDF content.",
                 },
                 null,
                 2
@@ -517,8 +538,7 @@ Examples:
         const match = items.find(
           (i) =>
             i.topic.toLowerCase() === topic.toLowerCase() ||
-            i.topic.toLowerCase().includes(topic.toLowerCase()) ||
-            topic.toLowerCase().includes(i.topic.toLowerCase())
+            i.topic.toLowerCase().includes(topic.toLowerCase())
         );
 
         // All chapters in the same subject for context
@@ -675,13 +695,15 @@ Args:
           };
         }
 
-        const contextText = results.map((r, i) => `[Result ${i + 1}] Topic: ${r.topic} (Similarity Score: ${r.similarity?.toFixed(2) ?? 'N/A'}) [Subject: ${r.subject}]\\n---\\n${r.content}`).join("\\n\\n");
+        const contextText = results.map((r, i) => `[Result ${i + 1}] Topic: ${r.topic} (Similarity Score: ${r.similarity?.toFixed(2) ?? 'N/A'}) [Subject: ${r.subject}]
+---
+${r.content}`).join("\n\n");
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Vectorless Full-Text Search Results:\\n\\n${contextText}\\n\\nUse this context to formulate a response to the user's question.`
+              text: `Vectorless Full-Text Search Results:\n\n${contextText}\n\nUse this context to formulate a response to the user's question.`
             }
           ]
         };
@@ -735,13 +757,14 @@ Args:
           };
         }
 
-        const contextText = results.map((r, i) => `[Context ${i + 1}] Topic: ${r.topic} (Similarity: ${r.similarity?.toFixed(2) ?? 'N/A'})\n${r.content}`).join("\\n\\n");
+        const contextText = results.map((r, i) => `[Context ${i + 1}] Topic: ${r.topic} (Similarity: ${r.similarity?.toFixed(2) ?? 'N/A'})
+${r.content}`).join("\n\n");
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Deep Think Context Received:\\n\\n${contextText}\\n\\nUse this context to formulate a response to the user's question: "${query}"`
+              text: `Deep Think Context Received:\n\n${contextText}\n\nUse this context to formulate a response to the user's question: "${query}"`
             }
           ]
         };
@@ -763,13 +786,17 @@ Args:
     "ShareLinkGenerator",
     {
       title: "Generate Secure Share Link",
-      description: `Generates a secure, masked share link for a Materio PDF document. 
-NEVER expose direct CDN URLs or API builder URLs in chat to users. If a user asks for a link to a file, ALWAYS use this tool to generate a secure share link first.
-Provides a clean materioa.vercel.app/?share=... link that opens natively in the UI.
-CRITICAL: The generated share link is a UI web page, NOT a raw PDF. You CANNOT use the share link to download or fetch the PDF yourself. Use the share link EXCLUSIVELY to give to the user.
+      description: `Generates a secure, masked share link for a Materio PDF document.
+MANDATORY: If a user asks for ANY link to a file, ALWAYS use this tool. NEVER show raw CDN/API URLs in chat.
+Returns a clean materioa.vercel.app/?share=... link that opens natively in the Materio UI.
+
+CRITICAL: The generated share link is a UI web page, NOT a raw PDF.
+- You CANNOT use the share link to download or fetch the PDF yourself.
+- Use the share link EXCLUSIVELY to present to the user.
+- To fetch/read a PDF internally, use the raw URL from ResourceAccess instead.
 
 Args:
-  - url: (Optional) Direct CDN URL of the PDF.
+  - url: (Optional) Direct CDN URL of the PDF (from ResourceAccess).
   - semester: (Optional) Semester number
   - subject: (Optional) Subject name
   - topic: (Optional) Topic / file name
@@ -791,21 +818,39 @@ Args:
               content: [{ type: "text", text: "Error: You must provide either a 'url' OR 'semester', 'subject', and 'topic'." }]
             };
           }
-          rawUrl = buildPdfUrl(semester, subject, topic, false);
+
+          const items = await listResources(semester, subject);
+          const match = items.find(
+            (i) =>
+              i.topic.toLowerCase() === topic.toLowerCase() ||
+              i.topic.toLowerCase().includes(topic.toLowerCase())
+          );
+
+          if (match) {
+            rawUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
+          } else {
+            rawUrl = await resolvePdfUrl(semester, subject, topic);
+          }
         }
-        
+
+        if (!rawUrl) {
+          return {
+            content: [{ type: "text", text: "Error: Could not resolve a PDF URL to generate a share link. Verify the semester, subject, and topic are correct." }]
+          };
+        }
+
         const shareLink = await generateMaskedUrl(rawUrl);
         return {
           content: [
             {
               type: "text",
-              text: `Secure Share Link:\n${shareLink}\n\nPresent ONLY this Masked Share Link to the user. Do not expose the direct CDN URL.`
+              text: `Secure Share Link:\n${shareLink}\n\nPresent ONLY this masked share link to the user. Do NOT expose the direct CDN URL.`
             }
           ]
         };
       } catch (error) {
         return {
-          content: [{ type: "text", text: `Error generating share link: ${Math.random() /* To prevent duplicate literal checks, err is caught */}, ${error instanceof Error ? error.message : String(error)}` }]
+          content: [{ type: "text", text: `Error generating share link: ${error instanceof Error ? error.message : String(error)}` }]
         };
       }
     }
@@ -816,7 +861,7 @@ Args:
     "LookupExternalSources",
     {
       title: "Lookup External Sources (GeeksforGeeks)",
-      description: "Look up any topic or question on GeeksforGeeks to extract relevant educational context. Use this if the answer is not found in the regular library or is unsatisfactory.",
+      description: "Look up any topic or question on GeeksforGeeks to extract relevant educational context. Use this if the answer is not found in the regular Materio library or SnapSearch/DeepThink yield insufficient context.",
       inputSchema: LookupExternalSourcesSchema,
       annotations: {
         readOnlyHint: true,
@@ -827,57 +872,19 @@ Args:
     },
     async ({ topic }) => {
       try {
-        const ddgUrl = 'https://html.duckduckgo.com/html/?q=site:geeksforgeeks.org+' + encodeURIComponent(topic);
-        const ddgRes = await fetch(ddgUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        const ddgHtml = await ddgRes.text();
-        
-        const m = ddgHtml.match(/class="result__snippet[^"]*"[^>]*href="([^"]+)"/i);
-        let href = m ? m[1] : null;
-        if (href?.startsWith('//duckduckgo.com/l/?uddg=')) {
-          href = decodeURIComponent(href.split('uddg=')[1].split('&')[0]);
-        }
-        
-        if (!href) {
+        const result = await lookupGfG(topic);
+
+        if (!result.found) {
           return {
             content: [{ type: "text" as const, text: "No relevant GeeksforGeeks article found for the topic." }]
           };
         }
-        
-        const gfgRes = await fetch(href, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
-        const gfgHtml = await gfgRes.text();
-        
-        const classRegex = /(?:class="[^"]*(?:MainArticleContent_articleMainContentCss__b_1_R|article--viewer_content)[^"]*")/i;
-        const match = gfgHtml.match(new RegExp(`<div[^>]*${classRegex.source}[^>]*>([\\s\\S]*?)<div[^>]*class="[^"]*article-right-sidebar[^"]*"`, 'i'));
-        
-        let contentHtml = gfgHtml;
-        if (match && match[1]) {
-            contentHtml = match[1];
-        } else {
-            const divIndex = gfgHtml.search(classRegex);
-            if(divIndex !== -1) {
-                contentHtml = gfgHtml.slice(divIndex, divIndex + 30000);
-            }
-        }
-        
-        let cleanText = contentHtml
-            .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
-            .replace(/<\/?(div|p|h[1-6]|br|li|td|th|ul)[^>]*>/gi, '\n')
-            .replace(/<[^>]+>/g, '')
-            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-            .replace(/[ \t]+/g, ' ')
-            .replace(/\n\s*\n+/g, '\n\n')
-            .trim()
-            .slice(0, 8000);
-            
+
         return {
           content: [
             {
               type: "text" as const,
-              text: `Source: ${href}\n\nExtracted Content:\n${cleanText}\n\nUse this context to answer the user's question.`
+              text: `Source: ${result.source}\n\nExtracted Content:\n${result.content}\n\nUse this context to answer the user's question.`
             }
           ]
         };
@@ -885,8 +892,8 @@ Args:
         return {
           content: [
             {
-               type: "text" as const,
-               text: `External lookup error: ${error instanceof Error ? error.message : String(error)}`
+              type: "text" as const,
+              text: `External lookup error: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
         };

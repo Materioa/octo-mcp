@@ -65,21 +65,25 @@ export function buildPdfUrl(
 }
 
 export async function generateMaskedUrl(actualUrl: string): Promise<string> {
-  try {
-    const response = await fetch("https://materioa.vercel.app/api/v2/features?action=pdf-share&subAction=create", {
+  const response = await fetch(
+    "https://materioa.vercel.app/api/v2/features?action=pdf-share&subAction=create",
+    {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ actualUrl })
-    });
-    if (response.ok) {
-      const data = (await response.json()) as any;
-      if (data && data.maskId) {
-        return `https://materioa.vercel.app/?share=${data.maskId}`;
-      }
+      body: JSON.stringify({ actualUrl }),
     }
-  } catch (err) { }
-  // Fallback
-  return actualUrl;
+  );
+
+  if (!response.ok) {
+    throw new Error(`Share link API failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as any;
+  if (!data || !data.maskId) {
+    throw new Error("Share link API returned no maskId");
+  }
+
+  return `https://materioa.vercel.app/?share=${data.maskId}`;
 }
 
 /**
@@ -137,8 +141,7 @@ export async function listResources(
   const subKey = Object.keys(sem).find(
     (k) =>
       k.toLowerCase() === subject.toLowerCase() ||
-      k.toLowerCase().includes(subject.toLowerCase()) ||
-      subject.toLowerCase().includes(k.toLowerCase())
+      k.toLowerCase().includes(subject.toLowerCase())
   );
   if (!subKey) return [];
 
@@ -170,9 +173,7 @@ export async function searchResources(query: string): Promise<ResourceItem[]> {
   for (const [semester, subjects] of Object.entries(lib)) {
     for (const [subject, sections] of Object.entries(subjects)) {
       // Match subject name
-      const subjectMatch =
-        subject.toLowerCase().includes(q) ||
-        q.includes(subject.toLowerCase());
+      const subjectMatch = subject.toLowerCase().includes(q);
 
       for (const section of sections) {
         // Match section type

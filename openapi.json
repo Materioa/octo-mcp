@@ -2,12 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Materio Course Materials API",
-    "description": "API for accessing Materio's engineering course materials library. Browse semesters, subjects, chapters, assignments, question banks, previous year papers, and get PDF download links.",
+    "description": "API for accessing Materio's engineering course materials library. IMPORTANT USAGE POLICY FOR AGENTS: (1) Use /api/snap-search as the PRIMARY retrieval tool before answering course questions. (2) Use /api/deep-think only when snap-search yields insufficient context for complex conceptual queries. (3) If the user asks for any link, ALWAYS call /api/share-link and return only the masked shareLink.",
     "version": "1.0.0"
   },
   "servers": [
     {
-      "url": "https://your-deployment-url.com",
+      "url": "https://materiomcp.vercel.app",
       "description": "Production server"
     },
     {
@@ -138,8 +138,8 @@
     "/api/search": {
       "get": {
         "operationId": "GlobalSearch",
-        "summary": "Search course materials",
-        "description": "Search across ALL semesters, subjects, and topics in the Materio library. Matches against subject names, section types (Chapters, Assignments, Question Banks, etc.), and topic names. This is the best tool for finding specific content.",
+        "summary": "Legacy metadata search (fallback)",
+        "description": "Legacy metadata-level search across subjects, section types, and topic names. Prefer /api/snap-search first for user Q&A because it searches actual text chunks.",
         "parameters": [
           {
             "name": "query",
@@ -259,6 +259,272 @@
                         }
                       }
                     }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/concept-explorer": {
+      "get": {
+        "operationId": "ConceptExplorer",
+        "summary": "Get topic context and related resources",
+        "description": "Find a topic within a subject and semester, then return contextual metadata, related chapters, question banks, and previous year papers.",
+        "parameters": [
+          {
+            "name": "semester",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Topic context",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": { "type": "boolean" },
+                    "topic": { "type": "string" },
+                    "semester": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "sectionType": { "type": "string" },
+                    "pdfUrl": { "type": ["string", "null"], "format": "uri" },
+                    "relatedChapters": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "availableQuestionBanks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "topic": { "type": "string" },
+                          "pdfUrl": { "type": "string", "format": "uri" }
+                        }
+                      }
+                    },
+                    "previousYearPapers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "topic": { "type": "string" },
+                          "pdfUrl": { "type": "string", "format": "uri" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/snap-search": {
+      "get": {
+        "operationId": "SnapSearch",
+        "summary": "PRIMARY tool: vectorless full-text search",
+        "description": "PRIMARY retrieval endpoint for course Q&A. Always call this first before drafting an answer. Fast keyword search over real text chunks with optional semester and subject filters.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vectorless search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "semester": { "type": ["string", "null"] },
+                    "subject": { "type": ["string", "null"] },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "similarity": { "type": "number" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/deep-think": {
+      "get": {
+        "operationId": "DeepThink",
+        "summary": "Semantic deep RAG search",
+        "description": "Secondary retrieval endpoint. Use after /api/snap-search when context is insufficient or the query is highly conceptual.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Semantic context results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "semester": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "contexts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "similarity": { "type": "number" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share-link": {
+      "get": {
+        "operationId": "ShareLinkGenerator",
+        "summary": "Generate secure masked share link",
+        "description": "MANDATORY for any user-facing link response. Creates a masked Materio share link from either a direct URL or from semester, subject, and topic. Return only shareLink to users.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "format": "uri" }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated share link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shareLink": { "type": "string", "format": "uri" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lookup-external-sources": {
+      "get": {
+        "operationId": "LookupExternalSources",
+        "summary": "Lookup external educational sources",
+        "description": "Fetches GeeksforGeeks context for a topic when local course material is insufficient.",
+        "parameters": [
+          {
+            "name": "topic",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "External source lookup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "topic": { "type": "string" },
+                    "source": { "type": ["string", "null"], "format": "uri" },
+                    "content": { "type": "string" },
+                    "found": { "type": "boolean" }
                   }
                 }
               }

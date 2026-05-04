@@ -28,19 +28,24 @@ import {
   searchResources,
   resolvePdfUrl,
   getFullIndex,
+  generateMaskedUrl,
 } from "./services/resources.js";
+import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
+import { lookupGfG } from "./tools/gfg.js";
 
-// ──── Create MCP server ────
-const server = new McpServer({
-  name: "materio-mcp-server",
-  version: "1.0.0",
-});
-
-// ──── Register all tools ────
-registerMaterioTools(server);
+// ──── Helper: create a fresh, tool-registered MCP server instance ────
+function createMcpServer(): McpServer {
+  const server = new McpServer({
+    name: "materio-mcp-server",
+    version: "1.0.0",
+  });
+  registerMaterioTools(server);
+  return server;
+}
 
 // ──── Transport: stdio (for Claude Desktop) ────
 async function runStdio(): Promise<void> {
+  const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("✅ Materio MCP server running via stdio (JSON-RPC over stdin/stdout)");
@@ -72,10 +77,15 @@ async function runHTTP(): Promise<void> {
   //  This is the core MCP protocol endpoint.
   //  Perplexity and Claude connect here via
   //  Streamable HTTP transport (JSON-RPC 2.0).
+  //
+  //  IMPORTANT: We create a new McpServer instance
+  //  per request to avoid the reconnect race condition.
+  //  Each request gets its own server+transport pair.
   // ════════════════════════════════════════════════════
   app.post("/mcp", async (req, res) => {
     try {
-      // Stateless: new transport per request (no session collisions)
+      // Stateless: new server + transport per request
+      const server = createMcpServer();
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
@@ -132,7 +142,8 @@ async function runHTTP(): Promise<void> {
     try {
       const file = Bun.file(new URL("./app.png", import.meta.url).pathname);
       if (await file.exists()) {
-        res.type("image/png").send(await file.arrayBuffer());
+        const buf = Buffer.from(await file.arrayBuffer());
+        res.type("image/png").send(buf);
       } else {
         res.status(404).send("Not found");
       }
@@ -166,7 +177,7 @@ async function runHTTP(): Promise<void> {
       const semesters = await listSemesters();
       res.json({ semesters, count: semesters.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to list semesters." });
     }
   });
 
@@ -177,7 +188,7 @@ async function runHTTP(): Promise<void> {
       const subjects = await listSubjects(sem);
       res.json({ semester: sem, subjects, count: subjects.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to list subjects." });
     }
   });
 
@@ -189,7 +200,7 @@ async function runHTTP(): Promise<void> {
       const items = await listResources(sem, sub);
       res.json({ semester: sem, subject: sub, resources: items, count: items.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to list resources." });
     }
   });
 
@@ -200,7 +211,7 @@ async function runHTTP(): Promise<void> {
       const results = await searchResources(q);
       res.json({ query: q, results, count: results.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to search resources." });
     }
   });
 
@@ -211,10 +222,20 @@ async function runHTTP(): Promise<void> {
     if (!sem || !sub || !topic)
       return res.status(400).json({ error: "semester, subject, and topic parameters required" });
     try {
-      const pdfUrl = await resolvePdfUrl(sem, sub, topic);
-      res.json({ semester: sem, subject: sub, topic, pdfUrl });
+      // Fuzzy-match topic name like the MCP tool does
+      const items = await listResources(sem, sub);
+      const match = items.find(
+        (i) =>
+          i.topic.toLowerCase() === topic.toLowerCase() ||
+          i.topic.toLowerCase().includes(topic.toLowerCase()) ||
+          topic.toLowerCase().includes(i.topic.toLowerCase())
+      );
+      const pdfUrl = match
+        ? await resolvePdfUrl(match.semester, match.subject, match.topic)
+        : await resolvePdfUrl(sem, sub, topic);
+      res.json({ semester: sem, subject: match?.subject ?? sub, topic: match?.topic ?? topic, pdfUrl });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to resolve PDF URL." });
     }
   });
 
@@ -223,7 +244,155 @@ async function runHTTP(): Promise<void> {
       const index = await getFullIndex();
       res.json({ totalSubjects: index.length, library: index });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: "Failed to get library index." });
+    }
+  });
+
+  app.get("/api/concept-explorer", async (req, res) => {
+    const sem = req.query.semester as string;
+    const sub = req.query.subject as string;
+    const topic = req.query.topic as string;
+
+    if (!sem || !sub || !topic) {
+      return res.status(400).json({ error: "semester, subject, and topic parameters required" });
+    }
+
+    try {
+      const items = await listResources(sem, sub);
+      const match = items.find(
+        (i) =>
+          i.topic.toLowerCase() === topic.toLowerCase() ||
+          i.topic.toLowerCase().includes(topic.toLowerCase())
+      );
+
+      const chapters = items.filter((i) => i.sectionType === "Chapters");
+      const questionBanks = items.filter(
+        (i) => i.sectionType === "Question Banks" || i.sectionType === "Important Questions"
+      );
+      const prevYearPapers = items.filter((i) => i.sectionType === "Previous Year Papers");
+
+      let resolvedUrl = "";
+      if (match) {
+        resolvedUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
+      }
+
+      res.json({
+        found: !!match,
+        topic: match?.topic ?? topic,
+        semester: sem,
+        subject: match?.subject ?? sub,
+        sectionType: match?.sectionType ?? "unknown",
+        pdfUrl: resolvedUrl || null,
+        relatedChapters: chapters.map((c) => c.topic),
+        availableQuestionBanks: questionBanks.map((q) => ({
+          topic: q.topic,
+          pdfUrl: q.pdfUrl,
+        })),
+        previousYearPapers: prevYearPapers.map((p) => ({
+          topic: p.topic,
+          pdfUrl: p.pdfUrl,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to explore concept." });
+    }
+  });
+
+  app.get("/api/snap-search", async (req, res) => {
+    const q = (req.query.query ?? req.query.q) as string;
+    const sem = req.query.semester as string | undefined;
+    const sub = req.query.subject as string | undefined;
+
+    if (!q) {
+      return res.status(400).json({ error: "query parameter required" });
+    }
+
+    try {
+      const results = await queryVectorlessRAG(q, sem, sub, 10);
+      res.json({
+        query: q,
+        semester: sem ?? null,
+        subject: sub ?? null,
+        results,
+        count: results.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to perform snap search." });
+    }
+  });
+
+  app.get("/api/deep-think", async (req, res) => {
+    const q = req.query.query as string;
+    const sem = req.query.semester as string;
+    const sub = req.query.subject as string;
+
+    if (!q || !sem || !sub) {
+      return res.status(400).json({ error: "query, semester, and subject parameters required" });
+    }
+
+    try {
+      const contexts = await queryDeepThinkRAG(q, sem, sub, 5);
+      res.json({
+        query: q,
+        semester: sem,
+        subject: sub,
+        contexts,
+        count: contexts.length,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to perform deep think search." });
+    }
+  });
+
+  app.get("/api/share-link", async (req, res) => {
+    const directUrl = req.query.url as string | undefined;
+    const sem = req.query.semester as string | undefined;
+    const sub = req.query.subject as string | undefined;
+    const topic = req.query.topic as string | undefined;
+
+    try {
+      let rawUrl = directUrl;
+      if (!rawUrl) {
+        if (!sem || !sub || !topic) {
+          return res
+            .status(400)
+            .json({ error: "Provide either url, or semester + subject + topic" });
+        }
+
+        const items = await listResources(sem, sub);
+        const match = items.find(
+          (i) =>
+            i.topic.toLowerCase() === topic.toLowerCase() ||
+            i.topic.toLowerCase().includes(topic.toLowerCase())
+        );
+
+        if (match) {
+          rawUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
+        } else {
+          rawUrl = await resolvePdfUrl(sem, sub, topic);
+        }
+      }
+
+      if (!rawUrl) {
+        return res.status(400).json({ error: "Could not resolve a PDF URL to generate a share link." });
+      }
+
+      const shareLink = await generateMaskedUrl(rawUrl);
+      res.json({ shareLink });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to generate share link." });
+    }
+  });
+
+  app.get("/api/lookup-external-sources", async (req, res) => {
+    const topic = req.query.topic as string;
+    if (!topic) return res.status(400).json({ error: "topic parameter required" });
+
+    try {
+      const result = await lookupGfG(topic);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to look up external sources." });
     }
   });
 
