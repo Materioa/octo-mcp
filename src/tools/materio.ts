@@ -19,15 +19,77 @@ import { registerDiagramTools } from "./diagrams.js";
 import { registerDiagramGeneratorTools } from "./diagram-generator.js";
 import { lookupGfG } from "./gfg.js";
 import fs from "fs";
+import { fileURLToPath } from "url";
+
+const PROMPT_FILES = [
+  {
+    name: "diagram-generation",
+    title: "Accurate Diagram Generation",
+    description: "Prompt templates and rules for reliable Mermaid/DOT diagram generation.",
+    file: "diagram-generation.txt",
+  },
+  {
+    name: "diagram-enhancements",
+    title: "Diagram Tool Enhancements",
+    description: "Architecture and usage notes for enhanced diagram rendering tools.",
+    file: "diagram-enhancements.txt",
+  },
+  {
+    name: "diagram-usage-examples",
+    title: "Diagram Usage Examples",
+    description: "End-to-end examples for generating and rendering supported diagram formats.",
+    file: "diagram-usage-examples.txt",
+  },
+  {
+    name: "share-link-policy",
+    title: "Share Link Policy",
+    description: "Rules for safely handling internal PDF URLs and masked share links.",
+    file: "share-link-policy.txt",
+  },
+] as const;
+
+function promptPath(fileName: string): string {
+  return fileURLToPath(new URL(`../../prompts/${fileName}`, import.meta.url));
+}
+
+function readPromptFile(fileName: string): string {
+  try {
+    const path = promptPath(fileName);
+    return fs.existsSync(path) ? fs.readFileSync(path, "utf8") : "";
+  } catch {
+    return "";
+  }
+}
+
+function registerPromptFiles(server: McpServer): void {
+  for (const prompt of PROMPT_FILES) {
+    server.registerPrompt(
+      prompt.name,
+      {
+        title: prompt.title,
+        description: prompt.description,
+      },
+      () => {
+        const text = readPromptFile(prompt.file);
+        return {
+          description: prompt.description,
+          messages: [
+            {
+              role: "user" as const,
+              content: {
+                type: "text" as const,
+                text: text || `Prompt file not found: prompts/${prompt.file}`,
+              },
+            },
+          ],
+        };
+      }
+    );
+  }
+}
 
 // ── Load share-link policy prompt for tool descriptions ──
-let SHARE_LINK_POLICY = "";
-try {
-  const policyPath = new URL("../../prompts/share-link-policy.md", import.meta.url).pathname;
-  if (fs.existsSync(policyPath)) {
-    SHARE_LINK_POLICY = fs.readFileSync(policyPath, "utf8");
-  }
-} catch { /* ignore */ }
+const SHARE_LINK_POLICY = readPromptFile("share-link-policy.txt");
 
 // ────────── Schemas ──────────
 
@@ -105,6 +167,8 @@ const LookupExternalSourcesSchema = {
 // ────────── Register all tools ──────────
 
 export function registerMaterioTools(server: McpServer): void {
+  registerPromptFiles(server);
+
   // Register diagram generation tools (Mermaid, Graphviz)
   registerDiagramTools(server);
   registerDiagramGeneratorTools(server);
@@ -744,7 +808,19 @@ Args:
     },
     async ({ query, semester, subject }) => {
       try {
-        const results = await queryDeepThinkRAG(query, semester, subject, 5);
+        const trimmedQuery = query.trim();
+        if (!trimmedQuery || !semester.trim() || !subject.trim()) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Deep Think requires non-empty query, semester, and subject values.",
+              },
+            ],
+          };
+        }
+
+        const results = await queryDeepThinkRAG(trimmedQuery, semester.trim(), subject.trim(), 5);
         
         if (results.length === 0) {
           return {

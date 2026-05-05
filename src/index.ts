@@ -20,6 +20,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import sharp from "sharp";
+import { fileURLToPath } from "url";
 import { registerMaterioTools } from "./tools/materio.js";
 import {
   listSemesters,
@@ -32,6 +34,58 @@ import {
 } from "./services/resources.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
 import { lookupGfG } from "./tools/gfg.js";
+
+const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
+const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
+const faviconCache = new Map<number, Buffer>();
+
+function getRequestedFaviconSize(req: express.Request): number {
+  const rawSize = req.query.sz ?? req.query.size ?? req.query.s;
+  const parsed = Number(Array.isArray(rawSize) ? rawSize[0] : rawSize);
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(512, Math.max(16, Math.round(parsed)));
+  }
+
+  return 256;
+}
+
+function faviconLinkHeader(): string {
+  return FAVICON_SIZES.map(
+    (size) => `</app.png?size=${size}>; rel="icon"; type="image/png"; sizes="${size}x${size}"`
+  ).join(", ");
+}
+
+async function renderFavicon(size: number): Promise<Buffer> {
+  const cached = faviconCache.get(size);
+  if (cached) return cached;
+
+  const buffer = await sharp(APP_ICON_PATH)
+    .resize(size, size, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+
+  faviconCache.set(size, buffer);
+  return buffer;
+}
+
+async function sendFavicon(req: express.Request, res: express.Response): Promise<void> {
+  try {
+    const size = getRequestedFaviconSize(req);
+    const buffer = await renderFavicon(size);
+
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader("X-Favicon-Size", `${size}x${size}`);
+    res.send(buffer);
+  } catch (error) {
+    console.error("Favicon render error:", error);
+    res.status(404).send("Not found");
+  }
+}
 
 // ──── Helper: create a fresh, tool-registered MCP server instance ────
 function createMcpServer(): McpServer {
@@ -125,32 +179,12 @@ async function runHTTP(): Promise<void> {
   //  Web crawler support
   // ════════════════════════════════════════════════════
   app.get("/", (_req, res) => {
-    res.setHeader("Link", [
-      '</app.png>; rel="icon"; sizes="16x16"',
-      '</app.png>; rel="icon"; sizes="24x24"',
-      '</app.png>; rel="icon"; sizes="32x32"',
-      '</app.png>; rel="icon"; sizes="48x48"',
-      '</app.png>; rel="icon"; sizes="64x64"',
-      '</app.png>; rel="icon"; sizes="128x128"',
-      '</app.png>; rel="icon"; sizes="256x256"',
-      '</app.png>; rel="icon"; sizes="512x512"'
-    ].join(", "));
-    res.status(200).send("");
+    res.setHeader("Link", faviconLinkHeader());
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.status(204).send();
   });
 
-  app.get("/app.png", async (_req, res) => {
-    try {
-      const file = Bun.file(new URL("./app.png", import.meta.url).pathname);
-      if (await file.exists()) {
-        const buf = Buffer.from(await file.arrayBuffer());
-        res.type("image/png").send(buf);
-      } else {
-        res.status(404).send("Not found");
-      }
-    } catch {
-      res.status(404).send("Not found");
-    }
-  });
+  app.get(["/app.png", "/favicon.png", "/favicon.ico"], sendFavicon);
 
   // ════════════════════════════════════════════════════
   //  OpenAPI spec — served for ChatGPT Actions import

@@ -5,11 +5,13 @@ import { JSDOM } from "jsdom";
 import Viz from "viz.js";
 import { Module, render } from "viz.js/full.render.js";
 import fs from "fs";
+import sharp from "sharp";
+import { fileURLToPath } from "url";
 
 // Load bundled prompt template for accurate diagram generation.
 let DIAGRAM_PROMPT = "";
 try {
-  const promptPath = new URL("../../prompts/diagram-generation.md", import.meta.url).pathname;
+  const promptPath = fileURLToPath(new URL("../../prompts/diagram-generation.txt", import.meta.url));
   if (fs.existsSync(promptPath)) {
     DIAGRAM_PROMPT = fs.readFileSync(promptPath, "utf8");
   }
@@ -53,30 +55,67 @@ async function withJsdom<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Convert SVG string to PNG using sharp
+ */
+async function svgToPng(svgString: string): Promise<Buffer> {
+  try {
+    return await sharp(Buffer.from(svgString)).png().toBuffer();
+  } catch (error: any) {
+    throw new Error(`SVG to PNG conversion failed: ${error.message}`);
+  }
+}
+
+/**
+ * Convert SVG string to base64 data URI
+ */
+function svgToBase64(svgString: string): string {
+  const base64 = Buffer.from(svgString).toString("base64");
+  return `data:image/svg+xml;base64,${base64}`;
+}
+
+/**
+ * Convert Buffer/PNG to base64 data URI
+ */
+function bufferToBase64(buffer: Buffer): string {
+  const base64 = buffer.toString("base64");
+  return `data:image/png;base64,${base64}`;
+}
+
 const DiagramSchema = {
   format: z
-    .string()
-    .describe('Diagram format: "mermaid" or "dot" (Graphviz DOT)')
+    .enum(["mermaid", "dot", "graphviz"])
+    .describe('Diagram format: "mermaid", "dot", or "graphviz" (Graphviz)')
     .default("mermaid"),
   spec: z.string().min(1).describe("The diagram specification (Mermaid or DOT source)."),
   render: z
-    .string()
-    .describe('Render output: "svg" (default)')
-    .default("svg"),
+    .enum(["svg", "png", "base64"])
+    .describe('Render output: "svg", "png" (file), or "base64" (embedded data URI)')
+    .default("png"),
+  title: z.string().optional().describe("Optional diagram title for metadata"),
 };
 
 export function registerDiagramTools(server: McpServer) {
   server.registerTool(
     "DiagramGenerator",
     {
-      title: "Render Diagram to SVG (Server-Side)",
-      description: `Server-side renderer: takes a Mermaid or Graphviz/DOT spec and returns SVG markup.
+      title: "Render Diagram to SVG/PNG (Mermaid/DOT)",
+      description: `Server-side renderer for Mermaid and Graphviz/DOT diagrams.
 
-Use this tool when you already have a diagram spec and need it rendered to SVG.
-- On Perplexity: use this if the sandbox environment is unavailable.
-- On ChatGPT/Claude: you typically don't need this — just output a fenced code block and it renders natively.
+## Supported Formats:
+- **mermaid**: Flowcharts, state diagrams, sequence diagrams, class diagrams, ER diagrams
+- **dot**: Graphviz/DOT (FSMs, directed graphs, trees) — renders as accurate PNG images
+- **graphviz**: Alias for dot
 
-Pass the raw spec string (no fences). Returns SVG text.`,
+## Output Modes:
+- **svg**: Raw SVG markup (smaller, scalable)
+- **png**: PNG image file — returns file path
+- **base64**: Embedded data URI (images as base64) — can be embedded directly in responses
+
+For Python-based diagrams (circuits, plots, Gantt, logic gates), use GenerateDiagramFromRequest to get a template that you can run in your LLM chat sandbox.
+
+## Usage:
+Pass the raw spec string (no code fences). Returns SVG/PNG/base64 output.`,
       inputSchema: DiagramSchema,
       annotations: {
         readOnlyHint: true,
@@ -85,57 +124,87 @@ Pass the raw spec string (no fences). Returns SVG text.`,
         openWorldHint: false,
       },
     },
-    async ({ format, spec, render: renderOut }) => {
+    async ({ format, spec, render: renderOut, title }) => {
       try {
-        format = (format || "mermaid").toLowerCase();
-        renderOut = renderOut || "svg";
+        const normalizedFormat = (format || "mermaid").toLowerCase();
+        // Normalize graphviz to dot
+        const fmt = normalizedFormat === "graphviz" ? "dot" : normalizedFormat;
+        renderOut = (renderOut || "png").toLowerCase() as any;
 
-        if (format === "mermaid") {
-          // Serialize Mermaid renders to avoid JSDOM global conflicts
-          return await withMermaidLock(() => withJsdom(async () => {
-            mermaid.initialize({ startOnLoad: false });
-            // Validate syntax first
+        if (fmt === "mermaid" || fmt === "dot") {
+          // Render Mermaid/DOT to SVG first
+          let svg: string | undefined;
+
+          if (fmt === "mermaid") {
+            // Serialize Mermaid renders to avoid JSDOM global conflicts
+            svg = await withMermaidLock(() => withJsdom(async () => {
+              mermaid.initialize({ startOnLoad: false });
+              try {
+                (mermaid as any).parse(spec);
+              } catch (e: any) {
+                throw new Error(`Mermaid syntax error: ${e?.str ?? e?.message ?? String(e)}`);
+              }
+
+              const id = "mmd-" + Date.now();
+              const result = await (mermaid as any).render(id, spec);
+              return result?.svg ?? result;
+            }));
+          } else if (fmt === "dot") {
+            // Render DOT via Viz.js
             try {
-              (mermaid as any).parse(spec);
+              svg = await viz.renderString(spec);
             } catch (e: any) {
+              viz = createViz();
+              throw new Error(`DOT render error: ${e?.message ?? String(e)}`);
+            }
+          }
+
+          // Convert based on output mode
+          if (!svg) {
+            return { content: [{ type: "text" as const, text: `No SVG generated for format: ${fmt}` }] };
+          }
+          if (renderOut === "svg") {
+            return {
+              content: [
+                { type: "text" as const, text: svg },
+                { type: "text" as const, text: "format: svg" },
+              ],
+            };
+          }
+
+          if (renderOut === "png") {
+            try {
+              const pngBuffer = await svgToPng(svg);
+              const filePath = `/tmp/diagram_${Date.now()}.png`;
+              fs.writeFileSync(filePath, pngBuffer);
               return {
                 content: [
-                  { type: "text" as const, text: `Mermaid syntax error: ${e?.str ?? e?.message ?? String(e)}` },
+                  { type: "text" as const, text: `Rendered PNG: ${filePath}` },
+                  { type: "text" as const, text: `size: ${pngBuffer.length} bytes` },
                 ],
               };
+            } catch (e: any) {
+              return { content: [{ type: "text" as const, text: `PNG conversion error: ${e.message}` }] };
             }
+          }
 
-            const id = "mmd-" + Date.now();
-            const result = await (mermaid as any).render(id, spec);
-            const svg = result?.svg ?? result;
-
-            return {
-              content: [
-                { type: "text" as const, text: svg },
-                { type: "text" as const, text: "format: svg" },
-              ],
-            };
-          }));
-        }
-
-        if (format === "dot" || format === "graphviz") {
-          // Render DOT via Viz.js
-          try {
-            const svg = await viz.renderString(spec);
-            return {
-              content: [
-                { type: "text" as const, text: svg },
-                { type: "text" as const, text: "format: svg" },
-              ],
-            };
-          } catch (e: any) {
-            // Viz.js instances may be "used up" after an error; recreate
-            viz = createViz();
-            return { content: [{ type: "text" as const, text: `DOT render error: ${e?.message ?? String(e)}` }] };
+          if (renderOut === "base64") {
+            try {
+              const pngBuffer = await svgToPng(svg);
+              const dataUri = bufferToBase64(pngBuffer);
+              return {
+                content: [
+                  { type: "text" as const, text: dataUri },
+                  { type: "text" as const, text: "format: base64-data-uri" },
+                ],
+              };
+            } catch (e: any) {
+              return { content: [{ type: "text" as const, text: `Base64 conversion error: ${e.message}` }] };
+            }
           }
         }
 
-        return { content: [{ type: "text" as const, text: `Unsupported format: ${format}` }] };
+        return { content: [{ type: "text" as const, text: `Unsupported format: ${fmt}` }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `DiagramGenerator error: ${error instanceof Error ? error.message : String(error)}` }] };
       }
@@ -157,32 +226,35 @@ Pass the raw spec string (no fences). Returns SVG text.`,
     },
     async ({ format, spec }) => {
       try {
-        format = (format || "mermaid").toLowerCase();
-        if (format === "mermaid") {
+        const normalizedFormat = (format || "mermaid").toLowerCase();
+        // Normalize graphviz to dot
+        const fmt = normalizedFormat === "graphviz" ? "dot" : normalizedFormat;
+
+        if (fmt === "mermaid") {
           // Serialize and set up JSDOM for Mermaid parse
           return await withMermaidLock(() => withJsdom(async () => {
             try {
               mermaid.initialize({ startOnLoad: false });
               (mermaid as any).parse(spec);
-              return { content: [{ type: "text" as const, text: "OK: Mermaid syntax valid." }] };
+              return { content: [{ type: "text" as const, text: "✓ Mermaid syntax valid." }] };
             } catch (e: any) {
-              return { content: [{ type: "text" as const, text: `Mermaid parse error: ${e?.str ?? e?.message ?? String(e)}` }] };
+              return { content: [{ type: "text" as const, text: `✗ Mermaid parse error: ${e?.str ?? e?.message ?? String(e)}` }] };
             }
           }));
         }
 
-        if (format === "dot" || format === "graphviz") {
+        if (fmt === "dot") {
           try {
-            // Viz.js will throw if DOT invalid; attempt a render to string (fast)
+            // Viz.js will throw if DOT invalid
             await viz.renderString(spec);
-            return { content: [{ type: "text" as const, text: "OK: DOT syntax valid (renderable)." }] };
+            return { content: [{ type: "text" as const, text: "✓ DOT syntax valid (renderable)." }] };
           } catch (e: any) {
             viz = createViz();
-            return { content: [{ type: "text" as const, text: `DOT parse/render error: ${e?.message ?? String(e)}` }] };
+            return { content: [{ type: "text" as const, text: `✗ DOT parse/render error: ${e?.message ?? String(e)}` }] };
           }
         }
 
-        return { content: [{ type: "text" as const, text: `Unsupported format: ${format}` }] };
+        return { content: [{ type: "text" as const, text: `⚠ Unknown format: ${fmt}` }] };
       } catch (error: any) {
         return { content: [{ type: "text" as const, text: `DiagramValidator error: ${error instanceof Error ? error.message : String(error)}` }] };
       }
