@@ -10,7 +10,7 @@ applyTo: "**"
 
 ## Intent
 
-Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from user requests. The spec renders natively on ChatGPT and Claude canvases. For Perplexity, use the MCP DiagramGenerator tool for server-side SVG rendering.
+Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from user requests. Prefer native Mermaid rendering for simple diagrams, JS-based server rendering for Mermaid/DOT when needed, and the LLM web-interface sandbox for Python-heavy or precision-sensitive diagram workflows.
 
 ## Core Rules
 
@@ -23,17 +23,19 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 
 ### ChatGPT
 - Fenced ```mermaid code blocks render **natively in the canvas** — just include the block in your response.
-- DOT format: pass to `DiagramGenerator` tool for server-side SVG.
+- DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
+- For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
 
 ### Claude
 - Fenced ```mermaid code blocks render **natively in artifacts/canvas** — include the block directly.
-- DOT format: pass to `DiagramGenerator` tool for server-side SVG.
+- DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
+- For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Claude web-interface sandbox rather than any server-side Python execution.
 
 ### Perplexity
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
-- **ALWAYS** pass the spec to the `DiagramGenerator` MCP tool to render SVG server-side.
-- Include the resulting SVG in your response for the user.
-- Alternatively, if Perplexity's sandbox environment supports it, use the sandbox to execute Mermaid/Graphviz rendering and return the image.
+- Use `DiagramGenerator` when you need JS-based server-side rendering for Mermaid or DOT.
+- For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Perplexity sandbox rather than any server-side Python execution.
+- Include the rendered output or generated artifact in your response for the user.
 
 ## Prompt Template: Mermaid (DFA/FSM)
 
@@ -112,8 +114,9 @@ digraph flowchart {
 3. **Validate syntax** via `DiagramValidator` (optional but recommended).
 4. **If invalid:** fix syntax errors based on validator feedback, don't re-prompt from scratch.
 5. **If valid:**
-   - On ChatGPT/Claude: include the fenced code block directly in your response for native rendering.
-   - On Perplexity: pass the spec to `DiagramGenerator` for server-side SVG rendering.
+   - On ChatGPT/Claude: include the fenced Mermaid block directly for simple native rendering when appropriate.
+   - When a rendered Mermaid or DOT asset is needed, use `DiagramGenerator` for JS-based server-side rendering.
+   - For circuits, plots, Gantt charts, logic diagrams, and other Python-heavy outputs, use the platform's web-interface sandbox instead of any server-side Python runtime.
 6. **Return the result** (rendered diagram or fenced code block) to the user.
 
 ## Anti-Hallucination Guidance
@@ -145,5 +148,5 @@ q1 --> q2: b | c
 ## See Also
 
 - `DiagramValidator` — MCP tool that checks syntax + domain rules.
-- `DiagramGenerator` — MCP tool that renders validated specs to SVG (server-side, for Perplexity).
+- `DiagramGenerator` — MCP tool that renders Mermaid/DOT with JS-based server-side tooling.
 - `GenerateDiagramFromRequest` — MCP tool that provides spec generation instructions.

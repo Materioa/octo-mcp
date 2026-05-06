@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "auto";
+
 const GenerateDiagramSchema = {
   request: z.string().describe("Natural language description of the diagram to generate (e.g., 'DFA that accepts binary strings ending in 01', 'Circuit diagram of an AND gate', 'Line plot of sin(x)')"),
   format: z
@@ -12,7 +14,7 @@ const GenerateDiagramSchema = {
 /**
  * Recommend the best format for a given request
  */
-function recommendFormat(request: string): string {
+function recommendFormat(request: string): DiagramFormat {
   const lower = request.toLowerCase();
   if (lower.includes("dfa") || lower.includes("fsm") || lower.includes("finite state") || 
       lower.includes("automaton") || lower.includes("state machine")) {
@@ -38,13 +40,20 @@ function recommendFormat(request: string): string {
 }
 
 /**
- * Returns a Python sandbox script for Perplexity that uses
- * packages available in its environment (graphviz, matplotlib, networkx, schemdraw).
+ * Returns a Python sandbox script for LLM web interfaces that have
+ * graphviz, matplotlib, networkx, schemdraw, and similar packages installed.
  */
-function buildPerplexitySandboxExample(format: string, request: string): string {
+function buildWebSandboxExample(format: DiagramFormat, request: string): string {
   if (format === "dot") {
     return `
-import graphviz
+import sys
+import subprocess
+
+try:
+    import graphviz
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "graphviz"])
+    import graphviz
 
 # Build the diagram for: ${request}
 dot = graphviz.Digraph(format='png')
@@ -66,14 +75,22 @@ dot.render('/tmp/diagram', cleanup=True)
 
   if (format === "circuit") {
     return `
-import schemdraw
-import schemdraw.elements as elm
+import sys
+import subprocess
+
+try:
+    import schemdraw
+    import schemdraw.elements as elm
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "schemdraw"])
+    import schemdraw
+    import schemdraw.elements as elm
 
 # Build circuit for: ${request}
 with schemdraw.Drawing() as d:
     d += (R1 := elm.Resistor().label('R1'))
     d += elm.Line().right(0.5)
-    d += elm.Gap().label(['+5V', '−'])
+    d += elm.Gap().label(['+5V', '-'])
     d.push()
     d += elm.Line().down(0.5)
     d += elm.Line().left(1)
@@ -87,8 +104,20 @@ with schemdraw.Drawing() as d:
 
   if (format === "plot") {
     return `
-import matplotlib.pyplot as plt
-import numpy as np
+import sys
+import subprocess
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "matplotlib"])
+    import matplotlib.pyplot as plt
+
+try:
+    import numpy as np
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "numpy"])
+    import numpy as np
 
 # Create visualization for: ${request}
 x = np.linspace(0, 2*np.pi, 100)
@@ -107,35 +136,71 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 
   if (format === "gantt") {
     return `
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+import sys
+import subprocess
 
-# Create Gantt chart for: ${request}
-tasks = [
-    {'name': 'Task 1', 'start': 0, 'duration': 2},
-    {'name': 'Task 2', 'start': 2, 'duration': 3},
-    {'name': 'Task 3', 'start': 5, 'duration': 1},
-]
+def pip_install(package_name):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
 
-fig, ax = plt.subplots(figsize=(10, 4))
-for i, task in enumerate(tasks):
-    ax.barh(i, task['duration'], left=task['start'], height=0.6, label=task['name'])
+gantt_backend = "plotly"
+try:
+    import plotly.express as px
+except ImportError:
+    try:
+        pip_install("plotly")
+        import plotly.express as px
+    except Exception:
+        gantt_backend = "matplotlib"
 
-ax.set_yticks(range(len(tasks)))
-ax.set_yticklabels([t['name'] for t in tasks])
-ax.set_xlabel('Time (days)')
-ax.set_title('${request}')
-ax.grid(True, alpha=0.3, axis='x')
+if gantt_backend == "plotly":
+    tasks = [
+        {"Task": "Task 1", "Start": "2026-01-01", "Finish": "2026-01-03"},
+        {"Task": "Task 2", "Start": "2026-01-03", "Finish": "2026-01-06"},
+        {"Task": "Task 3", "Start": "2026-01-06", "Finish": "2026-01-07"},
+    ]
+    fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
+    fig.update_yaxes(autorange="reversed")
+    fig.write_image("/tmp/diagram.png", scale=2)
+else:
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        pip_install("matplotlib")
+        import matplotlib.pyplot as plt
 
-plt.tight_layout()
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
+    tasks = [
+        {'name': 'Task 1', 'start': 0, 'duration': 2},
+        {'name': 'Task 2', 'start': 2, 'duration': 3},
+        {'name': 'Task 3', 'start': 5, 'duration': 1},
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    for i, task in enumerate(tasks):
+        ax.barh(i, task['duration'], left=task['start'], height=0.6, label=task['name'])
+
+    ax.set_yticks(range(len(tasks)))
+    ax.set_yticklabels([t['name'] for t in tasks])
+    ax.set_xlabel('Time (days)')
+    ax.set_title('${request}')
+    ax.grid(True, alpha=0.3, axis='x')
+
+    plt.tight_layout()
+    plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 `.trim();
   }
 
   if (format === "logic") {
     return `
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+import sys
+import subprocess
+
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "matplotlib"])
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
 
 # Create logic gate diagram for: ${request}
 fig, ax = plt.subplots(figsize=(10, 6))
@@ -170,20 +235,129 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 }
 
 /**
- * Build server-side rendering instructions
  */
-function buildServerRenderingInstructions(format: string): string[] {
-  return [
-    ``,
-    `## Now render with DiagramGenerator`,
-    ``,
-    `Use the **DiagramGenerator** tool with your ${format} spec:`,
-    `- **format**: "${format}"`,
-    `- **spec**: Your complete ${format} code/spec above`,
-    `- **render**: "png" (to get image) or "base64" (for HTML embedding)`,
-    ``,
-    `This will generate an accurate PNG image that displays correctly everywhere.`,
+function shouldUseWebSandbox(format: DiagramFormat): boolean {
+  return format !== "mermaid";
+}
+
+function buildAccuracyRules(format: DiagramFormat): string {
+  const sharedRules = [
+    "- Read the request twice before drawing so labels, counts, directions, and constraints match exactly.",
+    "- Do not invent nodes, tasks, gates, components, datasets, or transitions that were not requested or logically required.",
+    "- Before finalizing, perform a self-check that every label in the diagram can be traced back to the request or validated source material.",
+    "- If a package import fails in the web sandbox, install it with `pip install <package>` and rerun the script.",
+    "- If the diagram still feels ambiguous, revise the structure rather than decorating an incorrect layout.",
   ];
+
+  const formatRules: Record<DiagramFormat, string[]> = {
+    mermaid: [
+      "- Keep Mermaid syntax minimal and valid; avoid unsupported constructs when a simpler layout works.",
+      "- Double-check arrow direction, branching labels, and section nesting before returning the diagram.",
+    ],
+    dot: [
+      "- Ensure one transition per (state, input) pair for DFA/FSM-style diagrams.",
+      "- Confirm all states are reachable from the initial state unless the request explicitly allows otherwise.",
+      "- Use `shape=doublecircle` only for accept states and verify every edge label is meaningful.",
+      "- Review the graph once as logic and once as syntax before rendering.",
+    ],
+    circuit: [
+      "- Verify current flow, node joins, grounding, and component order before drawing.",
+      "- Use standard component symbols and label values clearly so the circuit can be read without guessing.",
+    ],
+    plot: [
+      "- Verify axes, units, legends, and dataset mappings against the request before exporting.",
+      "- Do not fabricate data trends; if the data is missing, generate only from provided formulas or clearly stated sample values.",
+    ],
+    gantt: [
+      "- Double-check task names, ordering, start dates, durations, and overlaps before rendering.",
+      "- Ensure dependencies and timeline progression make chronological sense.",
+      "- Prefer `plotly` or a dedicated Gantt-capable package when schedule precision matters; fall back only if needed.",
+    ],
+    logic: [
+      "- Verify each gate type, input line, output line, and truth relationship before exporting the image.",
+      "- For compound logic, trace the signal path manually once from inputs to outputs to catch wiring mistakes.",
+    ],
+    auto: [],
+  };
+
+  return [...sharedRules, ...(formatRules[format] || [])].join("\n");
+}
+
+function buildFormatExample(format: DiagramFormat): string {
+  if (format === "mermaid") {
+    return `### Mermaid Syntax
+\`\`\`mermaid
+<your complete mermaid diagram here>
+\`\`\``;
+  }
+
+  if (format === "dot") {
+    return `### Graphviz DOT Syntax (Most Accurate for FSMs)
+\`\`\`dot
+digraph {
+  rankdir=LR;
+  node [shape=circle, style=filled, fillcolor="#e8f4fd", color="#2196F3"];
+  edge [color="#555555"];
+  
+  # Add your states and transitions here
+  q0 [label="q0"];
+  q1 [label="q1", shape=doublecircle];  // accept state
+  q0 -> q1 [label="0"];
+}
+\`\`\``;
+  }
+
+  if (format === "circuit") {
+    return `### Circuit Diagram (schemdraw)
+\`\`\`python
+import schemdraw
+import schemdraw.elements as elm
+
+with schemdraw.Drawing() as d:
+    d += elm.Resistor().label('R1')
+    d += elm.Line().right(0.5)
+    d += elm.Gap().label(['+5V', '-'])
+    # Add your circuit components
+    d.save('/tmp/diagram.png')
+\`\`\``;
+  }
+
+  if (format === "plot") {
+    return `### Matplotlib/Plotly Visualization
+\`\`\`python
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Your visualization code here
+plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
+\`\`\``;
+  }
+
+  if (format === "gantt") {
+    return `### Gantt Chart
+\`\`\`python
+import plotly.express as px
+
+# Preferred: use plotly timeline or python-gantt style packages when available
+# Fallback: use matplotlib if the preferred package is unavailable
+\`\`\``;
+  }
+
+  if (format === "logic") {
+    return `### Logic Gates
+\`\`\`python
+import matplotlib.pyplot as plt
+
+# Draw logic gates (AND, OR, NOT, XOR, NAND, NOR)
+# Use patches and lines to create gate shapes
+plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
+\`\`\``;
+  }
+
+  return `### Format Notes
+\`\`\`text
+Use the recommended format and keep the result faithful to the request.
+\`\`\``;
 }
 
 export function registerDiagramGeneratorTools(server: McpServer): void {
@@ -191,11 +365,11 @@ export function registerDiagramGeneratorTools(server: McpServer): void {
     "GenerateDiagramFromRequest",
     {
       title: "Generate Diagram from Natural Language (Multi-Format)",
-      description: `Generate diagrams in multiple formats with server-side rendering as PNG images.
+      description: `Generate diagrams in multiple formats using LLM web-interface sandboxes for accurate rendering.
 
 ## Supported Diagram Types:
 1. **dot** (Graphviz) — FSMs, state diagrams, directed graphs, trees (most accurate for FSMs)
-2. **mermaid** — Flowcharts, sequence diagrams, state diagrams, class diagrams
+2. **mermaid** — Flowcharts, sequence diagrams, state diagrams, class diagrams (native renderer is fine for simple cases)
 3. **circuit** — Electronic schematics (resistors, capacitors, transistors, etc.)
 4. **plot** — Line, bar, scatter, heatmaps, histograms (matplotlib/plotly)
 5. **gantt** — Project timelines and schedules
@@ -203,10 +377,10 @@ export function registerDiagramGeneratorTools(server: McpServer): void {
 
 ## Workflow:
 1. I generate the appropriate spec/code for your request
-2. You use **DiagramGenerator** to render it as a PNG image
-3. The image displays perfectly in all clients (ChatGPT, Claude, Perplexity)
+2. Use the LLM web-interface Python sandbox (ChatGPT, Claude, Perplexity) for complex formats (dot, circuit, plot, gantt, logic)
+3. Use native renderer for simple Mermaid or when you already render SVG in HTML
 
-This avoids limitations with native renderers (e.g., ChatGPT Mermaid not supporting accurate FSMs in DOT).
+This avoids limitations with native renderers (e.g., Mermaid not supporting accurate FSMs in DOT).
 
 Args:
   - request: What you want diagrammed
@@ -221,87 +395,30 @@ Args:
     },
     async ({ request, format }) => {
       try {
-        // Auto-detect if format is "auto"
-        if (!format || format === "auto") {
-          format = recommendFormat(request);
-        }
-        format = format.toLowerCase();
+        // Auto-detect if format is "auto" and normalize safely to DiagramFormat
+        let chosenFormat: DiagramFormat = (format && format !== "auto") ? (format as DiagramFormat) : recommendFormat(request);
+        const normalizedFormat = chosenFormat.toLowerCase() as DiagramFormat;
 
-        const sandboxScript = buildPerplexitySandboxExample(format, request);
-        const serverInstructions = buildServerRenderingInstructions(format);
+        const useSandbox = shouldUseWebSandbox(normalizedFormat);
+        const sandboxScript = buildWebSandboxExample(normalizedFormat, request);
 
         const responseText = [
           `## Diagram Generation`,
           `**Request:** ${request}`,
-          `**Recommended Format:** ${format.toUpperCase()}`,
+          `**Recommended Format:** ${normalizedFormat.toUpperCase()}`,
           ``,
           `## Your Task`,
-          `Generate a complete, valid ${format === "dot" ? "Graphviz DOT" : format.toUpperCase()} spec for the above request.`,
+          `Generate a complete, valid ${normalizedFormat === "dot" ? "Graphviz DOT" : normalizedFormat.toUpperCase()} spec for the above request.`,
+          useSandbox ? `Use the web-interface Python sandbox for rendering (ChatGPT, Claude, Perplexity).` : `Use the native renderer (Mermaid or your SVG pipeline).`,
           ``,
-          format === "mermaid" ? `### Mermaid Syntax
-\`\`\`mermaid
-<your complete mermaid diagram here>
-\`\`\`` :
-          format === "dot" ? `### Graphviz DOT Syntax (Most Accurate for FSMs)
-\`\`\`dot
-digraph {
-  rankdir=LR;
-  node [shape=circle, style=filled, fillcolor="#e8f4fd", color="#2196F3"];
-  edge [color="#555555"];
-  
-  # Add your states and transitions here
-  q0 [label="q0"];
-  q1 [label="q1", shape=doublecircle];  // accept state
-  q0 -> q1 [label="0"];
-}
-\`\`\`` :
-          format === "circuit" ? `### Circuit Diagram (schemdraw)
-\`\`\`python
-import schemdraw
-import schemdraw.elements as elm
-
-with schemdraw.Drawing() as d:
-    d += elm.Resistor().label('R1')
-    d += elm.Line().right(0.5)
-    d += elm.Gap().label(['+5V', '−'])
-    # Add your circuit components
-    d.save('/tmp/diagram.png')
-\`\`\`` :
-          format === "plot" ? `### Matplotlib/Plotly Visualization
-\`\`\`python
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Your visualization code here
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-\`\`\`` :
-          format === "gantt" ? `### Gantt Chart
-\`\`\`python
-import matplotlib.pyplot as plt
-
-# Create Gantt chart
-fig, ax = plt.subplots(figsize=(10, 4))
-# Add tasks with ax.barh()
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-\`\`\`` :
-          `### Logic Gates
-\`\`\`python
-import matplotlib.pyplot as plt
-
-# Draw logic gates (AND, OR, NOT, XOR, NAND, NOR)
-# Use patches and lines to create gate shapes
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-\`\`\``,
+          buildFormatExample(normalizedFormat),
           ``,
           `## Rules for Accuracy`,
-          format === "dot" ? `
-- One transition per (state, input) pair
-- All states must be reachable from the initial state
-- Use \`shape=doublecircle\` for accept states
-- Label edges clearly with input symbols
-- Minimize cycles; use rankdir=LR for left-to-right flow
-` : ``,
-          ...serverInstructions,
+          buildAccuracyRules(normalizedFormat),
+          useSandbox ? `## Web Sandbox Script
+\`\`\`python
+${sandboxScript}
+\`\`\`` : ``,
         ];
 
         return {

@@ -17,6 +17,7 @@ import { queryDeepThinkRAG, queryVectorlessRAG } from "../services/rag.js";
 import { CHARACTER_LIMIT } from "../constants.js";
 import { registerDiagramTools } from "./diagrams.js";
 import { registerDiagramGeneratorTools } from "./diagram-generator.js";
+import { registerWorksheetPaperTools } from "./worksheet-paper.js";
 import { lookupGfG } from "./gfg.js";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -45,6 +46,12 @@ const PROMPT_FILES = [
     title: "Share Link Policy",
     description: "Rules for safely handling internal PDF URLs and masked share links.",
     file: "share-link-policy.txt",
+  },
+  {
+    name: "worksheet-paper-generation",
+    title: "Worksheet and Paper Generation",
+    description: "Workflow for generating worksheets, sample papers, question papers, and reusable paper templates.",
+    file: "worksheet-paper-generation.txt",
   },
 ] as const;
 
@@ -150,8 +157,22 @@ const DeepThinkSchema = {
 const VectorlessSearchSchema = {
   query: z.string().describe("Keyword search query for finding specific text content across course materials"),
   semester: z.string().optional().describe("Optional semester to narrow search"),
-  subject: z.string().optional().describe("Optional subject to narrow search")
+  subject: z.string().optional().describe("Optional subject to narrow search"),
+  page: z.number().int().min(1).optional().describe("Result page number. Use page 1 first, then request later pages if needed."),
+  results_per_page: z.number().int().min(1).max(5).optional().describe("How many chunk results to include per page. Keep this small."),
+  max_words: z.number().int().min(100).max(500).optional().describe("Maximum total words to return across the page of chunk content."),
 };
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function truncateToWordLimit(text: string, wordLimit: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= wordLimit) return text.trim();
+  return `${words.slice(0, wordLimit).join(" ")} ...`;
+}
 
 const GenerateShareLinkSchema = {
   url: z.string().optional().describe("Direct raw CDN URL. If provided, semester/subject/topic are ignored."),
@@ -172,6 +193,7 @@ export function registerMaterioTools(server: McpServer): void {
   // Register diagram generation tools (Mermaid, Graphviz)
   registerDiagramTools(server);
   registerDiagramGeneratorTools(server);
+  registerWorksheetPaperTools(server);
   // ──── 1. SemesterNavigator ────
   server.registerTool(
     "SemesterNavigator",
@@ -726,15 +748,18 @@ Examples:
     "SnapSearch",
     {
       title: "Primary Vectorless Search (FTS)",
-      description: `The new primary tool for extremely fast, non-semantic keyword matching across all course material text chunks. 
+      description: `Primary tool for extremely fast, non-semantic keyword matching across course material text chunks. 
 Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
-Use this for 90% of search queries before resorting to DeepThink.
-Returns chunk texts, topic names, and pdf URLs.
+Use this first for most content lookups. Keep responses short, then request the next page if the first chunk set is not enough by repeating the same filters and incrementing \`page\`.
+Secondary content option is Fetch/ResourceAccess when a specific document is already known. DeepThink and external lookup are later options when the primary path is not sufficient.
 
 Args:
   - query: Keywords to search for.
   - semester: (Optional) Limit search to semester.
   - subject: (Optional) Limit search to subject.
+  - page: Result page number, starting at 1.
+  - results_per_page: Number of chunk results to include per page.
+  - max_words: Maximum total words to return on the page.
 `,
       inputSchema: VectorlessSearchSchema,
       annotations: {
@@ -744,30 +769,106 @@ Args:
         openWorldHint: false,
       },
     },
-    async ({ query, semester, subject }) => {
+    async ({ query, semester, subject, page, results_per_page, max_words }) => {
       try {
-        const results = await queryVectorlessRAG(query, semester, subject, 10);
+        const currentPage = page ?? 1;
+        const resultsPerPage = results_per_page ?? 3;
+        const maxWords = max_words ?? 350;
+        const fetchCount = Math.max(currentPage * resultsPerPage, 10);
+        const results = await queryVectorlessRAG(query, semester, subject, fetchCount);
         
         if (results.length === 0) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "No results found in the Vectorless Search. You may want to try broader terminology or use DeepThink as a fallback."
+                text: "No results found. Try broader terminology, a different semester/subject filter, or move to DeepThink/external lookup if needed."
               }
             ]
           };
         }
 
-        const contextText = results.map((r, i) => `[Result ${i + 1}] Topic: ${r.topic} (Similarity Score: ${r.similarity?.toFixed(2) ?? 'N/A'}) [Subject: ${r.subject}]
----
-${r.content}`).join("\n\n");
+        const startIndex = (currentPage - 1) * resultsPerPage;
+        const pageResults = results.slice(startIndex, startIndex + resultsPerPage);
+
+        if (pageResults.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                  query,
+                  semester: semester ?? null,
+                  subject: subject ?? null,
+                  page: currentPage,
+                  resultsPerPage,
+                  maxWords,
+                  items: [],
+                  hasMore: false,
+                  nextPage: null,
+                  nextCallExample: null,
+                  message: "No more results on this page.",
+                },
+                null,
+                2
+                )
+              }
+            ]
+          };
+        }
+
+        let remainingWords = maxWords;
+        const items = pageResults.map((r, i) => {
+          const remainingItems = pageResults.length - i;
+          const available = remainingItems > 0
+            ? Math.max(25, Math.floor(remainingWords / remainingItems))
+            : remainingWords;
+          const clipped = truncateToWordLimit(r.content, available);
+          const used = Math.min(countWords(clipped), remainingWords);
+          remainingWords = Math.max(0, remainingWords - used);
+          return {
+            index: startIndex + i + 1,
+            topic: r.topic,
+            subject: r.subject,
+            similarity: r.similarity,
+            excerpt: clipped,
+          };
+        });
+
+        const hasMore = startIndex + resultsPerPage < results.length;
+        const nextPage = hasMore ? currentPage + 1 : null;
 
         return {
           content: [
             {
               type: "text" as const,
-              text: `Vectorless Full-Text Search Results:\n\n${contextText}\n\nUse this context to formulate a response to the user's question.`
+              text: JSON.stringify(
+                {
+                  query,
+                  semester: semester ?? null,
+                  subject: subject ?? null,
+                  page: currentPage,
+                  resultsPerPage,
+                  maxWords,
+                  hasMore,
+                  nextPage,
+                  nextCallExample: hasMore
+                    ? {
+                        query,
+                        semester: semester ?? null,
+                        subject: subject ?? null,
+                        page: nextPage,
+                        results_per_page: resultsPerPage,
+                        max_words: maxWords,
+                      }
+                    : null,
+                  items,
+                  usageHint: "Use these excerpts as primary grounding context. If this page is not enough, call SnapSearch again with the same filters and the next page number shown below.",
+                },
+                null,
+                2
+              )
             }
           ]
         };

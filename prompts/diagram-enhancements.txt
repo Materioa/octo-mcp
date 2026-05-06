@@ -2,14 +2,14 @@
 
 ## Overview
 
-The diagram rendering system has been significantly improved to support **server-side image generation** for all diagram types, overcoming native renderer limitations while unlocking support for new visualization types.
+The diagram workflow has been improved to clearly separate **JS-based server rendering** from **LLM web-interface sandbox execution**. Mermaid and DOT can be rendered server-side with JS tooling when helpful, while Python-heavy diagrams are intended for the sandbox inside ChatGPT, Claude, or Perplexity.
 
 ### Problem Solved
 
-- ✅ **DOT/Graphviz FSMs now render as accurate PNG images** instead of relying on ChatGPT's inaccurate Mermaid interpretation
-- ✅ **Multi-platform support** with consistent image output across ChatGPT, Claude, Perplexity
+- ✅ **DOT/Graphviz FSMs can render as accurate SVG/PNG assets** using server-side JS tooling instead of relying on Mermaid approximations
+- ✅ **Multi-platform support** across ChatGPT, Claude, and Perplexity
 - ✅ **New diagram types** beyond just flowcharts: plots, Gantt charts, circuit diagrams, logic gates
-- ✅ **No more native renderer limitations** — all rendering happens server-side
+- ✅ **No server-side Python sandbox required** — Python-heavy diagrams are routed to the LLM web-interface sandbox
 
 ## Architecture
 
@@ -20,27 +20,31 @@ The diagram rendering system has been significantly improved to support **server
 - **Features**:
   - Auto-detects optimal format (dot for FSMs, plot for visualizations, circuit for electronics, etc.)
   - Provides template code/specs for each format
-  - Returns instructions for using DiagramGenerator to render
-- **Usage**: LLM → GenerateDiagramFromRequest → [generate spec] → DiagramGenerator
+  - Returns instructions for either JS-based server rendering or web-interface sandbox execution
+- **Usage**: LLM → GenerateDiagramFromRequest → [generate spec] → DiagramGenerator or platform sandbox
 
 #### 2. **DiagramGenerator** (diagrams.ts) — ENHANCED
-- **Purpose**: Server-side rendering for all diagram formats
+- **Purpose**: JS-based server-side rendering for Mermaid and Graphviz/DOT
 - **New Capabilities**:
-  - **Input formats**: mermaid, dot, circuit, plot, gantt, logic
+  - **Input formats**: mermaid, dot, graphviz
   - **Output formats**: svg, png, base64 (data URI)
-  - **Supported packages**: Graphviz (Viz.js), Mermaid.js, Python (matplotlib, plotly, schemdraw)
+  - **Supported packages**: Graphviz (Viz.js), Mermaid.js, sharp
 - **Improvements**:
   - SVG → PNG conversion via `sharp` library
-  - Python sandbox execution for complex diagrams
   - Base64 output for embedding in responses
 - **Usage**: DiagramGenerator → {format, spec, render} → PNG/SVG/DataURI
 
 #### 3. **DiagramValidator** (diagrams.ts) — ENHANCED
 - **Purpose**: Quick syntax validation before rendering
 - **Improvements**:
-  - Supports all new formats
-  - Python code structure validation
+  - Supports Mermaid and DOT validation
   - Better error messages
+
+#### 4. **LLM Web-Interface Sandbox**
+- **Purpose**: Execute Python-based diagram code for complex or precision-sensitive visualizations
+- **Platforms**: ChatGPT, Claude, Perplexity
+- **Typical libraries**: graphviz, matplotlib, networkx, schemdraw, plotly
+- **Rule**: Use this for circuit, plot, gantt, logic, and other Python-heavy diagram generation. Do not assume or describe a server-side Python sandbox in MCP.
 
 ## Supported Diagram Types
 
@@ -253,22 +257,22 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 
 3. **Generate**: LLM creates complete DOT specification
 
-4. **Tool: DiagramGenerator**
-   - Input: `format="dot", spec="<your dot code>", render="png"`
-   - Output: PNG image data URI or file path
+4. **Render path**
+   - Use `DiagramGenerator` when you want JS-based server rendering of Mermaid or DOT.
+   - Use the web-interface sandbox when the output depends on Python libraries or more bespoke rendering logic.
 
-5. **Result**: Accurate FSM diagram renders in chat
+5. **Result**: Accurate diagram output without relying on any server-side Python sandbox
 
 ### For Perplexity Users
 
 1. **Request**: Same as above
 
 2. **Tool: GenerateDiagramFromRequest**
-   - Output: Python sandbox template + DiagramGenerator instructions
+   - Output: Python sandbox template plus any Mermaid/DOT rendering guidance
 
 3. **Execute in Sandbox**: Run Python code to generate diagram
 
-4. **Or Fallback**: Use DiagramGenerator for server-side rendering
+4. **Fallback**: Use DiagramGenerator only for Mermaid/DOT JS-based server rendering
 
 ---
 
@@ -281,11 +285,11 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 - ❌ No plots/circuits/Gantt charts
 
 ### After (Comprehensive)
-- ✅ FSM diagrams render as accurate PNG images
+- ✅ FSM diagrams can render as accurate SVG/PNG assets
 - ✅ 6 diagram types: DOT, Mermaid, circuit, plot, gantt, logic
-- ✅ Server-side rendering for consistency
+- ✅ JS-based server rendering where it fits
 - ✅ Multiple output formats: SVG, PNG, base64 data URIs
-- ✅ Python sandbox for complex visualizations
+- ✅ Web-interface Python sandbox for complex visualizations
 
 ---
 
@@ -299,9 +303,8 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 ```
 
 ### Environment Requirements
-- **Python 3.7+** for Python-based diagrams (circuit, plot, gantt, logic)
 - **Graphviz** (via Viz.js) for DOT rendering (built-in)
-- **matplotlib**, **plotly**, **schemdraw** (installed in Perplexity sandbox)
+- **matplotlib**, **plotly**, **schemdraw** available in the target LLM web-interface sandbox for Python-based diagrams
 
 ---
 
@@ -361,7 +364,7 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 |--------|--------|-------|
 | **FSM Accuracy** | Mermaid approximation | Exact DOT rendering |
 | **Diagram Types** | 2 (Mermaid, DOT) | 6+ types |
-| **Output Quality** | Browser-dependent | Consistent PNG |
+| **Output Quality** | Browser-dependent | Native, JS-rendered, or sandbox-rendered depending on format |
 | **Circuit Support** | ❌ | ✅ Electronic schematics |
 | **Visualization** | ❌ | ✅ Plots, charts, Gantt |
 | **Logic Circuits** | ❌ | ✅ Boolean algebra |
@@ -393,7 +396,7 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 
 - **DOT rendering**: ~100ms (Viz.js in Node.js)
 - **Mermaid rendering**: ~200-500ms (requires JSDOM)
-- **Python execution**: ~1-5s depending on complexity
+- **Python sandbox execution**: depends on the target web interface and diagram complexity
 - **SVG → PNG**: ~100-300ms (via sharp)
 
 ---

@@ -56,6 +56,11 @@ function faviconLinkHeader(): string {
   ).join(", ");
 }
 
+function applyIconHeaders(res: express.Response): void {
+  res.setHeader("Link", faviconLinkHeader());
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
 async function renderFavicon(size: number): Promise<Buffer> {
   const cached = faviconCache.get(size);
   if (cached) return cached;
@@ -77,6 +82,7 @@ async function sendFavicon(req: express.Request, res: express.Response): Promise
     const size = getRequestedFaviconSize(req);
     const buffer = await renderFavicon(size);
 
+    applyIconHeaders(res);
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.setHeader("X-Favicon-Size", `${size}x${size}`);
@@ -115,6 +121,9 @@ async function runHTTP(): Promise<void> {
 
   // ── CORS for all origins (needed by remote connectors) ──
   app.use((_req, res, next) => {
+    if (_req.method === "GET" || _req.method === "HEAD") {
+      applyIconHeaders(res);
+    }
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, mcp-session-id");
@@ -179,12 +188,19 @@ async function runHTTP(): Promise<void> {
   //  Web crawler support
   // ════════════════════════════════════════════════════
   app.get("/", (_req, res) => {
-    res.setHeader("Link", faviconLinkHeader());
     res.setHeader("Cache-Control", "public, max-age=3600");
-    res.status(204).send();
+    res.status(200).json({
+      jsonrpc: "2.0",
+      message: "Materio MCP server is running. Use POST /mcp for JSON-RPC.",
+    });
   });
 
-  app.get(["/app.png", "/favicon.png", "/favicon.ico"], sendFavicon);
+  app.head("/", (_req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.status(200).end();
+  });
+
+  app.get(["/app.png", "/favicon.png", "/favicon.ico", "/apple-touch-icon.png"], sendFavicon);
 
   // ════════════════════════════════════════════════════
   //  OpenAPI spec — served for ChatGPT Actions import
