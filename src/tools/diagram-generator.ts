@@ -3,6 +3,19 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "auto";
 
+const SANDBOX_DOWNLOAD_SNIPPET = `
+try:
+  import matplotlib.pyplot as plt
+  plt.show()
+except Exception:
+  pass
+
+import base64
+with open('/tmp/diagram.png', 'rb') as f:
+  b64 = base64.b64encode(f.read()).decode('utf-8')
+print('DOWNLOAD_DATA_URI=data:image/png;base64,' + b64)
+`.trim();
+
 const GenerateDiagramSchema = {
   request: z.string().describe("Natural language description of the diagram to generate (e.g., 'DFA that accepts binary strings ending in 01', 'Circuit diagram of an AND gate', 'Line plot of sin(x)')"),
   format: z
@@ -16,9 +29,18 @@ const GenerateDiagramSchema = {
  */
 function recommendFormat(request: string): DiagramFormat {
   const lower = request.toLowerCase();
+  if (lower.includes("mermaid")) {
+    return "mermaid";
+  }
+  if (lower.includes("graphviz") || lower.includes("dot")) {
+    return "dot";
+  }
   if (lower.includes("dfa") || lower.includes("fsm") || lower.includes("finite state") || 
       lower.includes("automaton") || lower.includes("state machine")) {
     return "dot"; // DOT is more accurate for FSMs than Mermaid
+  }
+  if (lower.includes("timeline") || lower.includes("roadmap")) {
+    return "mermaid";
   }
   if (lower.includes("circuit") || lower.includes("resistor") || lower.includes("capacitor") || 
       lower.includes("diode") || lower.includes("transistor")) {
@@ -28,7 +50,7 @@ function recommendFormat(request: string): DiagramFormat {
       lower.includes("visualization") || lower.includes("histogram") || lower.includes("scatter")) {
     return "plot";
   }
-  if (lower.includes("gantt") || lower.includes("timeline") || lower.includes("project") || 
+  if (lower.includes("gantt") || lower.includes("project") || 
       lower.includes("schedule")) {
     return "gantt";
   }
@@ -44,8 +66,9 @@ function recommendFormat(request: string): DiagramFormat {
  * graphviz, matplotlib, networkx, schemdraw, and similar packages installed.
  */
 function buildWebSandboxExample(format: DiagramFormat, request: string): string {
+  const appendDownload = (script: string) => `${script}\n\n${SANDBOX_DOWNLOAD_SNIPPET}`.trim();
   if (format === "dot") {
-    return `
+    return appendDownload(`
 import sys
 import subprocess
 
@@ -70,11 +93,11 @@ dot.attr('edge', color='#555555', fontname='Arial', fontsize='10')
 
 dot.render('/tmp/diagram', cleanup=True)
 # Output saved to /tmp/diagram.png
-`.trim();
+`.trim());
   }
 
   if (format === "circuit") {
-    return `
+    return appendDownload(`
 import sys
 import subprocess
 
@@ -99,11 +122,11 @@ with schemdraw.Drawing() as d:
     # === ADD MORE COMPONENTS HERE ===
     
     d.save('/tmp/diagram.png')
-`.trim();
+`.trim());
   }
 
   if (format === "plot") {
-    return `
+    return appendDownload(`
 import sys
 import subprocess
 
@@ -131,66 +154,41 @@ plt.xlabel('X')
 plt.ylabel('Y')
 
 plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-`.trim();
+`.trim());
   }
 
   if (format === "gantt") {
-    return `
-import sys
-import subprocess
+    return appendDownload(`
+  import sys
+  import subprocess
 
-def pip_install(package_name):
+  def pip_install(package_name):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
 
-gantt_backend = "plotly"
-try:
+  try:
     import plotly.express as px
-except ImportError:
-    try:
-        pip_install("plotly")
-        import plotly.express as px
-    except Exception:
-        gantt_backend = "matplotlib"
+  except ImportError:
+    pip_install("plotly")
+    import plotly.express as px
 
-if gantt_backend == "plotly":
-    tasks = [
-        {"Task": "Task 1", "Start": "2026-01-01", "Finish": "2026-01-03"},
-        {"Task": "Task 2", "Start": "2026-01-03", "Finish": "2026-01-06"},
-        {"Task": "Task 3", "Start": "2026-01-06", "Finish": "2026-01-07"},
-    ]
-    fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
-    fig.update_yaxes(autorange="reversed")
-    fig.write_image("/tmp/diagram.png", scale=2)
-else:
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        pip_install("matplotlib")
-        import matplotlib.pyplot as plt
+  try:
+    import kaleido  # noqa: F401
+  except Exception:
+    pip_install("kaleido")
 
-    tasks = [
-        {'name': 'Task 1', 'start': 0, 'duration': 2},
-        {'name': 'Task 2', 'start': 2, 'duration': 3},
-        {'name': 'Task 3', 'start': 5, 'duration': 1},
-    ]
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-    for i, task in enumerate(tasks):
-        ax.barh(i, task['duration'], left=task['start'], height=0.6, label=task['name'])
-
-    ax.set_yticks(range(len(tasks)))
-    ax.set_yticklabels([t['name'] for t in tasks])
-    ax.set_xlabel('Time (days)')
-    ax.set_title('${request}')
-    ax.grid(True, alpha=0.3, axis='x')
-
-    plt.tight_layout()
-    plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-`.trim();
+  tasks = [
+    {"Task": "Task 1", "Start": "2026-01-01", "Finish": "2026-01-03"},
+    {"Task": "Task 2", "Start": "2026-01-03", "Finish": "2026-01-06"},
+    {"Task": "Task 3", "Start": "2026-01-06", "Finish": "2026-01-07"},
+  ]
+  fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
+  fig.update_yaxes(autorange="reversed")
+  fig.write_image("/tmp/diagram.png", scale=2)
+  `.trim());
   }
 
   if (format === "logic") {
-    return `
+    return appendDownload(`
 import sys
 import subprocess
 
@@ -223,7 +221,7 @@ def draw_and_gate(ax, x, y):
 draw_and_gate(ax, 5, 5)
 ax.set_title('${request}')
 plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
-`.trim();
+`.trim());
   }
 
   // Default to mermaid guidance

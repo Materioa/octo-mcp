@@ -130,6 +130,9 @@ function buildDotSandboxScript(spec: string): string {
     "graph = graphviz.Source(dot_source, format='png')",
     "graph.render('/tmp/diagram', cleanup=True)",
     "# Output: /tmp/diagram.png",
+    "with open('/tmp/diagram.png', 'rb') as f:",
+    "    b64 = base64.b64encode(f.read()).decode('utf-8')",
+    "print('DOWNLOAD_DATA_URI=data:image/png;base64,' + b64)",
   ].join("\n");
 }
 
@@ -146,6 +149,7 @@ function buildSandboxPayload(format: string, spec: string): string {
     "```python",
     script,
     "```",
+    "RETURN_DOWNLOAD_LINK: Use DOWNLOAD_DATA_URI as a markdown link for the image.",
   ].join("\n");
 }
 
@@ -167,7 +171,7 @@ export function registerDiagramTools(server: McpServer) {
     "DiagramGenerator",
     {
       title: "Render Diagram to SVG/PNG (Mermaid/DOT)",
-      description: `Server-side renderer for Mermaid diagrams. DOT requests return a sandbox render payload (Python + full spec).
+      description: `Server-side renderer for Mermaid diagrams. DOT requests return a sandbox render payload (Python + full spec) that prints DOWNLOAD_DATA_URI for a markdown download link.
 
 ## Supported Formats:
 - **mermaid**: Flowcharts, state diagrams, sequence diagrams, class diagrams, ER diagrams

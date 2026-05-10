@@ -32,6 +32,8 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - Do not re-render DOT as Mermaid. If DOT is used, render DOT directly or via sandbox and provide a download link.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
 - When a tool returns diagram output (DOT/SVG/PNG), use it as-is and render via the ChatGPT sandbox with Python, then provide a download link. Only render natively if the response is Mermaid or SVG.
+- Use python_user_visible for inline image rendering in ChatGPT when running the sandbox script.
+- If the sandbox cannot provide a file link, output a markdown download link using a data URI (base64). Do not claim it is impossible.
 - Do not skip diagram rendering and do not answer with text or ASCII drawings.
 - If the tool returns HTML, **create an artifact** so the native renderer can display it.
 - If the tool returns raw SVG text, **wrap it in a minimal HTML artifact** (e.g., `<html><body>...svg...</body></html>`) so it renders. Do not return the raw SVG or JSON-wrapped SVG text in chat.
@@ -42,10 +44,12 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - Fenced ```mermaid code blocks render **natively in artifacts/canvas** — include the block directly.
 - Raw SVG should be rendered natively (HTML artifact) when available.
 - DOT format must be rendered in the sandbox with Python (graphviz). Do not use server-side rendering for DOT.
+- Perplexity-style sandboxing: for any non-Mermaid/SVG diagram, render in the sandbox and return a download link.
 - Do not use DeepThink for diagram requests, diagram planning, or diagram reasoning.
 - Do not re-render DOT as Mermaid. If DOT is used, render DOT directly or via sandbox and provide a download link.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Claude web-interface sandbox rather than any server-side Python execution.
 - When a tool returns diagram output (DOT/SVG/PNG), use it as-is and render via the Claude sandbox with Python, then provide a download link. Only render natively if the response is Mermaid or SVG.
+- If the sandbox cannot provide a file link, output a markdown download link using a data URI (base64). Do not claim it is impossible.
 - Do not skip diagram rendering and do not answer with text or ASCII drawings.
 - If the tool returns HTML, **create an artifact** so the native renderer can display it.
 - If the tool returns raw SVG text, **wrap it in an HTML artifact** so it renders.
@@ -53,15 +57,17 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 
 ### Perplexity
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
-- Perplexity does **NOT** natively render Mermaid or DOT in responses.
+- Perplexity does **NOT** natively render Mermaid, DOT, or SVG in responses.
 - Always use the Perplexity sandbox with Python to render diagram requests (graphviz/networkx/matplotlib/schemdraw as appropriate).
 - Always return a download link to the generated image. Do not inline images and do not return text-only descriptions.
+- If the sandbox cannot provide a file link, output a markdown download link using a data URI (base64). Do not claim it is impossible.
 
 ## Rendering Fallback Rule
 
 - For all platforms: if native rendering is unavailable or fails, use the platform sandbox as a fallback to render the diagram into an image.
 - If a tool returns raw SVG/XML (e.g., the DiagramGenerator response body), you MUST pass that exact SVG into the platform sandbox, render it with Python, and return the image output. Do not answer until the image is generated. No text or ASCII fallback.
 - For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the platform sandbox with Python to render the diagram image. Do not ASCII-draw or describe these diagrams.
+- Only after the image is delivered may you provide a text explanation.
 
 ## Prompt Template: Mermaid (DFA/FSM)
 
