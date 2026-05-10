@@ -25,6 +25,9 @@ Base64 PNG / File / SVG output
 - ChatGPT/Claude: Raw SVG text should be wrapped in a minimal HTML artifact to render. Do not return JSON-wrapped SVG text in chat.
 - ChatGPT/Claude: SVG/PNG outputs should be provided as download links (do not try to render inline).
 - Perplexity: Prefer the sandbox to render diagrams into images (including DOT). Inline image rendering is allowed; do not force download links for SVG/PNG.
+- If a tool returns SVG/XML, pass it into the sandbox, render to PNG, and return the image output (do not describe or ASCII-draw it).
+- For all platforms: if native rendering is unavailable or fails, use the platform sandbox to render the diagram into an image.
+- For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the sandbox with Python and return the image output. No ASCII drawings.
 
 ---
 

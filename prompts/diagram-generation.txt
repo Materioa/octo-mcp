@@ -45,6 +45,12 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - Use `DiagramGenerator` only if the sandbox is unavailable or fails.
 - Perplexity **can** render images inline; do not force download links for SVG/PNG there.
 
+## Rendering Fallback Rule
+
+- For all platforms: if native rendering is unavailable or fails, use the platform sandbox as a fallback to render the diagram into an image.
+- If a tool returns raw SVG/XML (e.g., the DiagramGenerator response body), do not describe the diagram or output ASCII. Instead, pass the SVG or DOT spec into the platform sandbox, render it with Python (graphviz/networkx/matplotlib as appropriate), and return the image output.
+- For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the platform sandbox with Python to render the diagram image. Do not ASCII-draw or describe these diagrams.
+
 ## Prompt Template: Mermaid (DFA/FSM)
 
 **System prompt:**

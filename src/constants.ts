@@ -3,10 +3,10 @@
 // ─────────────────────────────────────────────────────
 
 /** CDN base for direct PDF downloads */
-export const CDN_BASE = "https://cdn-materioa.vercel.app";
+export const CDN_BASE = "https://cdn.getmaterio.app";
 
 /** API proxy base for pointer / tiny files */
-export const API_BASE = "https://materioa.vercel.app";
+export const API_BASE = "https://getmaterio.app";
 
 /** Resource library index URL */
 export const RESOURCE_LIB_URL = `${CDN_BASE}/databases/beta/resource.lib.json`;

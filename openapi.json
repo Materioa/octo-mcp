@@ -1,18 +1,14 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Materio Course Materials API",
+    "title": "Materio MCP",
     "description": "API for accessing Materio's engineering course materials library. IMPORTANT USAGE POLICY FOR AGENTS: (1) Use /api/snap-search as the PRIMARY retrieval tool before answering course questions. (2) Use /api/deep-think only when snap-search yields insufficient context for complex conceptual queries. (3) If the user asks for any link, ALWAYS call /api/share-link and return only the masked shareLink.",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "servers": [
     {
-      "url": "https://materiomcp.vercel.app",
+      "url": "https://mcp.getmaterio.app",
       "description": "Production server"
-    },
-    {
-      "url": "http://localhost:3001",
-      "description": "Local development server"
     }
   ],
   "paths": {

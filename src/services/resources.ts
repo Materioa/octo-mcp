@@ -66,7 +66,7 @@ export function buildPdfUrl(
 
 export async function generateMaskedUrl(actualUrl: string): Promise<string> {
   const response = await fetch(
-    "https://materioa.vercel.app/api/v2/features?action=pdf-share&subAction=create",
+    "https://getmaterio.app/api/v2/features?action=pdf-share&subAction=create",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -83,7 +83,7 @@ export async function generateMaskedUrl(actualUrl: string): Promise<string> {
     throw new Error("Share link API returned no maskId");
   }
 
-  return `https://materioa.vercel.app/?share=${data.maskId}`;
+  return `https://getmaterio.app/?share=${data.maskId}`;
 }
 
 /**

@@ -64,6 +64,15 @@ The user can describe:
 
 The tool returns a `Skill.md` template. Keep that template in the same chat context and pass it to `CreateWorksheetPaper` as `templateSkillMd` for later worksheets, papers, or question banks. The user can also reuse the returned Markdown in a future chat to restore the template context.
 
+## Diagram Question Workflow
+
+For any question where a diagram is possible:
+
+1. Solve the question.
+2. Generate the diagram using the platform sandbox (Python graphviz/networkx/matplotlib/schemdraw as appropriate).
+3. Save the image in the sandbox.
+4. Attach/embed the image in the document (question and answer key, if present).
+
 ## Quality Rules
 
 - Keep the layout print-friendly.
@@ -74,3 +83,4 @@ The tool returns a `Skill.md` template. Keep that template in the same chat cont
 - Use CO labels consistently when the template includes a CO column.
 - Match answer-key placement exactly to the user's selected preference.
 - For diagram-type questions, do not describe the diagram in text. Generate the diagram using the platform sandbox (Python tools such as graphviz, networkx, schemdraw, matplotlib) and embed the resulting image in the document.
+- If a diagram is possible for a question (e.g., DFA, circuit, graph, timeline), always generate and embed the diagram in the question and in the answer key.
