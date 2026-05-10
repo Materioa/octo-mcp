@@ -40,17 +40,48 @@ function withMermaidLock<T>(fn: () => Promise<T>): Promise<T> {
  */
 async function withJsdom<T>(fn: () => Promise<T>): Promise<T> {
   const dom = new JSDOM(`<div id="container"></div>`, { pretendToBeVisual: true });
-  (globalThis as any).window = dom.window;
-  (globalThis as any).document = dom.window.document;
-  (globalThis as any).navigator = dom.window.navigator;
+  const prevWindow = (globalThis as any).window;
+  const prevDocument = (globalThis as any).document;
+  const prevNavigator = (globalThis as any).navigator;
+
+  // Some runtimes expose read-only navigator; define safely instead of assignment.
+  const defineGlobal = (key: "window" | "document" | "navigator", value: any) => {
+    try {
+      Object.defineProperty(globalThis, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      (globalThis as any)[key] = value;
+    }
+  };
+
+  defineGlobal("window", dom.window);
+  defineGlobal("document", dom.window.document);
+  defineGlobal("navigator", dom.window.navigator);
 
   try {
     return await fn();
   } finally {
     try {
-      delete (globalThis as any).window;
-      delete (globalThis as any).document;
-      delete (globalThis as any).navigator;
+      if (prevWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        defineGlobal("window", prevWindow);
+      }
+
+      if (prevDocument === undefined) {
+        delete (globalThis as any).document;
+      } else {
+        defineGlobal("document", prevDocument);
+      }
+
+      if (prevNavigator === undefined) {
+        delete (globalThis as any).navigator;
+      } else {
+        defineGlobal("navigator", prevNavigator);
+      }
     } catch {}
   }
 }

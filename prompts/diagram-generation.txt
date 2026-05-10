@@ -27,6 +27,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
 - If the tool returns HTML, **create an artifact** so the native renderer can display it.
+- If the tool returns raw SVG text, **wrap it in a minimal HTML artifact** (e.g., `<html><body>...svg...</body></html>`) so it renders. Do not return the raw SVG or JSON-wrapped SVG text in chat.
 - If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
 
 ### Claude
@@ -34,13 +35,14 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Claude web-interface sandbox rather than any server-side Python execution.
 - If the tool returns HTML, **create an artifact** so the native renderer can display it.
+- If the tool returns raw SVG text, **wrap it in an HTML artifact** so it renders.
 - If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
 
 ### Perplexity
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
-- Use `DiagramGenerator` when you need JS-based server-side rendering for Mermaid or DOT.
-- For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Perplexity sandbox rather than any server-side Python execution.
-- Include the rendered output or generated artifact in your response for the user.
+- Perplexity does **NOT** natively render Mermaid or DOT in responses.
+- Prefer the Perplexity sandbox for rendering diagrams into images (including DOT/FSMs via Python graphviz) and return the image result.
+- Use `DiagramGenerator` only if the sandbox is unavailable or fails.
 - Perplexity **can** render images inline; do not force download links for SVG/PNG there.
 
 ## Prompt Template: Mermaid (DFA/FSM)

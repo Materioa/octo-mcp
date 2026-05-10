@@ -388,7 +388,7 @@ Examples:
               firstFew: topics.slice(0, 3).map((t) => t.topic),
             })),
             truncated: true,
-            hint: "Response truncated. Use GlobalSearch to find specific topics.",
+            hint: "Response truncated. Use GlobalSearch to locate topic names, then SnapSearch/DeepThink for actual content.",
           };
           text = JSON.stringify(summary, null, 2);
         }
@@ -414,9 +414,10 @@ Examples:
     "GlobalSearch",
     {
       title: "Search Course Materials",
-      description: `Search across ALL semesters, subjects, and topics in the Materio library.
+      description: `Metadata search across ALL semesters, subjects, and topics in the Materio library.
 Matches against subject names, section types (Chapters, Assignments, Question Banks, etc.), and topic names.
-This is the PRIMARY tool for finding specific course content.
+Use this to locate documents and topic names. Do NOT use this to answer content questions.
+Never use this tool for diagram generation or any non-content task.
 
 Args:
   - query (string): Search query (min 2 chars). Matches case-insensitively against subject names, section types, and topic names.
@@ -749,10 +750,11 @@ Examples:
     "SnapSearch",
     {
       title: "Primary Vectorless Search (FTS)",
-      description: `Primary tool for extremely fast, non-semantic keyword matching across course material text chunks. 
+      description: `Primary tool for extremely fast, non-semantic keyword matching across course material text chunks.
 Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
 Use this first for most content lookups. Keep responses short, then request the next page if the first chunk set is not enough by repeating the same filters and incrementing \`page\`.
 Secondary content option is Fetch/ResourceAccess when a specific document is already known. DeepThink and external lookup are later options when the primary path is not sufficient.
+Never use this tool for diagram generation or any non-content task.
 
 Args:
   - query: Keywords to search for.

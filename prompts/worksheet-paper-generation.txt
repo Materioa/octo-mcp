@@ -73,3 +73,4 @@ The tool returns a `Skill.md` template. Keep that template in the same chat cont
 - If Bloom's taxonomy is enabled, include BT labels.
 - Use CO labels consistently when the template includes a CO column.
 - Match answer-key placement exactly to the user's selected preference.
+- For diagram-type questions, do not describe the diagram in text. Generate the diagram using the platform sandbox (Python tools such as graphviz, networkx, schemdraw, matplotlib) and embed the resulting image in the document.

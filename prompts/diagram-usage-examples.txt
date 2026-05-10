@@ -22,8 +22,9 @@ Base64 PNG / File / SVG output
 
 - ChatGPT/Claude: Mermaid code blocks render natively.
 - ChatGPT/Claude: HTML output must be returned as an artifact to trigger native rendering.
+- ChatGPT/Claude: Raw SVG text should be wrapped in a minimal HTML artifact to render. Do not return JSON-wrapped SVG text in chat.
 - ChatGPT/Claude: SVG/PNG outputs should be provided as download links (do not try to render inline).
-- Perplexity: Inline image rendering is allowed; do not force download links for SVG/PNG.
+- Perplexity: Prefer the sandbox to render diagrams into images (including DOT). Inline image rendering is allowed; do not force download links for SVG/PNG.
 
 ---
 
@@ -74,6 +75,36 @@ Output:
 
 ### Result
 Professional, accurate FSM diagram that renders perfectly across all platforms.
+
+### Perplexity Sandbox (Python Graphviz) Example
+```python
+import sys
+import subprocess
+
+try:
+  import graphviz
+except ImportError:
+  subprocess.check_call([sys.executable, "-m", "pip", "install", "graphviz"])
+  import graphviz
+
+dot = graphviz.Digraph(format="png")
+dot.attr(rankdir="LR")
+dot.attr("node", shape="circle")
+
+dot.node("q0", "q0")
+dot.node("q1", "q1")
+dot.node("q2", "q2", shape="doublecircle")
+
+dot.edge("q0", "q0", label="1")
+dot.edge("q0", "q1", label="0")
+dot.edge("q1", "q1", label="0")
+dot.edge("q1", "q2", label="1")
+dot.edge("q2", "q1", label="0")
+dot.edge("q2", "q0", label="1")
+
+dot.render("/tmp/diagram", cleanup=True)
+# Output: /tmp/diagram.png
+```
 
 ---
 
