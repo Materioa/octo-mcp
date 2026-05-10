@@ -33,7 +33,8 @@ import {
   generateMaskedUrl,
 } from "./services/resources.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
-import { lookupGfG } from "./tools/gfg.js";
+import { lookupExternalSources } from "./services/external-lookup.js";
+import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
@@ -126,7 +127,10 @@ async function runHTTP(): Promise<void> {
     }
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, mcp-session-id");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, mcp-session-id, X-OAuth-Client-Id, X-OAuth-Client-Secret"
+    );
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
     if (_req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -436,13 +440,32 @@ async function runHTTP(): Promise<void> {
 
   app.get("/api/lookup-external-sources", async (req, res) => {
     const topic = req.query.topic as string;
+    const useExa = String(req.query.useExa ?? req.query.use_exa ?? "").toLowerCase() === "true";
     if (!topic) return res.status(400).json({ error: "topic parameter required" });
 
     try {
-      const result = await lookupGfG(topic);
+      const result = await lookupExternalSources(topic, useExa);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: "Failed to look up external sources." });
+    }
+  });
+
+  app.post("/mcp/elevated", async (req, res) => {
+    try {
+      const access = await authorizeMaterioAccess(req);
+      res.json({
+        message: "Access granted",
+        accessLevel: access.accessLevel,
+        user: access.user,
+      });
+    } catch (error) {
+      if (error instanceof AuthError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+
+      res.status(500).json({ error: "Failed to authorize Materio access." });
     }
   });
 
@@ -454,6 +477,7 @@ async function runHTTP(): Promise<void> {
     console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
     console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
     console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
+    console.error(`   │  Protected auth:      POST http://localhost:${port}/mcp/elevated │`);
     console.error(`   └─────────────────────────────────────────────────────┘`);
     console.error(`\n   Perplexity / Claude → POST /mcp (Streamable HTTP, JSON-RPC 2.0)`);
     console.error(`   ChatGPT Custom GPT  → GET  /api/* (REST, via openapi.json)`);

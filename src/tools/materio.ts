@@ -18,7 +18,7 @@ import { CHARACTER_LIMIT } from "../constants.js";
 import { registerDiagramTools } from "./diagrams.js";
 import { registerDiagramGeneratorTools } from "./diagram-generator.js";
 import { registerWorksheetPaperTools } from "./worksheet-paper.js";
-import { lookupGfG } from "./gfg.js";
+import { lookupExternalSources } from "../services/external-lookup.js";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
@@ -183,6 +183,7 @@ const GenerateShareLinkSchema = {
 
 const LookupExternalSourcesSchema = {
   topic: z.string().describe("The topic or question to look up on GeeksforGeeks"),
+  useExa: z.boolean().optional().describe("Set to true to search external sources with Exa after user opt-in."),
 };
 
 // ────────── Register all tools ──────────
@@ -1038,7 +1039,7 @@ Args:
     "LookupExternalSources",
     {
       title: "Lookup External Sources (GeeksforGeeks)",
-      description: "Look up any topic or question on GeeksforGeeks to extract relevant educational context. Use this if the answer is not found in the regular Materio library or SnapSearch/DeepThink yield insufficient context.",
+      description: "Look up any topic or question in external sources to extract relevant educational context. Ask the user before using Exa: 'No related material data was found - should I look for external sources?'. Use this if the answer is not found in the regular Materio library or SnapSearch/DeepThink yield insufficient context.",
       inputSchema: LookupExternalSourcesSchema,
       annotations: {
         readOnlyHint: true,
@@ -1047,13 +1048,19 @@ Args:
         openWorldHint: true,
       },
     },
-    async ({ topic }) => {
+    async ({ topic, useExa }) => {
       try {
-        const result = await lookupGfG(topic);
+        const result = await lookupExternalSources(topic, Boolean(useExa));
 
         if (!result.found) {
+          if (result.shouldAskUser) {
+            return {
+              content: [{ type: "text" as const, text: result.prompt || "No related material data was found - should I look for external sources?" }]
+            };
+          }
+
           return {
-            content: [{ type: "text" as const, text: "No relevant GeeksforGeeks article found for the topic." }]
+            content: [{ type: "text" as const, text: "No relevant external source found for the topic." }]
           };
         }
 
@@ -1061,7 +1068,7 @@ Args:
           content: [
             {
               type: "text" as const,
-              text: `Source: ${result.source}\n\nExtracted Content:\n${result.content}\n\nUse this context to answer the user's question.`
+              text: `Source: ${result.source}\nProvider: ${result.provider ?? "external"}\n\nExtracted Content:\n${result.content}\n\nUse this context to answer the user's question.`
             }
           ]
         };

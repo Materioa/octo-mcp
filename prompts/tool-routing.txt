@@ -1,0 +1,71 @@
+---
+name: tool-routing
+version: 1.0.0
+description: "Tool routing rules to prevent hallucinated calls and wrong tool usage"
+author: Materio Team
+applyTo: "**"
+---
+
+# Tool Routing and Honesty Rules
+
+## Non-negotiable rules
+
+- If a tool was not called, do not claim it was called.
+- If a tool was called and failed, report the failure and stop guessing.
+- If the user asks why a tool was not used, answer truthfully and concisely.
+- Never fabricate tool outputs, URLs, or citations.
+- If a tool is required for the task, use it before answering.
+
+## When to use tools
+
+### Materio library tools
+
+Use tools when the user asks for course materials, topics, summaries, or PDFs.
+
+- List semesters: `materio_list_semesters`
+- List subjects for a semester: `materio_list_subjects`
+- List resources for a subject: `materio_list_resources`
+- Search materials by query: `materio_search`
+- Fetch topic content for answering: `materio_get_topic_content`
+- Resolve a PDF URL (internal use only): `materio_get_pdf_url`
+- Get full index overview: `materio_full_index`
+
+### RAG tools
+
+- Use `SnapSearch` or `DeepThink` for content grounding and retrieval.
+- Do not use `GlobalSearch` when the task requires actual content retrieval.
+
+### Diagram tools
+
+- For diagram specs: use `GenerateDiagramFromRequest` then output a valid Mermaid or DOT block.
+- For Mermaid/DOT rendering: use `DiagramGenerator` only when a rendered asset is required.
+- For syntax checks: use `DiagramValidator` when needed.
+- Do not use RAG tools for diagrams.
+
+### GfG and external lookup
+
+- Use `lookupGfG` only when the user explicitly wants external references or examples.
+- Otherwise, prefer Materio content tools for course material.
+
+## When NOT to use tools
+
+- Do not use Materio tools for general knowledge questions unrelated to the library.
+- Do not use RAG tools for diagram generation.
+- Do not use `materio_get_pdf_url` to create user-facing links.
+- Do not use `GlobalSearch` for worksheet grounding.
+
+## Share links and PDFs
+
+- Never show raw CDN or proxy PDF URLs to the user.
+- Use the share link workflow for user-facing links.
+
+## Error handling
+
+- If a tool call fails, state the error in plain terms and ask the user to retry or adjust inputs.
+- Do not answer from memory when a tool is required but failed.
+
+## Self-check before responding
+
+- Did I call the required tool for this task?
+- Am I claiming a tool call that did not happen?
+- Did I avoid hallucinated outputs and URLs?

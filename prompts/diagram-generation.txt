@@ -18,6 +18,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - **No prose, no explanation, no extra sections.** Only the code block.
 - **Be deterministic:** avoid invented nodes, extra states, or speculative behavior.
 - **MCP will validate** syntax + domain rules (determinism, reachability, etc.) before rendering.
+- **Do not use RAG tools** (DeepThink, SnapSearch, ResourceAccess) for diagram generation.
 
 ## Platform-Specific Rendering
 
@@ -25,17 +26,22 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - Fenced ```mermaid code blocks render **natively in the canvas** — just include the block in your response.
 - DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
+- If the tool returns HTML, **create an artifact** so the native renderer can display it.
+- If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
 
 ### Claude
 - Fenced ```mermaid code blocks render **natively in artifacts/canvas** — include the block directly.
 - DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Claude web-interface sandbox rather than any server-side Python execution.
+- If the tool returns HTML, **create an artifact** so the native renderer can display it.
+- If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
 
 ### Perplexity
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
 - Use `DiagramGenerator` when you need JS-based server-side rendering for Mermaid or DOT.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Perplexity sandbox rather than any server-side Python execution.
 - Include the rendered output or generated artifact in your response for the user.
+- Perplexity **can** render images inline; do not force download links for SVG/PNG there.
 
 ## Prompt Template: Mermaid (DFA/FSM)
 

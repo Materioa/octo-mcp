@@ -18,6 +18,13 @@ Choose render path:
 Base64 PNG / File / SVG output
 ```
 
+### Output Handling (Platform-Specific)
+
+- ChatGPT/Claude: Mermaid code blocks render natively.
+- ChatGPT/Claude: HTML output must be returned as an artifact to trigger native rendering.
+- ChatGPT/Claude: SVG/PNG outputs should be provided as download links (do not try to render inline).
+- Perplexity: Inline image rendering is allowed; do not force download links for SVG/PNG.
+
 ---
 
 ## Example 1: FSM Diagram (DOT Format)

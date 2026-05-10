@@ -504,13 +504,20 @@
       "get": {
         "operationId": "LookupExternalSources",
         "summary": "Lookup external educational sources",
-        "description": "Fetches GeeksforGeeks context for a topic when local course material is insufficient.",
+        "description": "Fetches external educational context for a topic when local course material is insufficient. The default response asks whether Exa search should be used: 'No related material data was found - should I look for external sources?'. Set useExa=true to allow Exa search.",
         "parameters": [
           {
             "name": "topic",
             "in": "query",
             "required": true,
             "schema": { "type": "string" }
+          },
+          {
+            "name": "useExa",
+            "in": "query",
+            "required": false,
+            "description": "Set to true to run Exa search after opt-in.",
+            "schema": { "type": "boolean" }
           }
         ],
         "responses": {
@@ -524,13 +531,105 @@
                     "topic": { "type": "string" },
                     "source": { "type": ["string", "null"], "format": "uri" },
                     "content": { "type": "string" },
-                    "found": { "type": "boolean" }
+                    "found": { "type": "boolean" },
+                    "provider": { "type": ["string", "null"], "enum": ["exa", "gfg", "wikipedia", null] },
+                    "shouldAskUser": { "type": "boolean" },
+                    "prompt": { "type": "string" }
                   }
                 }
               }
             }
           }
         }
+      }
+    },
+    "/mcp/elevated": {
+      "post": {
+        "operationId": "ProtectedMaterioAccess",
+        "summary": "Protected Materio access endpoint",
+        "description": "Authenticates the caller with OAuth client credentials and either a Materio bearer token or a handoff code (from the callback-handoff login flow). Access is granted only when the Materio user is an admin or plus user.",
+        "security": [
+          {
+            "materioClientId": [],
+            "materioClientSecret": [],
+            "materioBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": { "type": "string" },
+                  "clientSecret": { "type": "string" },
+                  "token": { "type": "string" },
+                  "accessToken": { "type": "string" },
+                  "jwt": { "type": "string" },
+                  "handoffCode": { "type": "string" },
+                  "code": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "accessLevel": { "type": "string", "enum": ["admin", "plus"] },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "username": { "type": "string" },
+                        "displayName": { "type": "string" },
+                        "email": { "type": "string" },
+                        "hasAdminPrivileges": { "type": "boolean" },
+                        "isPlusUser": { "type": "boolean" },
+                        "profilePicture": { "type": "string", "format": "uri" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing OAuth client credentials or invalid handoff payload"
+          },
+          "401": {
+            "description": "Invalid OAuth client credentials, expired Materio token, or expired handoff code"
+          },
+          "403": {
+            "description": "Authenticated user does not have admin or plus access"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "materioClientId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-OAuth-Client-Id"
+      },
+      "materioClientSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-OAuth-Client-Secret"
+      },
+      "materioBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

@@ -31,7 +31,8 @@ Before generation, collect:
 
 Before generating questions, ground the content in available source material:
 
-- If the request maps to Materio content, gather relevant syllabus and chapter/question-bank material using Materio tools such as `ResourceLibrary`, `GlobalSearch`, `SnapSearch`, `DeepThink`, `ConceptExplorer`, or `ResourceAccess`.
+- If the request maps to Materio content, gather relevant syllabus and chapter/question-bank material using Materio tools such as `SnapSearch`, `DeepThink`, or `ResourceAccess`.
+- Do not use `GlobalSearch` for content grounding; it is not a content retrieval tool for worksheets.
 - If the user provides attached PDFs, notes, or other resources outside Materio, ground the output in those materials instead.
 - Mixed-source mode is allowed, but the generated questions should stay faithful to the validated scope.
 - Do not invent syllabus coverage or unsupported facts when source material is thin.
@@ -39,6 +40,8 @@ Before generating questions, ground the content in available source material:
 ## Claude Modal Flow
 
 When running in Claude and any required input is missing, call Claude's internal `ask_user_input_v0` tool as a modal or sequence of questions. After collecting answers, call `CreateWorksheetPaper` with the completed values.
+
+Ask all required inputs before generating. Do not skip or infer missing fields.
 
 Recommended modal questions:
 

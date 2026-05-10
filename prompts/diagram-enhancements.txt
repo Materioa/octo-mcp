@@ -4,6 +4,13 @@
 
 The diagram workflow has been improved to clearly separate **JS-based server rendering** from **LLM web-interface sandbox execution**. Mermaid and DOT can be rendered server-side with JS tooling when helpful, while Python-heavy diagrams are intended for the sandbox inside ChatGPT, Claude, or Perplexity.
 
+## Output Handling Rules (ChatGPT / Claude / Perplexity)
+
+- If the tool returns HTML, **create an artifact** so native rendering kicks in on ChatGPT and Claude.
+- If the tool returns image files (SVG/PNG), **provide download links** on ChatGPT and Claude instead of trying to render inline.
+- Perplexity can render images inline; do not force download links there.
+- Do not use RAG tools for diagram generation.
+
 ### Problem Solved
 
 - ✅ **DOT/Graphviz FSMs can render as accurate SVG/PNG assets** using server-side JS tooling instead of relying on Mermaid approximations
