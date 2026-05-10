@@ -20,6 +20,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - **MCP will validate** syntax + domain rules (determinism, reachability, etc.) before rendering.
 - **Do not use RAG tools** (DeepThink, SnapSearch, ResourceAccess) for diagram generation.
 - **Never convert DOT to Mermaid** or relabel DOT output as Mermaid.
+- **If the user asks to draw or render a diagram, you must return a diagram image. Do not answer with text-only tables or descriptions.**
 
 ## Platform-Specific Rendering
 
@@ -55,7 +56,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 ## Rendering Fallback Rule
 
 - For all platforms: if native rendering is unavailable or fails, use the platform sandbox as a fallback to render the diagram into an image.
-- If a tool returns raw SVG/XML (e.g., the DiagramGenerator response body), do not describe the diagram or output ASCII. Instead, pass the SVG or DOT spec into the platform sandbox, render it with Python (graphviz/networkx/matplotlib as appropriate), and return the image output.
+- If a tool returns raw SVG/XML (e.g., the DiagramGenerator response body), you MUST pass that exact SVG into the platform sandbox, render it with Python, and return the image output. Do not answer until the image is generated. No text or ASCII fallback.
 - For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the platform sandbox with Python to render the diagram image. Do not ASCII-draw or describe these diagrams.
 
 ## Prompt Template: Mermaid (DFA/FSM)
@@ -139,6 +140,17 @@ digraph flowchart {
    - When a rendered Mermaid or DOT asset is needed, use `DiagramGenerator` for JS-based server-side rendering.
    - For circuits, plots, Gantt charts, logic diagrams, and other Python-heavy outputs, use the platform's web-interface sandbox instead of any server-side Python runtime.
 6. **Return the result** (rendered diagram or fenced code block) to the user.
+
+## Strict Draw/Visualize Workflow
+
+If the user prompt contains "draw" or "visualize":
+
+1. Call the appropriate diagram tool and wait for the response.
+2. Copy the tool response into the platform sandbox.
+3. Render the visualization using Python libraries (graphviz/networkx/matplotlib/schemdraw as appropriate).
+4. Return the rendered image to the user (download link or artifact).
+
+This workflow is mandatory. Do not respond with text-only output or skip rendering.
 
 ## Anti-Hallucination Guidance
 

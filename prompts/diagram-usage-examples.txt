@@ -29,7 +29,8 @@ Base64 PNG / File / SVG output
 - ChatGPT/Claude: Do not skip diagram rendering and do not answer with text or ASCII drawings.
 - Perplexity: Always render diagrams in the sandbox with Python and return a download link only. Do not inline or describe.
 - Never convert DOT to Mermaid or present DOT output as Mermaid.
-- If a tool returns SVG/XML, pass it into the sandbox, render to PNG, and return the image output (do not describe or ASCII-draw it).
+- If the user asked to draw or render a diagram, do not answer with text-only tables or descriptions. Always return a rendered diagram image.
+- If a tool returns SVG/XML, you must pass it into the sandbox, render to PNG, and return the image output. Do not answer until the image is generated; no text or ASCII fallback.
 - For all platforms: if native rendering is unavailable or fails, use the platform sandbox to render the diagram into an image.
 - For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the sandbox with Python and return the image output. No ASCII drawings.
 
