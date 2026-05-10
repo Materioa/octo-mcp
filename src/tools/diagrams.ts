@@ -115,10 +115,23 @@ function bufferToBase64(buffer: Buffer): string {
 
 function buildDotSandboxScript(spec: string): string {
   const specBase64 = Buffer.from(spec, "utf8").toString("base64");
+  const outputDetect = [
+    "def get_output_dir():",
+    "    if os.path.isdir('/mnt/data'):",
+    "        return '/mnt/data'",
+    "    elif os.path.isdir('/mnt/user-data/outputs'):",
+    "        return '/mnt/user-data/outputs'",
+    "    else:",
+    "        return 'output'",
+  ].join("\n");
+
   return [
     "import base64",
+    "import os",
     "import sys",
     "import subprocess",
+    "",
+    outputDetect,
     "",
     "try:",
     "    import graphviz",
@@ -127,12 +140,22 @@ function buildDotSandboxScript(spec: string): string {
     "    import graphviz",
     "",
     `dot_source = base64.b64decode('${specBase64}').decode('utf-8')`,
+    "output_dir = '/mnt/data' if os.path.isdir('/mnt/data') else 'output'",
+    "os.makedirs(output_dir, exist_ok=True)",
+    "output_base = os.path.join(output_dir, 'diagram')",
     "graph = graphviz.Source(dot_source, format='png')",
-    "graph.render('/tmp/diagram', cleanup=True)",
-    "# Output: /tmp/diagram.png",
-    "with open('/tmp/diagram.png', 'rb') as f:",
-    "    b64 = base64.b64encode(f.read()).decode('utf-8')",
-    "print('DOWNLOAD_DATA_URI=data:image/png;base64,' + b64)",
+    "graph.render(output_base, cleanup=True)",
+    "output_path = output_base + '.png'",
+    "print('Saved to ' + output_path)",
+    "try:",
+    "    from PIL import Image",
+    "    import matplotlib.pyplot as plt",
+    "    img = Image.open(output_path)",
+    "    plt.imshow(img)",
+    "    plt.axis('off')",
+    "    plt.show()",
+    "except Exception:",
+    "    pass",
   ].join("\n");
 }
 
@@ -149,7 +172,7 @@ function buildSandboxPayload(format: string, spec: string): string {
     "```python",
     script,
     "```",
-    "RETURN_DOWNLOAD_LINK: Use DOWNLOAD_DATA_URI as a markdown link for the image.",
+    "RETURN_DOWNLOAD_LINK: Use the saved file path as a download link or artifact.",
   ].join("\n");
 }
 
@@ -171,7 +194,7 @@ export function registerDiagramTools(server: McpServer) {
     "DiagramGenerator",
     {
       title: "Render Diagram to SVG/PNG (Mermaid/DOT)",
-      description: `Server-side renderer for Mermaid diagrams. DOT requests return a sandbox render payload (Python + full spec) that prints DOWNLOAD_DATA_URI for a markdown download link.
+      description: `Server-side renderer for Mermaid diagrams. DOT requests return a sandbox render payload (Python + full spec) that saves a PNG file and prints its path for a download link.
 
 ## Supported Formats:
 - **mermaid**: Flowcharts, state diagrams, sequence diagrams, class diagrams, ER diagrams

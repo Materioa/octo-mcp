@@ -3,18 +3,37 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "auto";
 
+const SANDBOX_OUTPUT_DETECT = `
+def get_output_dir():
+    import os
+    if os.path.isdir('/mnt/data'):
+        return '/mnt/data'
+    elif os.path.isdir('/mnt/user-data/outputs'):
+        return '/mnt/user-data/outputs'
+    else:
+        return 'output'
+`.trim();
+
 const SANDBOX_DOWNLOAD_SNIPPET = `
+import os
+output_dir = get_output_dir()
+output_path = os.path.join(output_dir, 'diagram.png')
+print('Saved to ' + output_path)
+
 try:
+  from PIL import Image
   import matplotlib.pyplot as plt
+  img = Image.open(output_path)
+  plt.imshow(img)
+  plt.axis('off')
   plt.show()
 except Exception:
   pass
-
-import base64
-with open('/tmp/diagram.png', 'rb') as f:
-  b64 = base64.b64encode(f.read()).decode('utf-8')
-print('DOWNLOAD_DATA_URI=data:image/png;base64,' + b64)
 `.trim();
+
+function appendDownload(script: string): string {
+  return `${SANDBOX_OUTPUT_DETECT}\n\n${script}\n\n${SANDBOX_DOWNLOAD_SNIPPET}`;
+}
 
 const GenerateDiagramSchema = {
   request: z.string().describe("Natural language description of the diagram to generate (e.g., 'DFA that accepts binary strings ending in 01', 'Circuit diagram of an AND gate', 'Line plot of sin(x)')"),
@@ -61,12 +80,7 @@ function recommendFormat(request: string): DiagramFormat {
   return "mermaid";
 }
 
-/**
- * Returns a Python sandbox script for LLM web interfaces that have
- * graphviz, matplotlib, networkx, schemdraw, and similar packages installed.
- */
 function buildWebSandboxExample(format: DiagramFormat, request: string): string {
-  const appendDownload = (script: string) => `${script}\n\n${SANDBOX_DOWNLOAD_SNIPPET}`.trim();
   if (format === "dot") {
     return appendDownload(`
 import sys
@@ -91,8 +105,10 @@ dot.attr('edge', color='#555555', fontname='Arial', fontsize='10')
 # dot.edge('q0', 'q1', label='0')
 # =====================================
 
-dot.render('/tmp/diagram', cleanup=True)
-# Output saved to /tmp/diagram.png
+output_dir = get_output_dir()
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, 'diagram.png')
+dot.render(output_path[:-4], cleanup=True)
 `.trim());
   }
 
@@ -110,6 +126,9 @@ except ImportError:
     import schemdraw.elements as elm
 
 # Build circuit for: ${request}
+output_dir = get_output_dir()
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, 'diagram.png')
 with schemdraw.Drawing() as d:
     d += (R1 := elm.Resistor().label('R1'))
     d += elm.Line().right(0.5)
@@ -121,7 +140,7 @@ with schemdraw.Drawing() as d:
     
     # === ADD MORE COMPONENTS HERE ===
     
-    d.save('/tmp/diagram.png')
+    d.save(output_path)
 `.trim());
   }
 
@@ -143,6 +162,9 @@ except ImportError:
     import numpy as np
 
 # Create visualization for: ${request}
+output_dir = get_output_dir()
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, 'diagram.png')
 x = np.linspace(0, 2*np.pi, 100)
 y = np.sin(x)
 
@@ -153,38 +175,41 @@ plt.title('${request}')
 plt.xlabel('X')
 plt.ylabel('Y')
 
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
+plt.savefig(output_path, dpi=150, bbox_inches='tight', transparent=True)
 `.trim());
   }
 
   if (format === "gantt") {
     return appendDownload(`
-  import sys
-  import subprocess
+import sys
+import subprocess
 
-  def pip_install(package_name):
+def pip_install(package_name):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
 
-  try:
+try:
     import plotly.express as px
-  except ImportError:
+except ImportError:
     pip_install("plotly")
     import plotly.express as px
 
-  try:
+try:
     import kaleido  # noqa: F401
-  except Exception:
+except Exception:
     pip_install("kaleido")
 
-  tasks = [
+output_dir = get_output_dir()
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, 'diagram.png')
+tasks = [
     {"Task": "Task 1", "Start": "2026-01-01", "Finish": "2026-01-03"},
     {"Task": "Task 2", "Start": "2026-01-03", "Finish": "2026-01-06"},
     {"Task": "Task 3", "Start": "2026-01-06", "Finish": "2026-01-07"},
-  ]
-  fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
-  fig.update_yaxes(autorange="reversed")
-  fig.write_image("/tmp/diagram.png", scale=2)
-  `.trim());
+]
+fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
+fig.update_yaxes(autorange="reversed")
+fig.write_image(output_path, scale=2)
+`.trim());
   }
 
   if (format === "logic") {
@@ -201,6 +226,9 @@ except ImportError:
     import matplotlib.patches as patches
 
 # Create logic gate diagram for: ${request}
+output_dir = get_output_dir()
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, 'diagram.png')
 fig, ax = plt.subplots(figsize=(10, 6))
 ax.set_xlim(0, 10)
 ax.set_ylim(0, 10)
@@ -220,7 +248,7 @@ def draw_and_gate(ax, x, y):
 
 draw_and_gate(ax, 5, 5)
 ax.set_title('${request}')
-plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
+plt.savefig(output_path, dpi=150, bbox_inches='tight', transparent=True)
 `.trim());
   }
 
