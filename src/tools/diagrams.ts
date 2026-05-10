@@ -113,6 +113,42 @@ function bufferToBase64(buffer: Buffer): string {
   return `data:image/png;base64,${base64}`;
 }
 
+function buildDotSandboxScript(spec: string): string {
+  const specBase64 = Buffer.from(spec, "utf8").toString("base64");
+  return [
+    "import base64",
+    "import sys",
+    "import subprocess",
+    "",
+    "try:",
+    "    import graphviz",
+    "except ImportError:",
+    "    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'graphviz'])",
+    "    import graphviz",
+    "",
+    `dot_source = base64.b64decode('${specBase64}').decode('utf-8')`,
+    "graph = graphviz.Source(dot_source, format='png')",
+    "graph.render('/tmp/diagram', cleanup=True)",
+    "# Output: /tmp/diagram.png",
+  ].join("\n");
+}
+
+function buildSandboxPayload(format: string, spec: string): string {
+  const script = format === "dot" ? buildDotSandboxScript(spec) : "";
+  return [
+    "SANDBOX_RENDER_REQUIRED",
+    `format: ${format}`,
+    "spec:",
+    "```dot",
+    spec,
+    "```",
+    "python:",
+    "```python",
+    script,
+    "```",
+  ].join("\n");
+}
+
 const DiagramSchema = {
   format: z
     .enum(["mermaid", "dot", "graphviz"])
@@ -131,7 +167,7 @@ export function registerDiagramTools(server: McpServer) {
     "DiagramGenerator",
     {
       title: "Render Diagram to SVG/PNG (Mermaid/DOT)",
-      description: `Server-side renderer for Mermaid and Graphviz/DOT diagrams.
+      description: `Server-side renderer for Mermaid diagrams. DOT requests return a sandbox render payload (Python + full spec).
 
 ## Supported Formats:
 - **mermaid**: Flowcharts, state diagrams, sequence diagrams, class diagrams, ER diagrams
@@ -161,6 +197,17 @@ Pass the raw spec string (no code fences). Returns SVG/PNG/base64 output.`,
         // Normalize graphviz to dot
         const fmt = normalizedFormat === "graphviz" ? "dot" : normalizedFormat;
         renderOut = (renderOut || "png").toLowerCase() as any;
+
+        if (fmt === "dot") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: buildSandboxPayload("dot", spec),
+              },
+            ],
+          };
+        }
 
         if (fmt === "mermaid" || fmt === "dot") {
           // Render Mermaid/DOT to SVG first

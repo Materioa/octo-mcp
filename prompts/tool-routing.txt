@@ -44,6 +44,7 @@ Use tools when the user asks for course materials, topics, summaries, or PDFs.
 - For Mermaid/DOT rendering: use `DiagramGenerator` only when a rendered asset is required.
 - For syntax checks: use `DiagramValidator` when needed.
 - Do not use RAG tools for diagrams.
+- Do not route diagram requests through `DeepThink`.
 
 ### GfG and external lookup
 
@@ -55,6 +56,7 @@ Use tools when the user asks for course materials, topics, summaries, or PDFs.
 
 - Do not use Materio tools for general knowledge questions unrelated to the library.
 - Do not use RAG tools for diagram generation.
+- Do not use `DeepThink` for diagram generation.
 - Do not use `ResourceAccess` to create user-facing links.
 - Do not use `GlobalSearch` for worksheet grounding.
 

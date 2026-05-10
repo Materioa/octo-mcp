@@ -21,18 +21,22 @@ Base64 PNG / File / SVG output
 ### Output Handling (Platform-Specific)
 
 - ChatGPT/Claude: Mermaid code blocks render natively.
+- ChatGPT/Claude: SVG renders natively via HTML artifact.
 - ChatGPT/Claude: HTML output must be returned as an artifact to trigger native rendering.
 - ChatGPT/Claude: Raw SVG text should be wrapped in a minimal HTML artifact to render. Do not return JSON-wrapped SVG text in chat.
 - ChatGPT/Claude: Do not trim SVG output before embedding.
 - ChatGPT/Claude: SVG/PNG outputs should be provided as download links (do not try to render inline).
-- ChatGPT/Claude: When tool output is DOT/SVG/PNG, render via sandbox Python and provide a download link. Only render natively if the response is Mermaid or SVG.
+- ChatGPT/Claude: When tool output is DOT/PNG, render via sandbox Python and provide a download link. Only render natively if the response is Mermaid or SVG.
 - ChatGPT/Claude: Do not skip diagram rendering and do not answer with text or ASCII drawings.
 - Perplexity: Always render diagrams in the sandbox with Python and return a download link only. Do not inline or describe.
 - Never convert DOT to Mermaid or present DOT output as Mermaid.
 - If the user asked to draw or render a diagram, do not answer with text-only tables or descriptions. Always return a rendered diagram image.
-- If a tool returns SVG/XML, you must pass it into the sandbox, render to PNG, and return the image output. Do not answer until the image is generated; no text or ASCII fallback.
+- If a tool returns SVG/XML, you must pass it into the sandbox exactly as received, without truncating or trimming anything, render to PNG, and return the image output. Do not answer until the image is generated; no text or ASCII fallback.
 - For all platforms: if native rendering is unavailable or fails, use the platform sandbox to render the diagram into an image.
 - For any diagram type other than Mermaid or DOT (plots, visualizations, circuits, Gantt charts, logic gates, timelines), always use the sandbox with Python and return the image output. No ASCII drawings.
+- Image output has priority 1.
+- Text, tables, and explanations have priority 3.
+- Never let text outrank image output when a diagram was requested.
 
 ---
 

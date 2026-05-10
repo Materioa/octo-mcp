@@ -410,6 +410,7 @@ Args:
           `## Your Task`,
           `Generate a complete, valid ${normalizedFormat === "dot" ? "Graphviz DOT" : normalizedFormat.toUpperCase()} spec for the above request.`,
           useSandbox ? `Use the web-interface Python sandbox for rendering (ChatGPT, Claude, Perplexity).` : `Use the native renderer (Mermaid or your SVG pipeline).`,
+          useSandbox ? `Do not truncate or summarize the spec. Run the sandbox script and return the rendered image with a download link.` : `If SVG is produced, render it natively (HTML artifact).`,
           ``,
           buildFormatExample(normalizedFormat),
           ``,

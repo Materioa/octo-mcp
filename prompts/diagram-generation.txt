@@ -18,7 +18,8 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - **No prose, no explanation, no extra sections.** Only the code block.
 - **Be deterministic:** avoid invented nodes, extra states, or speculative behavior.
 - **MCP will validate** syntax + domain rules (determinism, reachability, etc.) before rendering.
-- **Do not use RAG tools** (DeepThink, SnapSearch, ResourceAccess) for diagram generation.
+- **Do not use any retrieval, search, or reasoning-assist tool** (DeepThink, SnapSearch, ResourceAccess, or any RAG/semantic lookup) for diagram generation.
+- **Do not route diagram requests through DeepThink for reasoning.** Diagram requests must go directly to the diagram workflow.
 - **Never convert DOT to Mermaid** or relabel DOT output as Mermaid.
 - **If the user asks to draw or render a diagram, you must return a diagram image. Do not answer with text-only tables or descriptions.**
 
@@ -26,7 +27,8 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 
 ### ChatGPT
 - Fenced ```mermaid code blocks render **natively in the canvas** — just include the block in your response.
-- DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
+- Raw SVG should be rendered natively (HTML artifact) when available.
+- DOT format must be rendered in the sandbox with Python (graphviz). Do not use server-side rendering for DOT.
 - Do not re-render DOT as Mermaid. If DOT is used, render DOT directly or via sandbox and provide a download link.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
 - When a tool returns diagram output (DOT/SVG/PNG), use it as-is and render via the ChatGPT sandbox with Python, then provide a download link. Only render natively if the response is Mermaid or SVG.
@@ -38,7 +40,9 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 
 ### Claude
 - Fenced ```mermaid code blocks render **natively in artifacts/canvas** — include the block directly.
-- DOT format: either return the fenced ```dot``` block or pass it to `DiagramGenerator` for JS-based server-side SVG/PNG rendering when you need a rendered asset.
+- Raw SVG should be rendered natively (HTML artifact) when available.
+- DOT format must be rendered in the sandbox with Python (graphviz). Do not use server-side rendering for DOT.
+- Do not use DeepThink for diagram requests, diagram planning, or diagram reasoning.
 - Do not re-render DOT as Mermaid. If DOT is used, render DOT directly or via sandbox and provide a download link.
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the Claude web-interface sandbox rather than any server-side Python execution.
 - When a tool returns diagram output (DOT/SVG/PNG), use it as-is and render via the Claude sandbox with Python, then provide a download link. Only render natively if the response is Mermaid or SVG.
@@ -146,11 +150,18 @@ digraph flowchart {
 If the user prompt contains "draw" or "visualize":
 
 1. Call the appropriate diagram tool and wait for the response.
-2. Copy the tool response into the platform sandbox.
+2. Copy the tool response into the platform sandbox as-is, without truncating, summarizing, or rewriting any part of it.
 3. Render the visualization using Python libraries (graphviz/networkx/matplotlib/schemdraw as appropriate).
 4. Return the rendered image to the user (download link or artifact).
 
 This workflow is mandatory. Do not respond with text-only output or skip rendering.
+
+Priority order for any diagram request:
+1. Image
+2. Diagram artifact / rendered asset
+3. Text, tables, or explanation only if the image route is impossible and must be explicitly signaled as a failure
+
+ASCII drawings are never allowed.
 
 ## Anti-Hallucination Guidance
 

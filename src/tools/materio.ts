@@ -98,6 +98,12 @@ function registerPromptFiles(server: McpServer): void {
 // ── Load share-link policy prompt for tool descriptions ──
 const SHARE_LINK_POLICY = readPromptFile("share-link-policy.txt");
 
+const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart)(?:\b|$)/i;
+
+function isDiagramIntent(query: string): boolean {
+  return DIAGRAM_INTENT_PATTERN.test(query);
+}
+
 // ────────── Schemas ──────────
 
 const ListSemestersSchema = {} as const;
@@ -774,6 +780,17 @@ Args:
     },
     async ({ query, semester, subject, page, results_per_page, max_words }) => {
       try {
+        if (isDiagramIntent(query)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Diagram requests are not allowed in SnapSearch. Use diagram tools (GenerateDiagramFromRequest, DiagramGenerator, DiagramValidator) and render via the sandbox/image pipeline.",
+              },
+            ],
+          };
+        }
+
         const currentPage = page ?? 1;
         const resultsPerPage = results_per_page ?? 3;
         const maxWords = max_words ?? 350;
@@ -919,6 +936,17 @@ Args:
               {
                 type: "text" as const,
                 text: "Deep Think requires non-empty query, semester, and subject values.",
+              },
+            ],
+          };
+        }
+
+        if (isDiagramIntent(trimmedQuery)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Diagram requests are not allowed in DeepThink. Use diagram tools (GenerateDiagramFromRequest, DiagramGenerator, DiagramValidator) and render via the sandbox/image pipeline.",
               },
             ],
           };
