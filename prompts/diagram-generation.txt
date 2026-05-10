@@ -28,6 +28,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - For Python-heavy diagrams such as circuits, plots, Gantt charts, or logic diagrams, use the ChatGPT web-interface sandbox rather than any server-side Python execution.
 - If the tool returns HTML, **create an artifact** so the native renderer can display it.
 - If the tool returns raw SVG text, **wrap it in a minimal HTML artifact** (e.g., `<html><body>...svg...</body></html>`) so it renders. Do not return the raw SVG or JSON-wrapped SVG text in chat.
+- Never trim or shorten SVG output before embedding; truncated SVG will not render.
 - If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
 
 ### Claude
@@ -43,7 +44,8 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
 - Prefer the Perplexity sandbox for rendering diagrams into images (including DOT/FSMs via Python graphviz) and return the image result.
 - Use `DiagramGenerator` only if the sandbox is unavailable or fails.
-- Perplexity **can** render images inline; do not force download links for SVG/PNG there.
+- Do not attempt inline image rendering on Perplexity; it is unreliable.
+- Always return a download link (or a sandbox artifact) instead of inline placeholders.
 
 ## Rendering Fallback Rule
 

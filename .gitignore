@@ -7,6 +7,5 @@ skills-lock.json
 .skills/*
 sql/*
 plans/*
-ddg.html
-bing.html
 scratch/*
+publish-and-push.ps1
