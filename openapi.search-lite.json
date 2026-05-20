@@ -1,0 +1,117 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Materio MCP Search Lite",
+    "description": "Slim OpenAPI spec for search clients. Tools: snap-search (primary), search (metadata fallback), share-link (masked PDF URLs).",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp.getmaterio.app",
+      "description": "Production server"
+    }
+  ],
+  "paths": {
+    "/api/snap-search": {
+      "get": {
+        "operationId": "SnapSearch",
+        "summary": "PRIMARY tool: vectorless full-text search",
+        "description": "PRIMARY retrieval endpoint for course Q&A. Fast keyword search over real text chunks with optional semester and subject filters.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vectorless search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "semester": { "type": ["string", "null"] },
+                    "subject": { "type": ["string", "null"] },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "similarity": { "type": "number" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "GlobalSearch",
+        "summary": "Legacy metadata search (fallback)",
+        "description": "Metadata-level search across subjects, section types, and topic names. Use only as fallback.",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 2 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": { "type": "string" },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "semester": { "type": "string" },
+                          "subject": { "type": "string" },
+                          "sectionType": { "type": "string" },
+                          "topic": { "type": "string" },
+                          "pdfUrl": { "type": "string", "format": "uri" }
+                        }
+                      }
+                    },
+                    "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

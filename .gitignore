@@ -8,4 +8,5 @@ skills-lock.json
 sql/*
 plans/*
 scratch/*
+client/*
 publish-and-push.ps1

@@ -37,6 +37,10 @@ import { lookupExternalSources } from "./services/external-lookup.js";
 import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
+const OPENAPI_SPEC_PATH = fileURLToPath(new URL("../openapi.json", import.meta.url));
+const OPENAPI_LITE_SPEC_PATH = fileURLToPath(
+  new URL("../openapi.search-lite.json", import.meta.url)
+);
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
 const faviconCache = new Map<number, Buffer>();
 
@@ -211,12 +215,19 @@ async function runHTTP(): Promise<void> {
   // ════════════════════════════════════════════════════
   app.get("/openapi.json", async (_req, res) => {
     try {
-      const spec = await Bun.file(
-        new URL("../openapi.json", import.meta.url).pathname
-      ).text();
+      const spec = await Bun.file(OPENAPI_SPEC_PATH).text();
       res.type("application/json").send(spec);
     } catch {
       res.status(404).json({ error: "openapi.json not found" });
+    }
+  });
+
+  app.get("/openapi.search-lite.json", async (_req, res) => {
+    try {
+      const spec = await Bun.file(OPENAPI_LITE_SPEC_PATH).text();
+      res.type("application/json").send(spec);
+    } catch {
+      res.status(404).json({ error: "openapi.search-lite.json not found" });
     }
   });
 
