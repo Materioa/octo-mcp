@@ -1,7 +1,7 @@
 {
   "functions": {
     "**/*.ts": {
-      "includeFiles": ["openapi.json", "openapi.search-lite.json"]
+      "includeFiles": "openapi*.json"
     }
   }
 }
