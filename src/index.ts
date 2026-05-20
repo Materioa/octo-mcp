@@ -21,8 +21,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import sharp from "sharp";
-import openapiSpec from "../openapi.json" assert { type: "json" };
-import openapiSearchLiteSpec from "../openapi.search-lite.json" assert { type: "json" };
+import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import { registerMaterioTools } from "./tools/materio.js";
 import {
@@ -39,6 +38,10 @@ import { lookupExternalSources } from "./services/external-lookup.js";
 import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
+const OPENAPI_SPEC_PATH = fileURLToPath(new URL("../openapi.json", import.meta.url));
+const OPENAPI_LITE_SPEC_PATH = fileURLToPath(
+  new URL("../openapi.search-lite.json", import.meta.url)
+);
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
 const faviconCache = new Map<number, Buffer>();
 
@@ -62,6 +65,14 @@ function faviconLinkHeader(): string {
 function applyIconHeaders(res: express.Response): void {
   res.setHeader("Link", faviconLinkHeader());
   res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
+async function readTextFile(filePath: string): Promise<string> {
+  if (typeof Bun !== "undefined") {
+    return Bun.file(filePath).text();
+  }
+
+  return readFile(filePath, "utf8");
 }
 
 async function renderFavicon(size: number): Promise<Buffer> {
@@ -213,7 +224,8 @@ async function runHTTP(): Promise<void> {
   // ════════════════════════════════════════════════════
   app.get("/openapi.json", async (_req, res) => {
     try {
-      res.type("application/json").send(JSON.stringify(openapiSpec));
+      const spec = await readTextFile(OPENAPI_SPEC_PATH);
+      res.type("application/json").send(spec);
     } catch {
       res.status(404).json({ error: "openapi.json not found" });
     }
@@ -221,7 +233,8 @@ async function runHTTP(): Promise<void> {
 
   app.get("/openapi.search-lite.json", async (_req, res) => {
     try {
-      res.type("application/json").send(JSON.stringify(openapiSearchLiteSpec));
+      const spec = await readTextFile(OPENAPI_LITE_SPEC_PATH);
+      res.type("application/json").send(spec);
     } catch {
       res.status(404).json({ error: "openapi.search-lite.json not found" });
     }
