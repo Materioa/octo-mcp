@@ -165,7 +165,13 @@ const VectorlessSearchSchema = {
   semester: z.string().optional().describe("Optional semester to narrow search"),
   subject: z.string().optional().describe("Optional subject to narrow search"),
   page: z.number().int().min(1).optional().describe("Result page number. Use page 1 first, then request later pages if needed."),
-  results_per_page: z.number().int().min(1).max(5).optional().describe("How many chunk results to include per page. Keep this small."),
+  results_per_page: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .optional()
+    .describe("How many chunk results to include per page. Prefer <= 5; max 20."),
   max_words: z.number().int().min(100).max(500).optional().describe("Maximum total words to return across the page of chunk content."),
 };
 
@@ -792,7 +798,7 @@ Args:
         }
 
         const currentPage = page ?? 1;
-        const resultsPerPage = results_per_page ?? 3;
+        const resultsPerPage = Math.min(results_per_page ?? 3, 20);
         const maxWords = max_words ?? 350;
         const fetchCount = Math.max(currentPage * resultsPerPage, 10);
         const results = await queryVectorlessRAG(query, semester, subject, fetchCount);

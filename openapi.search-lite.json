@@ -16,7 +16,7 @@
       "get": {
         "operationId": "SnapSearch",
         "summary": "PRIMARY tool: vectorless full-text search",
-        "description": "PRIMARY retrieval endpoint for course Q&A. Fast keyword search over real text chunks with optional semester and subject filters.",
+        "description": "PRIMARY retrieval endpoint for course Q&A. ALWAYS call this tool before drafting an answer. Do not answer from model knowledge without SnapSearch context. Fast keyword search over real text chunks with optional semester and subject filters.",
         "parameters": [
           {
             "name": "query",
@@ -35,6 +35,25 @@
             "in": "query",
             "required": false,
             "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1 }
+          },
+          {
+            "name": "results_per_page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "description": "Preferred <= 5; max 20."
+          },
+          {
+            "name": "max_words",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 100, "maximum": 500 }
           }
         ],
         "responses": {
@@ -48,19 +67,25 @@
                     "query": { "type": "string" },
                     "semester": { "type": ["string", "null"] },
                     "subject": { "type": ["string", "null"] },
+                    "page": { "type": "integer" },
+                    "resultsPerPage": { "type": "integer" },
+                    "maxWords": { "type": "integer" },
                     "results": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "content": { "type": "string" },
+                          "index": { "type": "integer" },
                           "topic": { "type": "string" },
                           "subject": { "type": "string" },
-                          "similarity": { "type": "number" }
+                          "similarity": { "type": "number" },
+                          "excerpt": { "type": "string" }
                         }
                       }
                     },
-                    "count": { "type": "integer" }
+                    "count": { "type": "integer" },
+                    "hasMore": { "type": "boolean" },
+                    "nextPage": { "type": ["integer", "null"] }
                   }
                 }
               }

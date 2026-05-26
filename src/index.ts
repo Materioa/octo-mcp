@@ -44,6 +44,22 @@ const OPENAPI_LITE_SPEC_PATH = fileURLToPath(
 );
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
 const faviconCache = new Map<number, Buffer>();
+const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart)(?:\b|$)/i;
+
+function isDiagramIntent(query: string): boolean {
+  return DIAGRAM_INTENT_PATTERN.test(query);
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function truncateToWordLimit(text: string, wordLimit: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= wordLimit) return text.trim();
+  return `${words.slice(0, wordLimit).join(" ")} ...`;
+}
 
 function getRequestedFaviconSize(req: express.Request): number {
   const rawSize = req.query.sz ?? req.query.size ?? req.query.s;
@@ -376,19 +392,80 @@ async function runHTTP(): Promise<void> {
     const q = (req.query.query ?? req.query.q) as string;
     const sem = req.query.semester as string | undefined;
     const sub = req.query.subject as string | undefined;
+    const pageRaw = req.query.page as string | undefined;
+    const resultsPerPageRaw = req.query.results_per_page as string | undefined;
+    const maxWordsRaw = req.query.max_words as string | undefined;
 
     if (!q) {
       return res.status(400).json({ error: "query parameter required" });
     }
 
     try {
-      const results = await queryVectorlessRAG(q, sem, sub, 10);
+      if (isDiagramIntent(q)) {
+        return res.status(400).json({
+          error:
+            "Diagram requests are not allowed in SnapSearch. Use the diagram tools (GenerateDiagramFromRequest, DiagramGenerator, DiagramValidator).",
+        });
+      }
+
+      const currentPage = Math.max(1, Number(pageRaw ?? 1) || 1);
+      const resultsPerPage = Math.min(20, Math.max(1, Number(resultsPerPageRaw ?? 3) || 3));
+      const maxWords = Math.min(500, Math.max(100, Number(maxWordsRaw ?? 350) || 350));
+      const fetchCount = Math.max(currentPage * resultsPerPage, 10);
+      const results = await queryVectorlessRAG(q, sem, sub, fetchCount);
+
+      if (results.length === 0) {
+        return res.json({
+          query: q,
+          semester: sem ?? null,
+          subject: sub ?? null,
+          page: currentPage,
+          resultsPerPage,
+          maxWords,
+          results: [],
+          count: 0,
+          hasMore: false,
+          nextPage: null,
+          message:
+            "No results found. Try broader terminology, a different semester/subject filter, or move to DeepThink/external lookup if needed.",
+        });
+      }
+
+      const startIndex = (currentPage - 1) * resultsPerPage;
+      const pageResults = results.slice(startIndex, startIndex + resultsPerPage);
+
+      let remainingWords = maxWords;
+      const items = pageResults.map((r, i) => {
+        const remainingItems = pageResults.length - i;
+        const available = remainingItems > 0
+          ? Math.max(25, Math.floor(remainingWords / remainingItems))
+          : remainingWords;
+        const clipped = truncateToWordLimit(r.content, available);
+        const used = Math.min(countWords(clipped), remainingWords);
+        remainingWords = Math.max(0, remainingWords - used);
+        return {
+          index: startIndex + i + 1,
+          topic: r.topic,
+          subject: r.subject,
+          similarity: r.similarity,
+          excerpt: clipped,
+        };
+      });
+
+      const hasMore = startIndex + resultsPerPage < results.length;
+      const nextPage = hasMore ? currentPage + 1 : null;
+
       res.json({
         query: q,
         semester: sem ?? null,
         subject: sub ?? null,
-        results,
-        count: results.length,
+        page: currentPage,
+        resultsPerPage,
+        maxWords,
+        results: items,
+        count: items.length,
+        hasMore,
+        nextPage,
       });
     } catch (e: any) {
       res.status(500).json({ error: "Failed to perform snap search." });
