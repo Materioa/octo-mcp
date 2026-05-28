@@ -167,7 +167,7 @@ async function runHTTP(): Promise<void> {
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret"
+      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id"
     );
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
     if (_req.method === "OPTIONS") {
