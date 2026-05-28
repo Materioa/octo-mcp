@@ -65,13 +65,13 @@ export async function handleExecuteJs(args: { code: string }) {
     }
     
     return {
-      content: [{ type: "text", text: output }],
+      content: [{ type: "text" as const, text: output }],
     };
   } catch (err: any) {
     return {
       content: [
         {
-          type: "text",
+          type: "text" as const,
           text: `Error executing JavaScript:\n${err.message}\n${logs.join("\n")}`,
         },
       ],

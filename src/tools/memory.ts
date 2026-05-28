@@ -18,7 +18,7 @@ export async function handleSaveMemory(args: { content: string, containerTag?: s
   if (!apiKey) {
     // If no API key, we fallback or just error since this is a backend tool
     return {
-      content: [{ type: "text", text: "Warning: No VITE_SUPERMEMORY_API_KEY configured in .env. Memory could not be saved to Supermemory API." }],
+      content: [{ type: "text" as const, text: "Warning: No VITE_SUPERMEMORY_API_KEY configured in .env. Memory could not be saved to Supermemory API." }],
     };
   }
 
@@ -39,17 +39,17 @@ export async function handleSaveMemory(args: { content: string, containerTag?: s
     if (!res.ok) {
       const text = await res.text();
       return {
-        content: [{ type: "text", text: `Supermemory API error ${res.status}: ${text}` }],
+        content: [{ type: "text" as const, text: `Supermemory API error ${res.status}: ${text}` }],
         isError: true,
       };
     }
 
     return {
-      content: [{ type: "text", text: "Successfully saved to memory." }],
+      content: [{ type: "text" as const, text: "Successfully saved to memory." }],
     };
   } catch (err: any) {
     return {
-      content: [{ type: "text", text: `Error saving memory: ${err.message}` }],
+      content: [{ type: "text" as const, text: `Error saving memory: ${err.message}` }],
       isError: true,
     };
   }
