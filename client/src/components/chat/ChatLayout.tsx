@@ -57,9 +57,10 @@ export function ChatLayout() {
     let active = true;
     const connect = async () => {
       try {
-        const mcpUrl = settings.mcpEnvironment === "development"
+        const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+        const mcpUrl = isLocal
           ? "http://localhost:3001/mcp"
-          : (import.meta.env.VITE_MCP_SERVER_URL || "https://mcp.getmaterio.app/mcp");
+          : "https://mcp.getmaterio.app/mcp";
         
         // Re-connecting forces disconnect first under the hood if already connected
         await mcpClient.connect(mcpUrl);
