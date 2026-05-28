@@ -13,7 +13,7 @@ export function registerExaSearch(server: McpServer) {
       const apiKey = process.env.EXA_API_KEY;
       if (!apiKey) {
         return {
-          content: [{ type: "text", text: "Error: EXA_API_KEY environment variable is not configured on the server." }],
+          content: [{ type: "text" as const, text: "Error: EXA_API_KEY environment variable is not configured on the server." }],
           isError: true,
         };
       }
@@ -39,11 +39,11 @@ export function registerExaSearch(server: McpServer) {
           throw new Error(`Exa API Error: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
+        const data = await response.json() as any;
         
         if (!data.results || data.results.length === 0) {
           return {
-            content: [{ type: "text", text: "No relevant web results found." }],
+            content: [{ type: "text" as const, text: "No relevant web results found." }],
           };
         }
 
@@ -52,11 +52,11 @@ export function registerExaSearch(server: McpServer) {
         ).join("\n\n---\n\n");
 
         return {
-          content: [{ type: "text", text: formattedResults }],
+          content: [{ type: "text" as const, text: formattedResults }],
         };
       } catch (err: any) {
         return {
-          content: [{ type: "text", text: `Web search failed: ${err.message}` }],
+          content: [{ type: "text" as const, text: `Web search failed: ${err.message}` }],
           isError: true,
         };
       }
