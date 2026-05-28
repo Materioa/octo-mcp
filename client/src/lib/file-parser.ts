@@ -58,8 +58,7 @@ export async function generatePdfPreview(file: File): Promise<string> {
   
   await page.render({
     canvasContext: context,
-    viewport: scaledViewport,
-    canvas: canvas
+    viewport: scaledViewport
   }).promise;
   
   return canvas.toDataURL('image/jpeg', 0.8);
