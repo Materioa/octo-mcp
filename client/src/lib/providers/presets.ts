@@ -1,0 +1,155 @@
+import type { ProviderPreset } from "@/types";
+
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: "openrouter-free",
+    name: "Built-in (Free)",
+    baseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "openai/gpt-oss-120b:free",
+    models: [
+      "openai/gpt-oss-120b:free",
+      "google/gemma-4-31b-it:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "z-ai/glm-4.5-air:free",
+      "deepseek/deepseek-v4-flash:free",
+      "minimax/minimax-m2.5:free",
+      "nvidia/nemotron-3-nano-30b-a3b:free",
+      "openrouter/free"
+    ],
+    keyPlaceholder: "Managed automatically by Thinklet",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter (BYOK)",
+    baseUrl: "https://openrouter.ai/api/v1",
+    defaultModel: "anthropic/claude-sonnet-4",
+    models: [
+      "anthropic/claude-sonnet-4",
+      "anthropic/claude-opus-4",
+      "openai/gpt-4.1",
+      "openai/o3-mini",
+      "google/gemini-2.5-pro",
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-4-maverick",
+      "deepseek/deepseek-r1",
+      "qwen/qwen3-235b-a22b",
+    ],
+    keyPlaceholder: "sk-or-...",
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    defaultModel: "gpt-4.1",
+    models: [
+      "gpt-4.1",
+      "gpt-4.1-mini",
+      "gpt-4.1-nano",
+      "o3-mini",
+      "o4-mini",
+      "gpt-4o",
+    ],
+    keyPlaceholder: "sk-...",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    defaultModel: "claude-sonnet-4-20250514",
+    models: [
+      "claude-sonnet-4-20250514",
+      "claude-opus-4-20250514",
+      "claude-3-5-haiku-20241022",
+    ],
+    keyPlaceholder: "sk-ant-...",
+  },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    defaultModel: "gemini-2.5-pro",
+    models: [
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ],
+    keyPlaceholder: "AIza...",
+  },
+  {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    defaultModel: "meta/llama-3.3-70b-instruct",
+    models: [
+      "meta/llama-3.3-70b-instruct",
+      "nvidia/llama-3.1-nemotron-70b-instruct",
+      "mistralai/mistral-large-2-instruct",
+      "deepseek-ai/deepseek-r1",
+    ],
+    keyPlaceholder: "nvapi-...",
+  },
+  {
+    id: "llama",
+    name: "Meta Llama API",
+    baseUrl: "https://api.llama.com/compat/v1",
+    defaultModel: "Llama-4-Maverick-17B-128E-Instruct-FP8",
+    models: [
+      "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "Llama-4-Scout-17B-16E-Instruct",
+      "Llama-3.3-70B-Instruct",
+    ],
+    keyPlaceholder: "llama-...",
+  },
+  {
+    id: "qwen",
+    name: "Alibaba Qwen",
+    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-max",
+    models: [
+      "qwen-max",
+      "qwen-plus",
+      "qwen-turbo",
+      "qwen3-235b-a22b",
+      "qwen3-32b",
+    ],
+    keyPlaceholder: "sk-...",
+  },
+  {
+    id: "kimi",
+    name: "Moonshot Kimi",
+    baseUrl: "https://api.moonshot.cn/v1",
+    defaultModel: "moonshot-v1-auto",
+    models: [
+      "moonshot-v1-auto",
+      "moonshot-v1-8k",
+      "moonshot-v1-32k",
+      "moonshot-v1-128k",
+    ],
+    keyPlaceholder: "sk-...",
+  },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    baseUrl: "https://api.perplexity.ai",
+    defaultModel: "sonar-pro",
+    models: [
+      "sonar-pro",
+      "sonar",
+      "sonar-deep-research",
+      "r1-1776",
+    ],
+    keyPlaceholder: "pplx-...",
+  },
+  {
+    id: "custom",
+    name: "Custom Provider",
+    baseUrl: "",
+    defaultModel: "",
+    models: [],
+    keyPlaceholder: "Your API key",
+  },
+];
+
+export function getPreset(id: string): ProviderPreset {
+  return PROVIDER_PRESETS.find((p) => p.id === id) ?? PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1]!;
+}

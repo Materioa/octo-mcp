@@ -8,5 +8,7 @@ skills-lock.json
 sql/*
 plans/*
 scratch/*
-client/*
+# client/*
 publish-and-push.ps1
+test-db.ts 
+test-memory.ts 

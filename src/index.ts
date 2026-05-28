@@ -16,6 +16,7 @@
 //  /api/* for ChatGPT Custom GPT Actions.
 // ─────────────────────────────────────────────────────
 
+import "dotenv/config";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -23,7 +24,10 @@ import express from "express";
 import sharp from "sharp";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
+import { executeJsTool, handleExecuteJs } from "./tools/execute-js.js";
+import { memoryTool, handleSaveMemory } from "./tools/memory.js";
 import { registerMaterioTools } from "./tools/materio.js";
+import { registerExaSearch } from "./tools/exa-search.js";
 import {
   listSemesters,
   listSubjects,
@@ -36,6 +40,8 @@ import {
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
 import { lookupExternalSources } from "./services/external-lookup.js";
 import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
+import { connectDB, Conversation, Message } from "./db.js";
+import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
 const OPENAPI_SPEC_PATH = fileURLToPath(new URL("../openapi.json", import.meta.url));
@@ -130,6 +136,9 @@ function createMcpServer(): McpServer {
     version: "1.0.0",
   });
   registerMaterioTools(server);
+  registerExaSearch(server);
+  server.tool(executeJsTool.name, executeJsTool.description, executeJsTool.inputSchema, handleExecuteJs);
+  server.tool(memoryTool.name, memoryTool.description, memoryTool.inputSchema, handleSaveMemory);
   return server;
 }
 
@@ -158,7 +167,7 @@ async function runHTTP(): Promise<void> {
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, X-OAuth-Client-Id, X-OAuth-Client-Secret"
+      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret"
     );
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
     if (_req.method === "OPTIONS") {
@@ -566,7 +575,119 @@ async function runHTTP(): Promise<void> {
     }
   });
 
+  // ── Database Routes ──
+  app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      const query = req.user ? { userId: req.user.id } : { anonymousId: req.anonymousId };
+      if (!query.userId && !query.anonymousId) {
+        return res.json([]);
+      }
+      const convos = await Conversation.find(query).sort({ updatedAt: -1 }).lean();
+      res.json(convos);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user && !req.anonymousId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const conv = req.body;
+      if (req.user) conv.userId = req.user.id;
+      else if (req.anonymousId) conv.anonymousId = req.anonymousId;
+
+      const query = req.user ? { id: conv.id, userId: req.user.id } : { id: conv.id, anonymousId: req.anonymousId };
+      
+      const updated = await Conversation.findOneAndUpdate(query, conv, { upsert: true, new: true }).lean();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
+      const convo = await Conversation.findOne(query);
+      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
+
+      await Conversation.deleteOne(query);
+      await Message.deleteMany({ conversationId: req.params.id });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/db/conversations/:id/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
+      const convo = await Conversation.findOne(query);
+      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
+
+      const msgs = await Message.find({ conversationId: req.params.id }).sort({ timestamp: 1 }).lean();
+      res.json(msgs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user && !req.anonymousId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const msg = req.body;
+      
+      // Enforce rate limiting for NEW user messages
+      if (msg.role === "user" && !msg._id) {
+        const isExisting = await Message.exists({ id: msg.id });
+        if (!isExisting) {
+          if (req.user) {
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const messageCount = await Message.countDocuments({
+              userId: req.user.id,
+              timestamp: { $gte: startOfDay.getTime() },
+              role: "user"
+            });
+            
+            let limit = 20;
+            if (req.user.hasAdminPrivileges) limit = 70;
+            else if (req.user.isPlusUser) limit = 35;
+            
+            if (messageCount >= limit) {
+              return res.status(429).json({ error: "Daily message limit reached" });
+            }
+          } else if (req.anonymousId) {
+            const messageCount = await Message.countDocuments({
+              anonymousId: req.anonymousId,
+              role: "user"
+            });
+            
+            if (messageCount >= 3) {
+              return res.status(429).json({ error: "Free trial limit reached. Please log in to continue." });
+            }
+          }
+        }
+      }
+
+      if (req.user) msg.userId = req.user.id;
+      else if (req.anonymousId) msg.anonymousId = req.anonymousId;
+
+      const query = req.user ? { id: msg.id, userId: req.user.id } : { id: msg.id, anonymousId: req.anonymousId };
+      const updated = await Message.findOneAndUpdate(query, msg, { upsert: true, new: true }).lean();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Start ──
+  await connectDB();
   app.listen(port, () => {
     console.error(`✅ Materio MCP server running on http://localhost:${port}`);
     console.error(`   ┌─────────────────────────────────────────────────────┐`);
