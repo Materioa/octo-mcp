@@ -59,7 +59,7 @@ export function ChatLayout() {
       try {
         const mcpUrl = settings.mcpEnvironment === "development"
           ? "http://localhost:3001/mcp"
-          : (import.meta.env.VITE_MCP_SERVER_URL || "https://materiomcp.vercel.app/mcp");
+          : (import.meta.env.VITE_MCP_SERVER_URL || "https://mcp.getmaterio.app/mcp");
         
         // Re-connecting forces disconnect first under the hood if already connected
         await mcpClient.connect(mcpUrl);

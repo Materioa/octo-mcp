@@ -575,6 +575,40 @@ async function runHTTP(): Promise<void> {
     }
   });
 
+  // ── Supermemory Proxy ──
+  app.use("/api/memory", async (req: express.Request, res: express.Response) => {
+    try {
+      const apiKey = req.headers.authorization?.replace("Bearer ", "");
+      if (!apiKey) {
+         res.status(401).json({ error: "Missing API Key" });
+         return;
+      }
+
+      const subPath = req.url; // e.g. "/", "/list", "/search"
+      const targetUrl = `https://api.supermemory.ai/v3${subPath === "/" ? "" : subPath}`;
+      
+      const response = await fetch(targetUrl, {
+        method: req.method,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+      });
+
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { message: text };
+      }
+      res.status(response.status).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Database Routes ──
   app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
