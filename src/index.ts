@@ -610,6 +610,11 @@ async function runHTTP(): Promise<void> {
   });
 
   // ── Database Routes ──
+  app.use("/api/db", async (req, res, next) => {
+    await connectDB();
+    next();
+  });
+
   app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
       const query = req.user ? { userId: req.user.id } : { anonymousId: req.anonymousId };
