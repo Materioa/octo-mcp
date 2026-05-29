@@ -216,11 +216,17 @@ export const app = express();
   //  Health check
   // ════════════════════════════════════════════════════
   app.get("/health", (_req, res) => {
+    const mongoose = require("mongoose");
     res.json({
       status: "ok",
       server: "materio-mcp-server",
       version: "1.0.0",
       protocol: "MCP (JSON-RPC 2.0 over Streamable HTTP)",
+      db: {
+        readyState: mongoose.connection.readyState,
+        hasMongoUri: !!process.env.MONGODB_URI,
+        isVercel: process.env.VERCEL === "1",
+      },
     });
   });
 
@@ -609,8 +615,13 @@ export const app = express();
 
   // ── Database Routes ──
   app.use("/api/db", async (req, res, next) => {
-    await connectDB();
-    next();
+    try {
+      await connectDB();
+      next();
+    } catch (err) {
+      console.error("DB middleware: connection failed", err);
+      res.status(503).json({ error: "Database unavailable" });
+    }
   });
 
   app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {

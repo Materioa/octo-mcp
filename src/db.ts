@@ -3,25 +3,45 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Load .env from client/ for local dev; on Vercel env vars are injected automatically
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, "../client/.env") });
+if (process.env.VERCEL !== "1") {
+  dotenv.config({ path: path.join(__dirname, "../client/.env") });
+}
+// Also try root .env as fallback (contains MONGODB_URI in some setups)
+dotenv.config({ path: path.join(__dirname, "../.env") });
+
+let connectionPromise: Promise<typeof mongoose> | null = null;
 
 export async function connectDB() {
-  if (mongoose.connection.readyState >= 1) return;
-
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    console.error("MONGODB_URI is not defined in the environment.");
+  // Already connected
+  if (mongoose.connection.readyState === 1) return;
+  // Connection in progress — reuse the same promise (prevents parallel connect calls in serverless)
+  if (connectionPromise) {
+    await connectionPromise;
     return;
   }
 
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    const err = new Error("MONGODB_URI is not defined in the environment.");
+    console.error(err.message);
+    throw err;
+  }
+
   try {
-    await mongoose.connect(uri, {
+    connectionPromise = mongoose.connect(uri, {
       dbName: "materio_chat",
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      bufferCommands: true,
     });
+    await connectionPromise;
     console.log("✅ Connected to MongoDB.");
   } catch (err) {
+    connectionPromise = null;          // Allow retry on next invocation
     console.error("❌ Failed to connect to MongoDB:", err);
+    throw err;                         // Surface the error to callers
   }
 }
 
