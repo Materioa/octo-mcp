@@ -81,3 +81,15 @@ export async function deleteConversation(id: string): Promise<void> {
     console.error(err);
   }
 }
+
+export async function deleteMessage(id: string): Promise<void> {
+  try {
+    const res = await fetch(`${API_BASE}/messages/${id}`, {
+      method: "DELETE",
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to delete message");
+  } catch (err) {
+    console.error(err);
+  }
+}

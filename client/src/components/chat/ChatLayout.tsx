@@ -10,6 +10,7 @@ import type { Message, ToolCall, MCPTool } from "@/types";
 import { ChatSidebar } from "./ChatSidebar";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
+import { DocumentPreview } from "./DocumentPreview";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ export function ChatLayout() {
     updateMessage,
     setIsSending,
     isLoading,
+    activeDocument,
+    setActiveDocument,
   } = useChatStore();
 
   const { user } = useAuthStore();
@@ -150,8 +153,9 @@ export function ChatLayout() {
         }} 
       />
 
-      <main className="flex flex-1 flex-col relative overflow-hidden">
-        {/* Main chat header (Thinklet v) */}
+      <div className="flex flex-1 overflow-hidden relative">
+        <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
+          {/* Main chat header (Thinklet v) */}
         <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
           {!sidebarOpen && (
             <button 
@@ -211,7 +215,11 @@ export function ChatLayout() {
             </div>
           </div>
         )}
-      </main>
+        </main>
+        {activeDocument && (
+          <DocumentPreview document={activeDocument} onClose={() => setActiveDocument(null)} />
+        )}
+      </div>
 
       <SettingsDialog
         open={settingsOpen}

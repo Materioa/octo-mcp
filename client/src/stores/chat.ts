@@ -6,6 +6,7 @@ import {
   saveMessage,
   saveConversation,
   deleteConversation as dbDeleteConversation,
+  deleteMessage as dbDeleteMessage,
 } from "@/lib/db";
 import { useSettingsStore } from "./settings";
 import { useAuthStore } from "./auth";
@@ -26,6 +27,7 @@ interface ChatStore {
   setActiveConversation: (id: string) => Promise<void>;
   clearActiveConversation: () => void;
   deleteConversation: (id: string) => Promise<void>;
+  deleteMessage: (id: string) => Promise<void>;
   addMessage: (message: Message) => Promise<void>;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setIsLoading: (v: boolean) => void;
@@ -38,6 +40,10 @@ interface ChatStore {
   switchBranch: (messageId: string) => void;
   branchMessage: (messageId: string, newContent: string) => Promise<void>;
   retryMessage: (messageId: string, modelOverride?: string) => Promise<void>;
+  resolveUserInput: ((result: any) => void) | null;
+  submitUserInput: (toolCallId: string, result: any) => void;
+  activeDocument: { url: string; format: string; title: string } | null;
+  setActiveDocument: (doc: { url: string; format: string; title: string } | null) => void;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -49,6 +55,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isSending: false,
   _abortController: null as AbortController | null,
   generatingConversationIds: [],
+  resolveUserInput: null,
+  
+  submitUserInput: (toolCallId, result) => {
+    const { resolveUserInput } = get();
+    if (resolveUserInput) {
+      resolveUserInput(result);
+      set({ resolveUserInput: null });
+    }
+  },
+  
+  activeDocument: null,
+  setActiveDocument: (doc) => set({ activeDocument: doc }),
 
   loadConversations: async () => {
     const conversations = await getConversations();
@@ -136,6 +154,33 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ...(activeConversationId === id
         ? { activeConversationId: null, messages: [], allMessages: [] }
         : {}),
+    }));
+  },
+
+  deleteMessage: async (id) => {
+    const { allMessages } = get();
+    
+    // Find all descendants iteratively to delete the entire branch
+    const idsToDelete = new Set([id]);
+    let currentLevelIds = [id];
+    
+    while (currentLevelIds.length > 0) {
+      const nextLevelIds = allMessages
+        .filter((m) => m.parentId && currentLevelIds.includes(m.parentId))
+        .map((m) => m.id);
+        
+      nextLevelIds.forEach((childId) => idsToDelete.add(childId));
+      currentLevelIds = nextLevelIds;
+    }
+    
+    const idsToDeleteArray = Array.from(idsToDelete);
+    for (const deleteId of idsToDeleteArray) {
+      await dbDeleteMessage(deleteId);
+    }
+    
+    set((s) => ({
+      allMessages: s.allMessages.filter((m) => !idsToDelete.has(m.id)),
+      messages: s.messages.filter((m) => !idsToDelete.has(m.id)),
     }));
   },
 
@@ -255,18 +300,43 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Filter messages up to the end of the current branch
     const systemPrompt = `You are a helpful AI assistant with access to MCP tools. Be concise and helpful. Use tools when appropriate to help the user.
 IMPORTANT RULE: Your PRIMARY tool to reference anything from the Materio course library MUST be \`SnapSearch\` (also known as vectorless search). Prioritize using SnapSearch before falling back to other search tools for course content.
+CRITICAL LIBRARY NAVIGATION: If you do not know the exact chapter or topic name, you MUST use \`ResourceLibrary\` first to list the materials for a subject. Do NOT guess chapter names in SnapSearch.
+CRITICAL WORKSHEET WORKFLOW: If the user asks to create or generate a worksheet, question bank, or sample paper, you MUST use the \`CreateWorksheetPaper\` tool AFTER gathering the required course content.
+DIAGRAMS: If the user asks you to draw a diagram (like a DFA, FSM, flowchart, mindmap, circuit, or plot), you MUST use the \`GenerateDiagramFromRequest\` tool first to get the correct format and syntax instructions before outputting any code block. Do NOT guess the syntax.
 Current personality: ${settings.personality}${memoryContext}`;
 
     const aiMessages: AIMessage[] = [
       { role: "system", content: systemPrompt },
       ...messages.map((m) => {
-        let content = m.content;
-        if (m.attachments?.length) {
-          content += '\n\n' + m.attachments.map((a: any) => `<file name="${a.name}" url="${a.url}">\n${a.extractedText || ''}\n</file>`).join('\n');
+        if (!m.attachments?.length) {
+          return { role: m.role, content: m.content, toolCalls: m.toolCalls } as AIMessage;
         }
+
+        const contentParts: any[] = [{ type: "text", text: m.content }];
+        let hasTextAttachments = false;
+        let textAttachmentsStr = "\n\n";
+
+        for (const a of m.attachments) {
+           const ext = a.extension || "";
+           if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
+              contentParts.push({ type: "image_url", image_url: { url: a.url } });
+           } else if (['mp3', 'wav', 'ogg', 'mpeg'].includes(ext)) {
+              contentParts.push({ type: "audio_url", audio_url: { url: a.url } });
+           } else if (['mp4', 'webm', 'avi', 'mov'].includes(ext)) {
+              contentParts.push({ type: "video_url", video_url: { url: a.url } });
+           } else {
+              hasTextAttachments = true;
+              textAttachmentsStr += `<file name="${a.name}" url="${a.url}">\n${a.extractedText || ''}\n</file>\n`;
+           }
+        }
+        
+        if (hasTextAttachments) {
+           contentParts[0].text += textAttachmentsStr;
+        }
+
         return {
           role: m.role,
-          content,
+          content: contentParts,
           toolCalls: m.toolCalls,
         } as AIMessage;
       }),
@@ -341,18 +411,40 @@ Current personality: ${settings.personality}${memoryContext}`;
           },
           (err) => {
             console.error("Stream error:", err);
-            fullResponse += "\n\n**Error:** " + err.message;
             if (get().activeConversationId === conversationId) {
-              updateMessage(aiMessageId, { content: fullResponse });
+              updateMessage(aiMessageId, { error: err.message, isStreaming: false });
             }
           }
         );
 
         if (pendingToolCalls.length > 0) {
+          const historyToolCalls = pendingToolCalls.map(tc => {
+            try {
+              const args = JSON.parse(tc.function.arguments || "{}");
+              let modified = false;
+              if (typeof args.content === 'string' && args.content.length > 2000) {
+                args.content = args.content.substring(0, 2000) + "...[truncated for history]";
+                modified = true;
+              }
+              if (typeof args.code === 'string' && args.code.length > 2000) {
+                args.code = args.code.substring(0, 2000) + "...[truncated for history]";
+                modified = true;
+              }
+              if (typeof args.templateDescription === 'string' && args.templateDescription.length > 2000) {
+                args.templateDescription = args.templateDescription.substring(0, 2000) + "...[truncated]";
+                modified = true;
+              }
+              if (modified) {
+                return { ...tc, function: { ...tc.function, arguments: JSON.stringify(args) } };
+              }
+            } catch(e) {}
+            return tc;
+          });
+
           aiMessages.push({
             role: "assistant",
             content: fullResponse || "",
-            tool_calls: pendingToolCalls,
+            tool_calls: historyToolCalls,
           });
 
           for (const tc of pendingToolCalls) {
@@ -379,7 +471,23 @@ Current personality: ${settings.personality}${memoryContext}`;
                  const userId = auth.user?.id || auth.anonymousId;
                  finalArgs = { ...args, containerTag: `user-${userId}` };
               }
-              const result = await mcpClient.callTool(tc.function.name, finalArgs);
+              
+              let result = "";
+              if (tc.function.name === "ask_user_input_v0") {
+                if (existingTc) {
+                  existingTc.status = "awaiting_user_input";
+                  if (get().activeConversationId === conversationId) {
+                    updateMessage(aiMessageId, { toolCalls: Array.from(toolCallMap.values()) });
+                  }
+                }
+                
+                result = await new Promise<string>((resolve) => {
+                  set({ resolveUserInput: (data) => resolve(JSON.stringify(data)) });
+                });
+              } else {
+                result = await mcpClient.callTool(tc.function.name, finalArgs);
+              }
+              
               if (existingTc) {
                 existingTc.result = result.slice(0, 2000);
                 existingTc.status = "completed";
@@ -411,10 +519,10 @@ Current personality: ${settings.personality}${memoryContext}`;
         }
       } catch (err: any) {
          console.error("Start stream error:", err);
-         fullResponse += "\n\n**Error:** " + err.message;
          if (get().activeConversationId === conversationId) {
            updateMessage(aiMessageId, {
-             content: fullResponse,
+             error: err.message,
+             isStreaming: false
            });
          }
       }
@@ -459,7 +567,22 @@ Current personality: ${settings.personality}${memoryContext}`;
     
     while (currentId) {
       const msg = allMessages.find(m => m.id === currentId);
-      if (!msg) break;
+      if (!msg) {
+        // We hit a broken link (e.g. a parent was deleted)
+        // Fallback: find the most recent message that is older than our current chain
+        const oldestInLine = line[0];
+        if (oldestInLine) {
+          const olderMessages = allMessages
+            .filter(m => m.timestamp < oldestInLine.timestamp)
+            .sort((a, b) => b.timestamp - a.timestamp); // descending
+            
+          if (olderMessages.length > 0) {
+            currentId = olderMessages[0].id;
+            continue;
+          }
+        }
+        break;
+      }
       line.unshift(msg);
       currentId = msg.parentId;
     }
@@ -503,16 +626,7 @@ Current personality: ${settings.personality}${memoryContext}`;
     const originalAiMsg = allMessages.find(m => m.id === messageId);
     if (!originalAiMsg || !originalAiMsg.parentId) return;
 
-    const line: Message[] = [];
-    let currentId: string | undefined = originalAiMsg.parentId;
-    while (currentId) {
-      const msg = allMessages.find(m => m.id === currentId);
-      if (!msg) break;
-      line.unshift(msg);
-      currentId = msg.parentId;
-    }
-    
-    set({ messages: line });
+    await get().switchBranch(originalAiMsg.parentId);
     await generateResponse(activeConversationId, modelOverride);
   }
 }));

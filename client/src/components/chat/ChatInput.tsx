@@ -114,10 +114,10 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     const id = Math.random().toString(36).substring(7);
-    
+
     const newAtt: Attachment = {
       id,
       file,
@@ -126,9 +126,9 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
       extension,
       status: 'idle'
     };
-    
+
     setAttachments(prev => [...prev, newAtt]);
-    
+
     try {
       if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) {
         newAtt.previewUrl = URL.createObjectURL(file);
@@ -139,10 +139,10 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
           console.error("PDF preview failed", e);
         }
       }
-      
+
       const content = await parseFileContent(file);
       newAtt.extractedText = content;
-      
+
       setAttachments(prev => prev.map(a => a.id === id ? newAtt : a));
     } catch (err: any) {
       alert(`Failed to parse file: ${err.message}`);
@@ -178,13 +178,13 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                       {att.extension}
                     </div>
                   )}
-                  
+
                   {att.status === 'uploading' && (
                     <div className="absolute inset-0 bg-background/50 flex items-center justify-center backdrop-blur-[1px]">
                       <Loader className="h-4 w-4 animate-spin text-primary" />
                     </div>
                   )}
-                  
+
                   {att.status !== 'uploading' && (
                     <button
                       onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))}
@@ -239,13 +239,13 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56" sideOffset={8}>
                 <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
                   Add files
                 </DropdownMenuItem>
-                
+
                 <DropdownMenuSeparator />
-                
-                <DropdownMenuItem 
+
+                <DropdownMenuItem
                   onClick={(e) => {
                     e.preventDefault();
                     settings.setExaSearchEnabled(!settings.exaSearchEnabled);
@@ -253,7 +253,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                   className="flex items-center justify-between"
                 >
                   <div className="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
                     Web search
                   </div>
                   <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${settings.exaSearchEnabled ? 'bg-orange-500' : 'bg-muted-foreground/30'}`}>
@@ -266,12 +266,12 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                     <DropdownMenuSeparator />
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M12 2v20" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                         Load Skill
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent>
                         {settings.skills.map((skill) => (
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             key={skill.id}
                             onClick={() => setValue(prev => prev + (prev.trim() ? '\n\n' : '') + `<skill name="${skill.name}">\n${skill.content}\n</skill>\n`)}
                           >
@@ -285,12 +285,12 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              onChange={handleFileUpload} 
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json,.md,.js,.ts,.tsx,.jsx"
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileUpload}
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json,.md,.js,.ts,.tsx,.jsx,image/*,audio/*,video/*"
             />
 
             <div className="flex items-center gap-1.5">
@@ -309,18 +309,22 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                     if (m === "z-ai/glm-4.5-air:free") return "GLM 4.5 Air";
                     if (m === "deepseek/deepseek-v4-flash:free") return "DeepSeek v4";
                     if (m === "minimax/minimax-m2.5:free") return "MiniMax M2.5";
-                    if (m === "nvidia/nemotron-3-nano-30b-a3b:free") return "Nemotron 3 Nano";
+                    if (m === "nvidia/nemotron-3-nano-30b-a3b:free" || m === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") return "Nemotron 3 Nano";
+                    if (m === "moonshotai/kimi-k2.6:free") return "Kimi K2.6";
                     if (m === "openrouter/free") return "Best";
                     return modelDisplay;
                   })()}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="m6 9 6 6 6-6"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="m6 9 6 6 6-6" /></svg>
                 </button>
 
                 {modelSelectorOpen && (
                   <div className="absolute bottom-full right-0 mb-2 w-52 rounded-xl border border-border bg-card p-1 shadow-lg animate-in fade-in slide-in-from-bottom-2 z-50">
                     <div className="max-h-60 overflow-y-auto p-1">
-                      {preset.models.map((m) => {
-                        let label = m;
+                      {(() => {
+                        const currentModel = settings.aiProvider.model;
+                        const modelsToDisplay = [currentModel, ...preset.models.filter(m => m !== currentModel)];
+                        return modelsToDisplay.filter(m => m !== "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").filter((v, i, a) => a.indexOf(v) === i).map((m) => {
+                          let label = m;
                         if (m === "openai/gpt-oss-120b:free") label = "GPT OSS";
                         else if (m === "google/gemma-4-31b-it:free") label = "Gemma 4";
                         else if (m === "meta-llama/llama-3.3-70b-instruct:free") label = "Llama 3.3";
@@ -328,6 +332,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                         else if (m === "deepseek/deepseek-v4-flash:free") label = "DeepSeek v4";
                         else if (m === "minimax/minimax-m2.5:free") label = "MiniMax M2.5";
                         else if (m === "nvidia/nemotron-3-nano-30b-a3b:free") label = "Nemotron 3 Nano";
+                        else if (m === "moonshotai/kimi-k2.6:free") label = "Kimi k2.6";
                         else if (m === "openrouter/free") label = "Best";
                         else {
                           const short = m.includes("/") ? m.split("/").pop()! : m;
@@ -338,27 +343,60 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                             .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                             .join(" ");
                         }
-                        
-                        const isSelected = settings.aiProvider.model === m;
-                        
+
+                        let isSelected = settings.aiProvider.model === m;
+                        if (m === "nvidia/nemotron-3-nano-30b-a3b:free" && settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") {
+                          isSelected = true;
+                        }
+
                         return (
-                          <button
-                            key={m}
-                            className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                              isSelected ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                            }`}
-                            onClick={() => {
-                              settings.setAIProvider({ ...settings.aiProvider, model: m });
-                              setModelSelectorOpen(false);
-                            }}
-                          >
-                            <span>{label}</span>
-                            {isSelected && (
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground"><path d="M20 6 9 17l-5-5"/></svg>
+                          <div key={m} className="flex flex-col">
+                            <button
+                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${isSelected ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                                }`}
+                              onClick={() => {
+                                if (m === "nvidia/nemotron-3-nano-30b-a3b:free" && isSelected) {
+                                  // Don't do anything if they click the already selected parent button
+                                } else {
+                                  settings.setAIProvider({ ...settings.aiProvider, model: m });
+                                  setModelSelectorOpen(false);
+                                }
+                              }}
+                            >
+                              <span>{label}</span>
+                              {isSelected && (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground"><path d="M20 6 9 17l-5-5" /></svg>
+                              )}
+                            </button>
+
+                            {m === "nvidia/nemotron-3-nano-30b-a3b:free" && isSelected && (
+                              <div className="flex items-center justify-between px-3 py-1.5 mx-2 mt-1 mb-1 rounded bg-secondary/30">
+                                <span className="text-[11px] text-muted-foreground font-medium">Reasoning Mode</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const isReasoning = settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+                                    settings.setAIProvider({
+                                      ...settings.aiProvider,
+                                      model: isReasoning ? "nvidia/nemotron-3-nano-30b-a3b:free" : "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+                                    });
+                                  }}
+                                  className={`relative inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                    settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" ? 'bg-brand' : 'bg-muted-foreground/30'
+                                  }`}
+                                >
+                                  <span
+                                    className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                      settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" ? 'translate-x-2.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
                             )}
-                          </button>
+                          </div>
                         );
-                      })}
+                      })})()}
                     </div>
                   </div>
                 )}

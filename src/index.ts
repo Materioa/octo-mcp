@@ -25,6 +25,7 @@ import sharp from "sharp";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import { executeJsTool, handleExecuteJs } from "./tools/execute-js.js";
+import { generateDocumentTool, handleGenerateDocument } from "./tools/generate-document.js";
 import { memoryTool, handleSaveMemory } from "./tools/memory.js";
 import { registerMaterioTools } from "./tools/materio.js";
 import { registerExaSearch } from "./tools/exa-search.js";
@@ -50,7 +51,7 @@ const OPENAPI_LITE_SPEC_PATH = fileURLToPath(
 );
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
 const faviconCache = new Map<number, Buffer>();
-const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart)(?:\b|$)/i;
+const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart|mindmap|markmap|tree)(?:\b|$)/i;
 
 function isDiagramIntent(query: string): boolean {
   return DIAGRAM_INTENT_PATTERN.test(query);
@@ -138,6 +139,7 @@ function createMcpServer(): McpServer {
   registerMaterioTools(server);
   registerExaSearch(server);
   server.tool(executeJsTool.name, executeJsTool.description, executeJsTool.inputSchema, handleExecuteJs);
+  server.tool(generateDocumentTool.name, generateDocumentTool.description, generateDocumentTool.inputSchema, handleGenerateDocument);
   server.tool(memoryTool.name, memoryTool.description, memoryTool.inputSchema, handleSaveMemory);
   return server;
 }
@@ -729,6 +731,25 @@ export const app = express();
       const query = req.user ? { id: msg.id, userId: req.user.id } : { id: msg.id, anonymousId: req.anonymousId };
       const updated = await Message.findOneAndUpdate(query, msg, { upsert: true, new: true }).lean();
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/db/messages/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user && !req.anonymousId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      
+      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
+      const deleted = await Message.findOneAndDelete(query);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Message not found or unauthorized" });
+      }
+      
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

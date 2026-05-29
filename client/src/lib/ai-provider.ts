@@ -2,7 +2,7 @@ import type { MCPTool } from "@/types";
 
 export interface AIMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | any[];
   tool_call_id?: string;
   tool_calls?: AIToolCall[];
 }

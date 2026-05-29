@@ -4,7 +4,7 @@ export interface ToolCall {
   args: Record<string, unknown>;
   result?: string;
   error?: string;
-  status: "pending" | "running" | "completed" | "error";
+  status: "pending" | "running" | "completed" | "error" | "awaiting_user_input";
 }
 
 export interface Message {
@@ -25,6 +25,7 @@ export interface Message {
   rating?: "like" | "dislike" | null;
   modelUsed?: string;
   parentId?: string;
+  error?: string;
 }
 
 export interface Conversation {

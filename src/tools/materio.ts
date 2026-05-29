@@ -764,6 +764,7 @@ Examples:
       title: "Primary Vectorless Search (FTS)",
       description: `Primary tool for extremely fast, non-semantic keyword matching across course material text chunks.
 Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
+CRITICAL: If you are searching for a specific chapter (e.g. "chapter 1") but don't know its actual name, you MUST use ResourceLibrary FIRST to get the list of chapters and find the exact name. Do NOT search for generic terms like "chapter 1" here.
 Use this first for most content lookups. Keep responses short, then request the next page if the first chunk set is not enough by repeating the same filters and incrementing \`page\`.
 Secondary content option is Fetch/ResourceAccess when a specific document is already known. DeepThink and external lookup are later options when the primary path is not sufficient.
 Never use this tool for diagram generation or any non-content task.

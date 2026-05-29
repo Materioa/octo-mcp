@@ -44,8 +44,10 @@ async function withJsdom<T>(fn: () => Promise<T>): Promise<T> {
   const prevDocument = (globalThis as any).document;
   const prevNavigator = (globalThis as any).navigator;
 
+  const prevDOMPurify = (globalThis as any).DOMPurify;
+
   // Some runtimes expose read-only navigator; define safely instead of assignment.
-  const defineGlobal = (key: "window" | "document" | "navigator", value: any) => {
+  const defineGlobal = (key: "window" | "document" | "navigator" | "DOMPurify", value: any) => {
     try {
       Object.defineProperty(globalThis, key, {
         value,
@@ -60,6 +62,11 @@ async function withJsdom<T>(fn: () => Promise<T>): Promise<T> {
   defineGlobal("window", dom.window);
   defineGlobal("document", dom.window.document);
   defineGlobal("navigator", dom.window.navigator);
+  
+  // Mermaid v10+ uses DOMPurify internally, which expects window.DOMPurify in JSDOM
+  const mockPurify = { sanitize: (html: string) => html, addHook: () => {}, clearConfig: () => {} };
+  defineGlobal("DOMPurify", mockPurify);
+  (dom.window as any).DOMPurify = mockPurify;
 
   try {
     return await fn();
@@ -81,6 +88,12 @@ async function withJsdom<T>(fn: () => Promise<T>): Promise<T> {
         delete (globalThis as any).navigator;
       } else {
         defineGlobal("navigator", prevNavigator);
+      }
+
+      if (prevDOMPurify === undefined) {
+        delete (globalThis as any).DOMPurify;
+      } else {
+        defineGlobal("DOMPurify", prevDOMPurify);
       }
     } catch {}
   }
@@ -186,6 +199,10 @@ const DiagramSchema = {
     .enum(["svg", "png", "base64"])
     .describe('Render output: "svg", "png" (file), or "base64" (embedded data URI)')
     .default("png"),
+  environment: z
+    .enum(["python", "web"])
+    .describe('Environment format is being rendered in. "python" (ChatGPT/Claude/Perplexity), or "web" (Custom Web Client)')
+    .default("python"),
   title: z.string().optional().describe("Optional diagram title for metadata"),
 };
 
@@ -218,14 +235,15 @@ Pass the raw spec string (no code fences). Returns SVG/PNG/base64 output.`,
         openWorldHint: false,
       },
     },
-    async ({ format, spec, render: renderOut, title }) => {
+    async ({ format, spec, render: renderOut, environment, title }) => {
       try {
         const normalizedFormat = (format || "mermaid").toLowerCase();
         // Normalize graphviz to dot
         const fmt = normalizedFormat === "graphviz" ? "dot" : normalizedFormat;
         renderOut = (renderOut || "png").toLowerCase() as any;
+        const env = environment || "python";
 
-        if (fmt === "dot") {
+        if (fmt === "dot" && env === "python") {
           return {
             content: [
               {
@@ -243,7 +261,7 @@ Pass the raw spec string (no code fences). Returns SVG/PNG/base64 output.`,
           if (fmt === "mermaid") {
             // Serialize Mermaid renders to avoid JSDOM global conflicts
             svg = await withMermaidLock(() => withJsdom(async () => {
-              mermaid.initialize({ startOnLoad: false });
+              mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
               try {
                 (mermaid as any).parse(spec);
               } catch (e: any) {
@@ -339,7 +357,7 @@ Pass the raw spec string (no code fences). Returns SVG/PNG/base64 output.`,
           // Serialize and set up JSDOM for Mermaid parse
           return await withMermaidLock(() => withJsdom(async () => {
             try {
-              mermaid.initialize({ startOnLoad: false });
+              mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
               (mermaid as any).parse(spec);
               return { content: [{ type: "text" as const, text: "✓ Mermaid syntax valid." }] };
             } catch (e: any) {

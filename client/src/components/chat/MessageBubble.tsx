@@ -7,11 +7,15 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 import { useState, useRef, useEffect } from "react";
 import type { Message } from "@/types";
 import { ToolCallGroup } from "./ToolCallCard";
+import { AskUserInputCard } from "./AskUserInputCard";
 import { DiagramRenderer } from "@/components/diagrams/DiagramRenderer";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
+import { DownloadIcon, FileIcon, FileTextIcon } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings";
+import { getPreset } from "@/lib/providers/presets";
 import { OriginalThinkingLoader } from "./OriginalThinkingLoader";
+import { ThinkingView } from "./ThinkingView";
 
 function formatModelName(model: string): string {
   const map: Record<string, string> = {
@@ -34,16 +38,42 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const { updateMessage, branchMessage, switchBranch, allMessages } = useChatStore();
+  const updateMessage = useChatStore(s => s.updateMessage);
+  const setActiveDocument = useChatStore(s => s.setActiveDocument);
+  const { branchMessage, allMessages, deleteMessage, switchBranch, messages } = useChatStore();
   const settings = useSettingsStore();
   const [retryOpen, setRetryOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  
+  // Shimmering loader state
+  const [shimmerIndex, setShimmerIndex] = useState(0);
+  const shimmerPhrases = [
+    "Cooking up a response...",
+    "Thinklet is thinking...",
+    "Brewing a response...",
+    "Calling tools...",
+    "Big thoughts take time...",
+    "Analyzing context...",
+    "Reasoning deeply..."
+  ];
+
+  useEffect(() => {
+    if (message.isStreaming && !message.content && !message.toolCalls?.length) {
+      const interval = setInterval(() => {
+        setShimmerIndex(i => (i + 1) % shimmerPhrases.length);
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [message.isStreaming, message.content, message.toolCalls]);
 
   const siblings = allMessages.filter(m => m.parentId === message.parentId && m.role === message.role).sort((a, b) => a.timestamp - b.timestamp);
   const siblingIndex = siblings.findIndex(m => m.id === message.id);
+  
+  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+  const isLastUserMessage = isUser && lastUserMessage && message.id === lastUserMessage.id;
   
   const handleEditSubmit = async () => {
     if (editContent.trim() && editContent !== message.content) {
@@ -61,19 +91,70 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
     return () => observer.disconnect();
   }, []);
 
+  // Parse thoughts from content
+  const content = message.content || "";
+  let cleanContent = content;
+  const thoughts: string[] = [];
+
+  const thinkRegex = /<(?:thought|think)>([\s\S]*?)<\/(?:thought|think)>/gi;
+  let match;
+  while ((match = thinkRegex.exec(content)) !== null) {
+    if (match[1]?.trim()) thoughts.push(match[1].trim());
+  }
+  cleanContent = cleanContent.replace(/<(?:thought|think)>[\s\S]*?<\/(?:thought|think)>/gi, "").trim();
+
+  // Handle unclosed tag (both streaming and non-streaming)
+  const unclosedThinkRegex = /<(?:thought|think)>([\s\S]*)$/i;
+  if (unclosedThinkRegex.test(cleanContent)) {
+    const unclosedMatch = cleanContent.match(unclosedThinkRegex);
+    if (unclosedMatch && unclosedMatch[1]?.trim()) {
+      let unclosedText = unclosedMatch[1].trim();
+
+      if (!message.isStreaming) {
+        // Heuristically split unclosed thought if it contains common response headers
+        // We look for \n\n or a period followed by common transition phrases
+        const splitRegex = /(?:\n\n|\.\s*)(?=Here is|I will now|Sure|Let me|Let's|Here's)/i;
+        const splitMatch = unclosedText.match(splitRegex);
+        
+        if (splitMatch && splitMatch.index !== undefined) {
+          const splitIndex = splitMatch.index;
+          thoughts.push(unclosedText.substring(0, splitIndex).trim());
+          cleanContent = cleanContent.replace(unclosedThinkRegex, "").trim() + "\n\n" + unclosedText.substring(splitIndex).trim();
+        } else {
+          thoughts.push(unclosedText);
+          cleanContent = cleanContent.replace(unclosedThinkRegex, "").trim();
+        }
+      } else {
+        thoughts.push(unclosedText);
+        cleanContent = cleanContent.replace(unclosedThinkRegex, "").trim();
+      }
+    }
+  }
+
+  // If the model wrapped the ENTIRE response in a thought block (meaning cleanContent is completely empty after parsing, 
+  // but thoughts exist), AND the stream is finished, we should restore potentialClean to the full content so the user can see it.
+  // But we also KEEP the thoughts array so the thought process block doesn't vanish.
+  if (cleanContent.length === 0 && thoughts.length > 0 && !message.isStreaming) {
+    cleanContent = content;
+  }
+
   return (
     <div className={cn("flex w-full flex-col", isUser ? "items-end" : "items-start")}>
       {message.attachments && message.attachments.length > 0 && isUser && (
         <div className="flex flex-wrap gap-2 mb-2 max-w-[80%] justify-end">
           {message.attachments.map((att) => (
             <div key={att.id} className="relative h-16 w-16 shrink-0 rounded-xl border border-border bg-background overflow-hidden shadow-sm">
-              {att.previewUrl ? (
-                <img src={att.previewUrl} alt="Preview" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs font-bold uppercase text-muted-foreground">
-                  {att.extension}
-                </div>
-              )}
+              {(() => {
+                const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(att.extension?.toLowerCase() || '');
+                const imgSrc = isImage ? att.url : att.previewUrl;
+                return imgSrc ? (
+                  <img src={imgSrc} alt="Preview" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-xs font-bold uppercase text-muted-foreground">
+                    {att.extension}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
@@ -141,20 +222,88 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
                 </button>
+                {isLastUserMessage && (
+                  <button 
+                    className="p-1 text-muted-foreground hover:text-red-500 transition-colors rounded hover:bg-red-500/10"
+                    title="Undo turn (Deletes message and response)"
+                    onClick={() => deleteMessage(message.id)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  </button>
+                )}
               </div>
             )}
           </div>
         ) : (
           <>
-            {message.toolCalls && message.toolCalls.length > 0 && (
-              <ToolCallGroup toolCalls={message.toolCalls} />
+
+            {thoughts.length > 0 && (
+              <ThinkingView thoughts={thoughts} isStreaming={message.isStreaming} />
             )}
-            {message.content && (
+
+            {message.toolCalls && message.toolCalls.length > 0 && (
+              <>
+                {(() => {
+                  const askUserInputCalls = message.toolCalls!.filter((tc) => tc.name === "ask_user_input_v0");
+                  const otherToolCalls = message.toolCalls!.filter((tc) => tc.name !== "ask_user_input_v0");
+                  
+                  return (
+                    <>
+                      {otherToolCalls.length > 0 && <ToolCallGroup toolCalls={otherToolCalls} />}
+                      {askUserInputCalls.map((tc) => (
+                        <AskUserInputCard key={tc.id} toolCall={tc} />
+                      ))}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+            
+            {cleanContent && (
               <div className="prose dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 [&>*:not(:first-child)]:mt-4 [&>*:not(:last-child)]:mb-4">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex]}
                   components={{
+                    a(props) {
+                      const { href, children, ...rest } = props;
+                      
+                      // Check if it's our special [Document: format | title](url) syntax
+                      if (typeof children === 'string' && children.startsWith('Document:')) {
+                        const parts = children.split('|').map(s => s.trim());
+                        const format = parts[0]?.replace('Document:', '').trim() || '';
+                        const title = parts[1] || 'Document';
+                        
+                        return (
+                          <span 
+                            className="my-4 flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 max-w-sm cursor-pointer" 
+                            onClick={() => setActiveDocument({ url: href!, format, title })}
+                          >
+                            <span className="flex items-center gap-3 overflow-hidden">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                {format === 'pdf' ? <FileIcon className="h-5 w-5" /> : <FileTextIcon className="h-5 w-5" />}
+                              </span>
+                              <span className="overflow-hidden flex flex-col">
+                                <span className="truncate font-medium text-sm leading-tight text-foreground block">{title}</span>
+                                <span className="truncate text-xs text-muted-foreground uppercase mt-0.5 block">Document · {format}</span>
+                              </span>
+                            </span>
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <DownloadIcon className="h-3.5 w-3.5" />
+                              Download
+                            </a>
+                          </span>
+                        );
+                      }
+
+                      return <a href={href} target="_blank" rel="noreferrer" {...rest}>{children}</a>;
+                    },
                     table({ children }) {
                       return (
                         <div className="overflow-x-auto my-6 rounded-md border border-border">
@@ -181,11 +330,12 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                       const lang = match?.[1];
                       const codeStr = String(children).replace(/\n$/, "");
 
-                      if (lang && ["mermaid", "dot", "graphviz", "python", "javascript", "js"].includes(lang)) {
+                      if (lang && ["mermaid", "dot", "graphviz", "python", "javascript", "js", "html", "react", "jsx", "tsx", "markmap", "mindmap"].includes(lang)) {
                         return (
                           <DiagramRenderer
                             code={codeStr}
                             language={lang}
+                            isStreaming={message.isStreaming}
                           />
                         );
                       }
@@ -231,7 +381,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                     },
                   }}
                 >
-                  {message.content
+                  {cleanContent
                     .replace(/\\\[/g, "$$")
                     .replace(/\\\]/g, "$$")
                     .replace(/\\\(/g, "$")
@@ -240,8 +390,27 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
               </div>
             )}
             {message.isStreaming && !message.content && !message.toolCalls?.length && (
-              <div className="flex px-1 pt-2 pb-1">
-                <OriginalThinkingLoader className="w-12 h-12 text-muted-foreground" />
+              <div className="flex items-center gap-3 px-1 pt-2 pb-1 text-muted-foreground animate-in fade-in duration-500">
+                <OriginalThinkingLoader className="w-12 h-12" />
+                <span key={shimmerIndex} className="text-sm font-medium tracking-wide animate-pulse">
+                  {shimmerPhrases[shimmerIndex]}
+                </span>
+              </div>
+            )}
+            
+            {message.error && (
+              <div className="my-2 rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden shadow-sm flex flex-col">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-destructive/20 bg-destructive/10">
+                  <div className="flex items-center gap-2 text-destructive">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span className="font-semibold text-sm">Generation Error</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="text-destructive/90 font-mono text-xs whitespace-pre-wrap break-words">
+                    {message.error}
+                  </div>
+                </div>
               </div>
             )}
             
@@ -270,6 +439,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 </button>
                 
+
                 <div className="relative">
                   <button 
                     onClick={() => setRetryOpen(!retryOpen)}
@@ -305,18 +475,26 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                           </button>
                         ))
                       ) : (
-                        ["claude-3-5-sonnet-20241022", "gpt-4o", "gemini-1.5-pro", settings.aiProvider.model].filter((v, i, a) => a.indexOf(v) === i).map(model => (
-                          <button
-                            key={model}
-                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent transition-colors"
-                            onClick={() => {
-                              setRetryOpen(false);
-                              onRetry?.(message.id, model);
-                            }}
-                          >
-                            {formatModelName(model)}
-                          </button>
-                        ))
+                        (() => {
+                          const preset = getPreset(settings.aiProvider.providerId);
+                          const currentModel = settings.aiProvider.model;
+                          const modelsToDisplay = [currentModel, ...preset.models.filter(m => m !== currentModel)];
+                          return modelsToDisplay.filter((v, i, a) => a.indexOf(v) === i).map(model => (
+                            <button
+                              key={model}
+                              className={cn(
+                                "w-full text-left px-3 py-1.5 text-xs transition-colors",
+                                model === currentModel ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent text-foreground"
+                              )}
+                              onClick={() => {
+                                setRetryOpen(false);
+                                onRetry?.(message.id, model);
+                              }}
+                            >
+                              {formatModelName(model)} {model === currentModel && "(Current)"}
+                            </button>
+                          ));
+                        })()
                       )}
                     </div>
                   )}

@@ -15,65 +15,32 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
   const isRunning = toolCalls.some(tc => tc.status === "running");
 
   return (
-    <div className="my-2 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="w-full max-w-2xl">
       <button
-        className={cn(
-          "flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent/50",
-          isRunning && "animate-pulse bg-accent/20"
-        )}
+        className="flex w-fit items-center gap-2 px-1 py-1.5 hover:bg-muted/40 rounded transition-colors text-[13px] font-medium text-muted-foreground/80 mb-2"
         onClick={() => setOpen(!open)}
       >
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-          </svg>
+        <div className="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn(isRunning && "animate-pulse text-brand")}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
         </div>
         
-        <div className="flex-1 font-medium text-foreground">
-          {isMultiple ? (
+        <div className="flex-1 font-medium">
+          {isRunning ? (
+            <span className="text-brand animate-pulse">
+              Calling {toolCalls.find(tc => tc.status === "running")?.name || "tool"}...
+            </span>
+          ) : isMultiple ? (
             <span>{toolCalls.length} tools executed</span>
           ) : (
-            <span>{toolCalls[0]?.name || "Unknown Tool"}</span>
+            <span>{toolCalls[0]?.name || "Unknown Tool"} executed</span>
           )}
         </div>
 
-        {isRunning && (
-          <span className="text-xs text-muted-foreground animate-pulse mr-2">
-            Executing...
-          </span>
-        )}
-
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={cn(
-            "shrink-0 text-muted-foreground transition-transform duration-200",
-            open && "rotate-180"
-          )}
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn("transition-transform duration-200 opacity-50 ml-1", open ? "rotate-180" : "")}><path d="m6 9 6 6 6-6"/></svg>
       </button>
 
       {open && (
-        <div className="border-t border-border bg-muted/20">
+        <div className="pl-3 border-l-2 border-border/50 max-h-[500px] overflow-y-auto mb-4">
           {toolCalls.map((tc, idx) => (
             <div key={tc.id} className={cn("p-3", idx > 0 && "border-t border-border")}>
               <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

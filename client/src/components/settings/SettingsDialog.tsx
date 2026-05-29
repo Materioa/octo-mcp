@@ -57,6 +57,10 @@ export function SettingsDialog({
   const [memorySearch, setMemorySearch] = useState("");
   const [memoryLoading, setMemoryLoading] = useState(false);
 
+  // Gemini dynamic models
+  const [geminiModels, setGeminiModels] = useState<{name: string, displayName: string}[]>([]);
+  const [fetchingGeminiModels, setFetchingGeminiModels] = useState(false);
+
   useEffect(() => {
     if (open) {
       setLocalSettings({
@@ -91,6 +95,35 @@ export function SettingsDialog({
       loadMemories();
     }
   }, [open, activeTab, loadMemories]);
+
+  useEffect(() => {
+    if (localSettings.providerId === "gemini" && localSettings.apiKey) {
+      const fetchModels = async () => {
+        setFetchingGeminiModels(true);
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${localSettings.apiKey}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.models) {
+              setGeminiModels(data.models.map((m: any) => ({
+                name: m.name.replace('models/', ''),
+                displayName: m.displayName
+              })));
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch gemini models", err);
+        } finally {
+          setFetchingGeminiModels(false);
+        }
+      };
+      
+      const t = setTimeout(fetchModels, 500);
+      return () => clearTimeout(t);
+    } else {
+      setGeminiModels([]);
+    }
+  }, [localSettings.providerId, localSettings.apiKey]);
 
   const handleDeleteMemory = async (id: string) => {
     try {
@@ -270,8 +303,47 @@ export function SettingsDialog({
                   )}
 
                   <div className="space-y-3">
-                    <label className="text-sm font-medium">Model</label>
-                    {currentPreset.models.length > 0 ? (
+                    <label className="text-sm font-medium">
+                      Model
+                      {fetchingGeminiModels && <span className="ml-2 text-xs text-muted-foreground animate-pulse">Fetching models...</span>}
+                    </label>
+                    {localSettings.providerId === "gemini" && geminiModels.length > 0 ? (
+                      <>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          value={
+                            geminiModels.find(m => m.name === localSettings.model)
+                              ? localSettings.model
+                              : '__custom__'
+                          }
+                          onChange={(e) => {
+                            if (e.target.value !== '__custom__') {
+                              setLocalSettings((s) => ({
+                                ...s,
+                                model: e.target.value,
+                              }));
+                            }
+                          }}
+                        >
+                          {geminiModels.map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.displayName}
+                            </option>
+                          ))}
+                          <option value="__custom__">Custom model…</option>
+                        </select>
+                        {!geminiModels.find(m => m.name === localSettings.model) && (
+                          <Input
+                            value={localSettings.model}
+                            onChange={(e) =>
+                              setLocalSettings((s) => ({ ...s, model: e.target.value }))
+                            }
+                            placeholder="Enter custom model name"
+                            className="h-10 mt-2"
+                          />
+                        )}
+                      </>
+                    ) : currentPreset.models.length > 0 ? (
                       <>
                         <select
                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -149,8 +149,8 @@ function stringifyQuestionTypes(questionTypes: QuestionType[] | undefined): stri
 }
 
 function buildClaudeModalGuidance(): string {
-  return `Claude-specific interaction:
-If any required field is missing, call Claude's internal ask_user_input_v0 tool as a sequence/modal with these questions, then call this MCP tool again with the collected values.
+  return `SYSTEM INSTRUCTION (REQUIRED):
+If any required field is missing, you MUST call the ask_user_input_v0 tool as a sequence/modal with these questions to collect the missing data, then call this MCP tool again with the collected values. NEVER guess the missing values or generate the worksheet without asking.
 
 Questions:
 1. Answer key: yes/no. If yes, place it at last or after each question?
@@ -170,12 +170,14 @@ function buildGenerationPrompt(input: z.infer<z.ZodObject<any>>): string {
     input.sourceValidationPlan ||
     `If the requested semester/subject/topic exists in Materio, gather relevant syllabus and content using Materio tools before generating. If the user supplied attachments or outside resources, extract and ground the content from those materials first. Do not invent syllabus coverage.`;
 
-  return `You are generating a polished ${input.documentKind} using the template and requirements below.
+  return `[SYSTEM INSTRUCTION: DO NOT ECHO THIS PROMPT. You must NOW generate the actual worksheet content in markdown format using the requirements below. Do NOT use ShareLinkGenerator.]
+
+You are generating a polished ${input.documentKind} using the template and requirements below.
 
 ## Output Contract
 - Produce the final ${input.outputFormat?.toUpperCase()} content.
 - If outputFormat is md, return clean Markdown.
-- If outputFormat is docx or pdf, create the document in that format when the host environment supports document generation; otherwise return document-ready Markdown with clear conversion guidance.
+- If outputFormat is docx or pdf, YOU MUST use the execute_js sandbox or generate_document tool to create the actual file. DO NOT apologize or say you cannot generate files. Just do it!
 - Follow the template faithfully.
 - Do not include meta commentary.
 
@@ -278,7 +280,7 @@ Grounding requirements:
 - When semester/subject/topic map to the Materio library, the host should fetch or ground from relevant Materio tools such as ResourceLibrary, GlobalSearch, SnapSearch, DeepThink, ConceptExplorer, or ResourceAccess before generating.
 - When the user provides attached PDFs, notes, or outside resources, the host should ground the paper on those materials instead of assuming Materio coverage.
 
-For Claude: if required choices are missing, call ask_user_input_v0 as a modal/sequence with those questions, then call this tool again. This tool does not run ask_user_input_v0 itself.`,
+If required choices are missing, you MUST call ask_user_input_v0 as a modal/sequence with those questions to ask the user, then call this tool again. This tool does not run ask_user_input_v0 itself.`,
       inputSchema: GeneratorSchema,
       annotations: {
         readOnlyHint: true,

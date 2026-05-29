@@ -15,6 +15,8 @@ export async function parseFileContent(file: File): Promise<string> {
       return await parseWord(file);
     } else if (['xlsx', 'xls', 'csv'].includes(extension || '')) {
       return await parseExcel(file);
+    } else if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'mp4', 'webm', 'ogg', 'wav', 'mpeg', 'avi', 'mov'].includes(extension || '')) {
+      return ''; // No text extraction for media files
     } else {
       // Fallback for plain text, json, md, etc.
       return await file.text();

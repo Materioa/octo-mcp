@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "auto";
+type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "markmap" | "auto";
 
 const SANDBOX_OUTPUT_DETECT = `
 def get_output_dir():
@@ -38,8 +38,8 @@ function appendDownload(script: string): string {
 const GenerateDiagramSchema = {
   request: z.string().describe("Natural language description of the diagram to generate (e.g., 'DFA that accepts binary strings ending in 01', 'Circuit diagram of an AND gate', 'Line plot of sin(x)')"),
   format: z
-    .enum(["mermaid", "dot", "circuit", "plot", "gantt", "logic", "auto"])
-    .describe('Diagram format: "mermaid" (flowcharts, state diagrams), "dot" (FSMs, graphs, trees), "circuit" (electronic schematics), "plot" (matplotlib/plotly visualizations), "gantt" (project timelines), "logic" (logic gate circuits), or "auto" (infer best format)')
+    .enum(["mermaid", "dot", "circuit", "plot", "gantt", "logic", "markmap", "auto"])
+    .describe('Diagram format: "mermaid" (flowcharts, state diagrams), "dot" (FSMs, graphs, trees), "circuit" (electronic schematics), "plot" (Chart.js/React visualizations), "gantt" (project timelines), "logic" (logic gate circuits), "markmap" (mindmaps), or "auto" (infer best format)')
     .default("auto"),
 };
 
@@ -61,6 +61,9 @@ function recommendFormat(request: string): DiagramFormat {
   if (lower.includes("timeline") || lower.includes("roadmap")) {
     return "mermaid";
   }
+  if (lower.includes("mindmap") || lower.includes("markmap") || lower.includes("tree")) {
+    return "markmap";
+  }
   if (lower.includes("circuit") || lower.includes("resistor") || lower.includes("capacitor") || 
       lower.includes("diode") || lower.includes("transistor")) {
     return "circuit";
@@ -80,244 +83,45 @@ function recommendFormat(request: string): DiagramFormat {
   return "mermaid";
 }
 
-function buildWebSandboxExample(format: DiagramFormat, request: string): string {
-  if (format === "dot") {
-    return appendDownload(`
-import sys
-import subprocess
 
-try:
-    import graphviz
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "graphviz"])
-    import graphviz
-
-# Build the diagram for: ${request}
-dot = graphviz.Digraph(format='png')
-dot.attr(rankdir='LR', bgcolor='transparent')
-dot.attr('node', shape='circle', style='filled', fillcolor='#e8f4fd', color='#2196F3', fontname='Arial')
-dot.attr('edge', color='#555555', fontname='Arial', fontsize='10')
-
-# === ADD YOUR NODES AND EDGES HERE ===
-# Example DFA:
-# dot.node('q0', 'q0')
-# dot.node('q1', 'q1', shape='doublecircle')  # accept state
-# dot.edge('q0', 'q1', label='0')
-# =====================================
-
-output_dir = get_output_dir()
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, 'diagram.png')
-dot.render(output_path[:-4], cleanup=True)
-`.trim());
-  }
-
-  if (format === "circuit") {
-    return appendDownload(`
-import sys
-import subprocess
-
-try:
-    import schemdraw
-    import schemdraw.elements as elm
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "schemdraw"])
-    import schemdraw
-    import schemdraw.elements as elm
-
-# Build circuit for: ${request}
-output_dir = get_output_dir()
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, 'diagram.png')
-with schemdraw.Drawing() as d:
-    d += (R1 := elm.Resistor().label('R1'))
-    d += elm.Line().right(0.5)
-    d += elm.Gap().label(['+5V', '-'])
-    d.push()
-    d += elm.Line().down(0.5)
-    d += elm.Line().left(1)
-    d += (C1 := elm.Capacitor().label('C1'))
-    
-    # === ADD MORE COMPONENTS HERE ===
-    
-    d.save(output_path)
-`.trim());
-  }
-
-  if (format === "plot") {
-    return appendDownload(`
-import sys
-import subprocess
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "matplotlib"])
-    import matplotlib.pyplot as plt
-
-try:
-    import numpy as np
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "numpy"])
-    import numpy as np
-
-# Create visualization for: ${request}
-output_dir = get_output_dir()
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, 'diagram.png')
-x = np.linspace(0, 2*np.pi, 100)
-y = np.sin(x)
-
-plt.figure(figsize=(10, 6))
-plt.plot(x, y, linewidth=2)
-plt.grid(True, alpha=0.3)
-plt.title('${request}')
-plt.xlabel('X')
-plt.ylabel('Y')
-
-plt.savefig(output_path, dpi=150, bbox_inches='tight', transparent=True)
-`.trim());
-  }
-
-  if (format === "gantt") {
-    return appendDownload(`
-import sys
-import subprocess
-
-def pip_install(package_name):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-
-try:
-    import plotly.express as px
-except ImportError:
-    pip_install("plotly")
-    import plotly.express as px
-
-try:
-    import kaleido  # noqa: F401
-except Exception:
-    pip_install("kaleido")
-
-output_dir = get_output_dir()
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, 'diagram.png')
-tasks = [
-    {"Task": "Task 1", "Start": "2026-01-01", "Finish": "2026-01-03"},
-    {"Task": "Task 2", "Start": "2026-01-03", "Finish": "2026-01-06"},
-    {"Task": "Task 3", "Start": "2026-01-06", "Finish": "2026-01-07"},
-]
-fig = px.timeline(tasks, x_start="Start", x_end="Finish", y="Task", title="${request}")
-fig.update_yaxes(autorange="reversed")
-fig.write_image(output_path, scale=2)
-`.trim());
-  }
-
-  if (format === "logic") {
-    return appendDownload(`
-import sys
-import subprocess
-
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "matplotlib"])
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-
-# Create logic gate diagram for: ${request}
-output_dir = get_output_dir()
-os.makedirs(output_dir, exist_ok=True)
-output_path = os.path.join(output_dir, 'diagram.png')
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.set_xlim(0, 10)
-ax.set_ylim(0, 10)
-ax.axis('off')
-
-# Example AND gate
-def draw_and_gate(ax, x, y):
-    # Inputs
-    ax.plot([x-1, x], [y+0.3, y+0.3], 'k-', linewidth=2)
-    ax.plot([x-1, x], [y-0.3, y-0.3], 'k-', linewidth=2)
-    # Gate (curved D-shape)
-    gate = patches.Arc((x+0.5, y), 1, 0.8, angle=0, theta1=-90, theta2=90, linewidth=2, color='black')
-    ax.add_patch(gate)
-    # Output
-    ax.plot([x+1, x+2], [y, y], 'k-', linewidth=2)
-    ax.text(x+0.5, y, 'AND', ha='center', va='center')
-
-draw_and_gate(ax, 5, 5)
-ax.set_title('${request}')
-plt.savefig(output_path, dpi=150, bbox_inches='tight', transparent=True)
-`.trim());
-  }
-
-  // Default to mermaid guidance
-  return `
-# Mermaid diagram for: ${request}
-# Use your platform's native Mermaid rendering or convert to image
-# See instructions below
-`.trim();
-}
-
-/**
- */
 function shouldUseWebSandbox(format: DiagramFormat): boolean {
   return format !== "mermaid";
 }
 
-function buildAccuracyRules(format: DiagramFormat): string {
-  const sharedRules = [
-    "- Read the request twice before drawing so labels, counts, directions, and constraints match exactly.",
-    "- Do not invent nodes, tasks, gates, components, datasets, or transitions that were not requested or logically required.",
-    "- Before finalizing, perform a self-check that every label in the diagram can be traced back to the request or validated source material.",
-    "- If a package import fails in the web sandbox, install it with `pip install <package>` and rerun the script.",
-    "- If the diagram still feels ambiguous, revise the structure rather than decorating an incorrect layout.",
-  ];
-
-  const formatRules: Record<DiagramFormat, string[]> = {
-    mermaid: [
-      "- Keep Mermaid syntax minimal and valid; avoid unsupported constructs when a simpler layout works.",
-      "- Double-check arrow direction, branching labels, and section nesting before returning the diagram.",
-    ],
-    dot: [
-      "- Ensure one transition per (state, input) pair for DFA/FSM-style diagrams.",
-      "- Confirm all states are reachable from the initial state unless the request explicitly allows otherwise.",
-      "- Use `shape=doublecircle` only for accept states and verify every edge label is meaningful.",
-      "- Review the graph once as logic and once as syntax before rendering.",
-    ],
-    circuit: [
-      "- Verify current flow, node joins, grounding, and component order before drawing.",
-      "- Use standard component symbols and label values clearly so the circuit can be read without guessing.",
-    ],
-    plot: [
-      "- Verify axes, units, legends, and dataset mappings against the request before exporting.",
-      "- Do not fabricate data trends; if the data is missing, generate only from provided formulas or clearly stated sample values.",
-    ],
-    gantt: [
-      "- Double-check task names, ordering, start dates, durations, and overlaps before rendering.",
-      "- Ensure dependencies and timeline progression make chronological sense.",
-      "- Prefer `plotly` or a dedicated Gantt-capable package when schedule precision matters; fall back only if needed.",
-    ],
-    logic: [
-      "- Verify each gate type, input line, output line, and truth relationship before exporting the image.",
-      "- For compound logic, trace the signal path manually once from inputs to outputs to catch wiring mistakes.",
-    ],
-    auto: [],
-  };
-
-  return [...sharedRules, ...(formatRules[format] || [])].join("\n");
+function buildPythonSandboxExample(format: DiagramFormat, request: string): string {
+  if (format === "dot") {
+    return appendDownload(`import graphviz\nfrom graphviz import Digraph\n\ndot = Digraph()\ndot.attr(rankdir='LR')\n# add nodes\ndot.render(get_output_dir() + '/diagram', format='png')`);
+  }
+  if (format === "circuit") {
+    return appendDownload(`import schemdraw\nimport schemdraw.elements as elm\n\nwith schemdraw.Drawing() as d:\n    d += elm.Resistor().label('R1')\n    d.save(get_output_dir() + '/diagram.png')`);
+  }
+  if (format === "plot" || format === "logic" || format === "gantt") {
+    return appendDownload(`import matplotlib.pyplot as plt\nimport numpy as np\n\nplt.plot([1,2], [3,4])\nplt.savefig(get_output_dir() + '/diagram.png')`);
+  }
+  return "";
 }
 
-function buildFormatExample(format: DiagramFormat): string {
-  if (format === "mermaid") {
-    return `### Mermaid Syntax
-\`\`\`mermaid
-<your complete mermaid diagram here>
-\`\`\``;
-  }
+function buildFormatExample(format: DiagramFormat, environment: string): string {
+  return "";
+}
 
+function buildAccuracyRules(format: DiagramFormat, environment: string): string {
+  return "- Keep the diagram clean and highly accurate based on the user's request.";
+}
+
+function buildWebSandboxExample(format: DiagramFormat, request: string, environment: string): string {
   if (format === "dot") {
+    if (environment === "web") {
+      return `### Graphviz DOT Syntax via d3-graphviz
+\`\`\`html
+<!-- Render graphviz using d3-graphviz -->
+<div id="graph"></div>
+<script type="module">
+  import { graphviz } from 'd3-graphviz';
+  graphviz("#graph").renderDot(\`digraph { ... }\`);
+</script>
+\`\`\``;
+    }
     return `### Graphviz DOT Syntax (Most Accurate for FSMs)
 \`\`\`dot
 digraph {
@@ -334,6 +138,16 @@ digraph {
   }
 
   if (format === "circuit") {
+    if (environment === "web") {
+      return `### Circuit Diagram
+\`\`\`react
+import React from 'react';
+// import { ... } from '@tscircuit/core';
+export default function Circuit() {
+  return <div>...</div>;
+}
+\`\`\``;
+    }
     return `### Circuit Diagram (schemdraw)
 \`\`\`python
 import schemdraw
@@ -346,9 +160,28 @@ with schemdraw.Drawing() as d:
     # Add your circuit components
     d.save('/tmp/diagram.png')
 \`\`\``;
+    return `### Mindmap using Markmap
+\`\`\`markmap
+# Root
+## Child 1
+- Grandchild A
+- Grandchild B
+## Child 2
+- Grandchild C
+\`\`\``;
   }
 
   if (format === "plot") {
+    if (environment === "web") {
+      return `### Chart.js or Plotly.js Visualization
+\`\`\`html
+<canvas id="myChart"></canvas>
+<script type="module">
+  import Chart from 'chart.js/auto';
+  // ...
+</script>
+\`\`\``;
+    }
     return `### Matplotlib/Plotly Visualization
 \`\`\`python
 import matplotlib.pyplot as plt
@@ -360,6 +193,16 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
   }
 
   if (format === "gantt") {
+    if (environment === "web") {
+      return `### Gantt Chart via frappe-gantt
+\`\`\`html
+<div id="gantt"></div>
+<script type="module">
+  import Gantt from 'frappe-gantt';
+  // ...
+</script>
+\`\`\``;
+    }
     return `### Gantt Chart
 \`\`\`python
 import plotly.express as px
@@ -370,6 +213,15 @@ import plotly.express as px
   }
 
   if (format === "logic") {
+    if (environment === "web") {
+      return `### Logic Gates
+\`\`\`react
+import React from 'react';
+export default function LogicGates() {
+  return <svg>...</svg>;
+}
+\`\`\``;
+    }
     return `### Logic Gates
 \`\`\`python
 import matplotlib.pyplot as plt
@@ -380,7 +232,7 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 \`\`\``;
   }
 
-  return `### Format Notes
+    return `### Format Notes
 \`\`\`text
 Use the recommended format and keep the result faithful to the request.
 \`\`\``;
@@ -391,22 +243,16 @@ export function registerDiagramGeneratorTools(server: McpServer): void {
     "GenerateDiagramFromRequest",
     {
       title: "Generate Diagram from Natural Language (Multi-Format)",
-      description: `Generate diagrams in multiple formats using LLM web-interface sandboxes for accurate rendering.
+      description: `Generate diagrams in multiple formats for the Custom Web Client.
 
-## Supported Diagram Types:
-1. **dot** (Graphviz) — FSMs, state diagrams, directed graphs, trees (most accurate for FSMs)
-2. **mermaid** — Flowcharts, sequence diagrams, state diagrams, class diagrams (native renderer is fine for simple cases)
-3. **circuit** — Electronic schematics (resistors, capacitors, transistors, etc.)
-4. **plot** — Line, bar, scatter, heatmaps, histograms (matplotlib/plotly)
-5. **gantt** — Project timelines and schedules
-6. **logic** — Logic gates, Boolean algebra circuits
+## Supported Diagram Types & Workflows:
+1. **mermaid / dot**: Directly output the code block wrapped in \`\`\`mermaid or \`\`\`dot. The client natively renders these formats inline!
+   - Note: For Finite State Machines (FSM) or state diagrams, prefer using **dot** (Graphviz) instead of mermaid for better routing and layout.
+2. **markmap**: Directly output the code block wrapped in \`\`\`markmap. Use standard markdown headings (#, ##) and lists (-, *) to represent the mindmap tree.
+3. **plot / circuit / gantt / logic**: The client features an advanced JS/React WebArtifactSandbox. Output the visualization code (using Chart.js, Recharts, basic HTML/SVG, etc.) inside \`\`\`react, \`\`\`html, or \`\`\`javascript blocks. The client will render these components inline.
 
-## Workflow:
-1. I generate the appropriate spec/code for your request
-2. Use the LLM web-interface Python sandbox (ChatGPT, Claude, Perplexity) for complex formats (dot, circuit, plot, gantt, logic)
-3. Use native renderer for simple Mermaid or when you already render SVG in HTML
-
-This avoids limitations with native renderers (e.g., Mermaid not supporting accurate FSMs in DOT).
+NOTE: This system DOES NOT have a Python sandbox. Do NOT attempt to output Python or matplotlib code. If a complex visualization is needed, use standard web technologies (React/JS/SVG).
+IMPORTANT: The WebArtifactSandbox has an import map configured for esm.sh. Use bare imports (e.g. \`import Chart from 'chart.js/auto';\`) rather than absolute CDN URLs like jsdelivr or unpkg.
 
 Args:
   - request: What you want diagrammed
@@ -421,12 +267,11 @@ Args:
     },
     async ({ request, format }) => {
       try {
-        // Auto-detect if format is "auto" and normalize safely to DiagramFormat
         let chosenFormat: DiagramFormat = (format && format !== "auto") ? (format as DiagramFormat) : recommendFormat(request);
         const normalizedFormat = chosenFormat.toLowerCase() as DiagramFormat;
 
         const useSandbox = shouldUseWebSandbox(normalizedFormat);
-        const sandboxScript = buildWebSandboxExample(normalizedFormat, request);
+        const sandboxScript = buildWebSandboxExample(normalizedFormat, request, "web");
 
         const responseText = [
           `## Diagram Generation`,
@@ -434,18 +279,13 @@ Args:
           `**Recommended Format:** ${normalizedFormat.toUpperCase()}`,
           ``,
           `## Your Task`,
-          `Generate a complete, valid ${normalizedFormat === "dot" ? "Graphviz DOT" : normalizedFormat.toUpperCase()} spec for the above request.`,
-          useSandbox ? `Use the web-interface Python sandbox for rendering (ChatGPT, Claude, Perplexity).` : `Use the native renderer (Mermaid or your SVG pipeline).`,
-          useSandbox ? `Do not truncate or summarize the spec. Run the sandbox script and return the rendered image with a download link.` : `If SVG is produced, render it natively (HTML artifact).`,
-          ``,
-          buildFormatExample(normalizedFormat),
+          useSandbox 
+            ? `Write HTML or React code using JS visualization libraries (like Chart.js, Recharts, etc.) to satisfy the request. Return the code block tagged with \`\`\`html or \`\`\`react. ALWAYS use bare module imports (e.g. \`import Chart from 'chart.js/auto';\`), the sandbox has an import map.`
+            : `Write the diagram using ${normalizedFormat.toUpperCase()} syntax. Return the code block tagged with \`\`\`${normalizedFormat}. The client will natively render it.`,
           ``,
           `## Rules for Accuracy`,
-          buildAccuracyRules(normalizedFormat),
-          useSandbox ? `## Web Sandbox Script
-\`\`\`python
-${sandboxScript}
-\`\`\`` : ``,
+          buildAccuracyRules(normalizedFormat, "web"),
+          useSandbox ? `\n## Web Artifact Example\n\`\`\`\n${sandboxScript}\n\`\`\`` : ``,
         ];
 
         return {

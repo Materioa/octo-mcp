@@ -14,7 +14,7 @@ Generate polished worksheets, sample papers, question papers, and question banks
 
 ## Tools
 
-- `CreateWorksheetPaper` — returns the final generation prompt once required paper settings are available.
+- `CreateWorksheetPaper` — returns the final generation prompt once required paper settings are available. **IMPORTANT: Once you receive this prompt, you MUST immediately output the generated worksheet content in markdown format. DO NOT echo the prompt back to the user.**
 - `CreateOrEditPaperTemplate` — creates or edits a reusable `Skill.md` template based on the user's described layout.
 
 ## Required Inputs
@@ -25,21 +25,23 @@ Before generation, collect:
 2. Bloom's taxonomy: yes/no. If yes, levels to include: remember, understand, apply, analyse, evaluate, create.
 3. Difficulty: easy, medium, or hard.
 4. Question types and marks distribution: MCQ, fill blanks, short answer, long answer, case study, numericals, etc.
-5. Output format: docx, pdf, or md.
+5. Output format: docx, pdf, or md. **CRITICAL**: If the user selects 'pdf' or 'docx', you must STILL only output raw Markdown. Do NOT apologize or explain that you cannot create a PDF/DOCX. The system frontend will automatically handle the conversion. Just output the markdown content directly.
 
 ## Grounding And Validation
 
 Before generating questions, ground the content in available source material:
 
 - If the request maps to Materio content, gather relevant syllabus and chapter/question-bank material using Materio tools such as `SnapSearch`, `DeepThink`, or `ResourceAccess`.
+- **CRITICAL**: If you do not know the exact topic names, you MUST use `ResourceLibrary` FIRST to get the list of exact topics before searching.
+- **IMPORTANT**: When using `SnapSearch` or `DeepThink`, use exact topic names found via `ResourceLibrary` (e.g. "Android Components and Resource Handling") rather than vague terms like "chapter 2", as they rely on keyword and semantic matching against actual course content.
 - Do not use `GlobalSearch` for content grounding; it is not a content retrieval tool for worksheets.
 - If the user provides attached PDFs, notes, or other resources outside Materio, ground the output in those materials instead.
 - Mixed-source mode is allowed, but the generated questions should stay faithful to the validated scope.
 - Do not invent syllabus coverage or unsupported facts when source material is thin.
 
-## Claude Modal Flow
+## Modal Flow (Required)
 
-When running in Claude and any required input is missing, call Claude's internal `ask_user_input_v0` tool as a modal or sequence of questions. After collecting answers, call `CreateWorksheetPaper` with the completed values.
+Whenever any required input is missing, you MUST call the `ask_user_input_v0` tool as a modal or sequence of questions. After collecting answers, you MUST call `CreateWorksheetPaper` with the completed values. NEVER generate a worksheet directly from scratch without calling `CreateWorksheetPaper` first.
 
 Ask all required inputs before generating. Do not skip or infer missing fields.
 
@@ -69,9 +71,9 @@ The tool returns a `Skill.md` template. Keep that template in the same chat cont
 For any question where a diagram is possible:
 
 1. Solve the question.
-2. Generate the diagram using the platform sandbox (Python graphviz/networkx/matplotlib/schemdraw as appropriate).
-3. Save the image in the sandbox.
-4. Attach/embed the image in the document (question and answer key, if present).
+2. If in ChatGPT/Claude/Perplexity, generate the diagram using the platform sandbox (Python graphviz/networkx/matplotlib/schemdraw as appropriate) and attach the resulting image.
+3. If in the Custom Web Client (Materio Chat Client), generate the diagram as an HTML or React Web Artifact using frontend visualization libraries (chart.js, d3-graphviz, tscircuit, etc.). The WebArtifactSandbox will automatically execute and capture the image URL.
+4. Embed the resulting image URL or attached image in the document (question and answer key, if present).
 
 ## Quality Rules
 
@@ -81,6 +83,10 @@ For any question where a diagram is possible:
 - Ground the output in validated source material before writing questions.
 - If Bloom's taxonomy is enabled, include BT labels.
 - Use CO labels consistently when the template includes a CO column.
-- Match answer-key placement exactly to the user's selected preference.
-- For diagram-type questions, do not describe the diagram in text. Generate the diagram using the platform sandbox (Python tools such as graphviz, networkx, schemdraw, matplotlib) and embed the resulting image in the document.
-- If a diagram is possible for a question (e.g., DFA, circuit, graph, timeline), always generate and embed the diagram in the question and in the answer key.
+- Wait until the user has fully answered the 5 questions before generating the worksheet. Don't jump ahead.
+- For diagram-type questions, do not describe the diagram in text. If using Python sandboxes, embed the resulting image in the document. If using the Custom Web Client, generate the diagram as a Web Artifact (HTML/React) and let the sandbox capture and return the image, then embed the URL.
+- **CRITICAL:** If the user selects "pdf", "docx", or "md", DO NOT apologize or explain that you cannot create a PDF. 
+  - ALWAYS default to calling `execute_js` and using the injected `pdfkit` or `htmlToDocx` libraries to build the document buffer manually, then use `uploadBufferToSupabase(buffer, filename, contentType)` to get a public URL. Output the returned link in the format `[Document: pdf | Title](url)`.
+  - FALLBACK: If the `execute_js` tool fails, errors out, or something goes wrong, ONLY THEN fallback to calling the `generate_document` tool with your raw Markdown content and the requested format. Output the link it returns.
+- If using `generate_document` or `execute_js`, wait for it to return the link, then display it in the chat exactly as returned (e.g., `[Document: pdf | Worksheet](url)`). The frontend will automatically convert this link into an interactive Document Card.
+- NEVER try to use `ShareLinkGenerator` for a newly generated worksheet. `ShareLinkGenerator` is only for existing PDFs in the Materio library.

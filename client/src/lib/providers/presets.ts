@@ -8,19 +8,21 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultModel: "openai/gpt-oss-120b:free",
     models: [
       "openai/gpt-oss-120b:free",
+      "moonshotai/kimi-k2.6:free",
       "google/gemma-4-31b-it:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
       "z-ai/glm-4.5-air:free",
       "deepseek/deepseek-v4-flash:free",
-      "minimax/minimax-m2.5:free",
+      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
       "nvidia/nemotron-3-nano-30b-a3b:free",
+      "minimax/minimax-m2.5:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
       "openrouter/free"
     ],
     keyPlaceholder: "Managed automatically by Thinklet",
   },
   {
     id: "openrouter",
-    name: "OpenRouter (BYOK)",
+    name: "OpenRouter (Custom)",
     baseUrl: "https://openrouter.ai/api/v1",
     defaultModel: "anthropic/claude-sonnet-4",
     models: [
@@ -91,7 +93,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "llama",
     name: "Meta Llama API",
-    baseUrl: "https://api.llama.com/compat/v1",
+    baseUrl: "https://api.llama.com/v1",
     defaultModel: "Llama-4-Maverick-17B-128E-Instruct-FP8",
     models: [
       "Llama-4-Maverick-17B-128E-Instruct-FP8",
@@ -117,7 +119,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "kimi",
     name: "Moonshot Kimi",
-    baseUrl: "https://api.moonshot.cn/v1",
+    baseUrl: "https://api.moonshot.ai/v1",
     defaultModel: "moonshot-v1-auto",
     models: [
       "moonshot-v1-auto",

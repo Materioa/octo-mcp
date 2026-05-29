@@ -39,6 +39,7 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - If the tool returns raw SVG text, **wrap it in a minimal HTML artifact** (e.g., `<html><body>...svg...</body></html>`) so it renders. Do not return the raw SVG or JSON-wrapped SVG text in chat.
 - Never trim or shorten SVG output before embedding; truncated SVG will not render.
 - If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
+- Call GenerateDiagramFromRequest with `environment="python"`.
 
 ### Claude
 - Fenced ```mermaid code blocks render **natively in artifacts/canvas** — include the block directly.
@@ -51,16 +52,23 @@ Generate reliable, machine-readable diagram specs (Mermaid or Graphviz/DOT) from
 - When a tool returns diagram output (DOT/SVG/PNG), use it as-is and render via the Claude sandbox with Python, then provide a download link. Only render natively if the response is Mermaid or SVG.
 - Save the image to /mnt/data or ./output and return a download link or artifact pointing to that saved file. Do not output base64.
 - Do not skip diagram rendering and do not answer with text or ASCII drawings.
-- If the tool returns HTML, **create an artifact** so the native renderer can display it.
 - If the tool returns raw SVG text, **wrap it in an HTML artifact** so it renders.
 - If the tool returns an image file (SVG/PNG), **provide a download link** instead of trying to render it inline.
+- Call GenerateDiagramFromRequest with `environment="python"`.
 
 ### Perplexity
 - Perplexity does **NOT** natively render Mermaid or DOT in responses.
-- Perplexity does **NOT** natively render Mermaid, DOT, or SVG in responses.
 - Always use the Perplexity sandbox with Python to render diagram requests (graphviz/networkx/matplotlib/schemdraw as appropriate).
 - Always return a download link to the generated image. Do not inline images and do not return text-only descriptions.
 - Save the image to /mnt/data or ./output and return a download link or artifact pointing to that saved file. Do not output base64.
+- Call GenerateDiagramFromRequest with `environment="python"`.
+
+### Custom Web Client (Materio Chat Client)
+- Custom Web Client natively supports Mermaid (fenced codeblock) and HTML/React Web Artifacts for everything else.
+- DO NOT use Python sandboxing. The client has no Python runtime.
+- For complex diagrams such as circuits, plots, Gantt charts, logic diagrams, or DOT, output a Web Artifact (HTML/React code block).
+- The platform's Web Artifact Sandbox will execute your code, capture the image, and save it to the Supabase bucket automatically.
+- Call GenerateDiagramFromRequest with `environment="web"`.
 
 ## Rendering Fallback Rule
 
