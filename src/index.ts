@@ -151,9 +151,7 @@ async function runStdio(): Promise<void> {
 }
 
 // ──── Transport: Streamable HTTP (for remote MCP connectors) ────
-async function runHTTP(): Promise<void> {
-  const port = Number(process.env.PORT ?? 3001);
-  const app = express();
+export const app = express();
 
   // ── Parse JSON bodies for MCP JSON-RPC requests ──
   app.use(express.json());
@@ -726,32 +724,31 @@ async function runHTTP(): Promise<void> {
   });
 
   // ── Start ──
-  await connectDB();
-  app.listen(port, () => {
-    console.error(`✅ Materio MCP server running on http://localhost:${port}`);
-    console.error(`   ┌─────────────────────────────────────────────────────┐`);
-    console.error(`   │  MCP (JSON-RPC 2.0):  POST http://localhost:${port}/mcp  │`);
-    console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
-    console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
-    console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
-    console.error(`   │  Protected auth:      POST http://localhost:${port}/mcp/elevated │`);
-    console.error(`   └─────────────────────────────────────────────────────┘`);
-    console.error(`\n   Perplexity / Claude → POST /mcp (Streamable HTTP, JSON-RPC 2.0)`);
-    console.error(`   ChatGPT Custom GPT  → GET  /api/* (REST, via openapi.json)`);
-  });
-}
+  const port = Number(process.env.PORT ?? 3001);
+  const transport = process.env.TRANSPORT ?? "http";
+  const isVercel = process.env.VERCEL === "1";
 
-// ──── Choose transport ────
-const transport = process.env.TRANSPORT ?? "http";
-
-if (transport === "stdio") {
-  runStdio().catch((err) => {
-    console.error("Fatal:", err);
-    process.exit(1);
-  });
-} else {
-  runHTTP().catch((err) => {
-    console.error("Fatal:", err);
-    process.exit(1);
-  });
-}
+  if (transport === "stdio") {
+    runStdio().catch((err) => {
+      console.error("Fatal:", err);
+      process.exit(1);
+    });
+  } else if (!isVercel && process.env.NODE_ENV !== "test") {
+    connectDB().then(() => {
+      app.listen(port, () => {
+        console.error(`✅ Materio MCP server running on http://localhost:${port}`);
+        console.error(`   ┌─────────────────────────────────────────────────────┐`);
+        console.error(`   │  MCP (JSON-RPC 2.0):  POST http://localhost:${port}/mcp  │`);
+        console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
+        console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
+        console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
+        console.error(`   │  Protected auth:      POST http://localhost:${port}/mcp/elevated │`);
+        console.error(`   └─────────────────────────────────────────────────────┘`);
+        console.error(`\n   Perplexity / Claude → POST /mcp (Streamable HTTP, JSON-RPC 2.0)`);
+        console.error(`   ChatGPT Custom GPT  → GET  /api/* (REST, via openapi.json)`);
+      });
+    }).catch((err: any) => {
+      console.error("Fatal DB:", err);
+      process.exit(1);
+    });
+  }
