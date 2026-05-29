@@ -12,3 +12,5 @@ scratch/*
 publish-and-push.ps1
 test-db.ts 
 test-memory.ts 
+.vercel
+.env*.local

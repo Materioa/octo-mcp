@@ -215,8 +215,8 @@ export const app = express();
   // ════════════════════════════════════════════════════
   //  Health check
   // ════════════════════════════════════════════════════
-  app.get("/health", (_req, res) => {
-    const mongoose = require("mongoose");
+  app.get("/health", async (_req, res) => {
+    const { default: mongoose } = await import("mongoose");
     res.json({
       status: "ok",
       server: "materio-mcp-server",
