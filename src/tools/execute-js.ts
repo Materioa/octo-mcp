@@ -1,6 +1,7 @@
 import { z } from "zod";
 import vm from "vm";
 import PDFDocument from "pdfkit";
+// @ts-ignore
 import htmlToDocx from "html-to-docx";
 import { marked } from "marked";
 import { createClient } from "@supabase/supabase-js";

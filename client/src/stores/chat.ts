@@ -576,7 +576,7 @@ Current personality: ${settings.personality}${memoryContext}`;
             .filter(m => m.timestamp < oldestInLine.timestamp)
             .sort((a, b) => b.timestamp - a.timestamp); // descending
             
-          if (olderMessages.length > 0) {
+          if (olderMessages.length > 0 && olderMessages[0]) {
             currentId = olderMessages[0].id;
             continue;
           }
