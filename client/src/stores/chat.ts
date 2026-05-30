@@ -23,10 +23,11 @@ interface ChatStore {
   isSending: boolean;
 
   loadConversations: () => Promise<void>;
-  createConversation: () => Promise<string>;
+  createConversation: (isTemporary?: boolean) => Promise<string>;
   setActiveConversation: (id: string) => Promise<void>;
   clearActiveConversation: () => void;
   deleteConversation: (id: string) => Promise<void>;
+  setConversationVisibility: (id: string, visibility: "private" | "public") => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
   addMessage: (message: Message) => Promise<void>;
   updateMessage: (id: string, updates: Partial<Message>) => void;
@@ -77,7 +78,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ conversations });
   },
 
-  createConversation: async () => {
+  createConversation: async (isTemporary = false) => {
     const id = crypto.randomUUID();
     const now = Date.now();
     const conversation: Conversation = {
@@ -86,6 +87,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       messageCount: 0,
+      isTemporary,
+      visibility: "private",
     };
     
     // Optimistic UI update
@@ -96,7 +99,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
 
     // Background DB save (do not await to keep UI instant)
-    saveConversation(conversation).catch(console.error);
+    if (!isTemporary) {
+      saveConversation(conversation).catch(console.error);
+    }
     
     return id;
   },
@@ -123,14 +128,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (m.isStreaming) {
         m.isStreaming = false;
         // Optionally save back to DB in background, but just fixing memory is enough for UI
-        saveMessage(id, m).catch(() => {});
+        const conv = get().conversations.find(c => c.id === id);
+        if (!conv?.isTemporary) {
+          saveMessage(id, m).catch(() => {});
+        }
       }
     });
     
     // Auto-select the most recent branch leaf
     if (messages.length > 0) {
-      // Very basic: just use the raw messages for now, or build the tree if we have parentId
-      // Find the last message (the one with no children)
       const childMap = new Map<string, string[]>();
       messages.forEach(m => {
         if (m.parentId) {
@@ -138,9 +144,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           childMap.get(m.parentId)!.push(m.id);
         }
       });
-      // Find leaves (messages that aren't parents of anyone)
       const leaves = messages.filter(m => !childMap.has(m.id));
-      // Pick the latest leaf
       leaves.sort((a, b) => b.timestamp - a.timestamp);
       if (leaves.length > 0) {
         const leaf = leaves[0];
@@ -170,8 +174,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
+  setConversationVisibility: async (id, visibility) => {
+    const { conversations } = get();
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+
+    const updatedConv = { ...conv, visibility };
+    set(s => ({
+      conversations: s.conversations.map(c => c.id === id ? updatedConv : c)
+    }));
+
+    if (!updatedConv.isTemporary) {
+      await saveConversation(updatedConv);
+    }
+  },
+
   deleteMessage: async (id) => {
-    const { allMessages } = get();
+    const { allMessages, activeConversationId, conversations } = get();
+    const conv = conversations.find(c => c.id === activeConversationId);
     
     // Find all descendants iteratively to delete the entire branch
     const idsToDelete = new Set([id]);
@@ -187,8 +207,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     
     const idsToDeleteArray = Array.from(idsToDelete);
-    for (const deleteId of idsToDeleteArray) {
-      await dbDeleteMessage(deleteId);
+    if (!conv?.isTemporary) {
+      for (const deleteId of idsToDeleteArray) {
+        await dbDeleteMessage(deleteId);
+      }
     }
     
     set((s) => ({
@@ -206,10 +228,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const conv = conversations.find((c) => c.id === activeConversationId);
     
     let updatedTitle = conv?.title;
-    if (conv?.title === "New Chat" && message.role === "user") {
-      // Don't auto-title based on the first message anymore, wait for AI response
-      // updatedTitle = message.content.slice(0, 50) + (message.content.length > 50 ? "..." : "");
-    }
 
     const updatedConv = conv
       ? { ...conv, updatedAt: Date.now(), messageCount: updatedMessages.length, title: updatedTitle || "New Chat" }
@@ -230,11 +248,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // 3. Save to DB and rollback if fails (e.g. rate limit)
     try {
-      if (updatedConv && updatedTitle) {
-        document.title = updatedTitle;
+      if (updatedConv && !updatedConv.isTemporary) {
+        if (updatedTitle) document.title = updatedTitle;
         saveConversation(updatedConv).catch(console.error);
+        await saveMessage(activeConversationId, message);
       }
-      await saveMessage(activeConversationId, message);
     } catch (err) {
       // Rollback UI to previous state on failure
       set((s) => ({
@@ -254,9 +272,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // If stream finishes or updates important metadata, save to DB in background
     if (updates.isStreaming === false || updates.rating || updates.modelUsed) {
-      const { activeConversationId, messages } = get();
+      const { activeConversationId, messages, conversations } = get();
+      const conv = conversations.find(c => c.id === activeConversationId);
       const msg = messages.find((m) => m.id === id);
-      if (activeConversationId && msg) {
+      if (activeConversationId && msg && !conv?.isTemporary) {
         saveMessage(activeConversationId, msg).catch(console.error);
       }
     }
@@ -301,11 +320,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const auth = useAuthStore.getState();
       const userId = auth.user?.id || auth.anonymousId;
       const mem = getMemoryManager(import.meta.env.VITE_SUPERMEMORY_API_KEY || "", userId);
-      const memories = await mem.listMemories(50);
-      if (memories.length > 0) {
-        memoryContext =
-          "\n\nRelevant user memories and preferences:\n" +
-          memories.map((m) => `- ${m.content}`).join("\n");
+      const conv = get().conversations.find(c => c.id === conversationId);
+      
+      if (!conv?.isTemporary) {
+        const memories = await mem.listMemories(50);
+        if (memories.length > 0) {
+          memoryContext =
+            "\n\nRelevant user memories and preferences:\n" +
+            memories.map((m) => `- ${m.content}`).join("\n");
+        }
       }
     } catch (err) {
       console.error("Memory error:", err);
@@ -516,6 +539,23 @@ Current personality: ${settings.personality}${memoryContext}`;
             try {
               let finalArgs = args;
               if (tc.function.name === "save_to_memory") {
+                 const conv = get().conversations.find(c => c.id === conversationId);
+                 if (conv?.isTemporary) {
+                    if (existingTc) {
+                      existingTc.result = "Memory saved successfully (Incognito Mode).";
+                      existingTc.status = "completed";
+                    }
+                    aiMessages.push({
+                      role: "tool",
+                      tool_call_id: tc.id,
+                      content: JSON.stringify({ result: "Memory saved successfully." }),
+                    });
+                    
+                    if (get().activeConversationId === conversationId) {
+                      updateMessage(aiMessageId, { toolCalls: Array.from(toolCallMap.values()) });
+                    }
+                    continue;
+                 }
                  const auth = useAuthStore.getState();
                  const userId = auth.user?.id || auth.anonymousId;
                  finalArgs = { ...args, containerTag: `user-${userId}` };

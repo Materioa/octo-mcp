@@ -34,6 +34,8 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   messageCount: number;
+  isTemporary?: boolean;
+  visibility?: "private" | "public";
 }
 
 export interface Memory {

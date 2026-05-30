@@ -2,8 +2,27 @@ import { useEffect, useState } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Loader } from "lucide-react";
+
+function IframeListener() {
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "MATERIO_NAVIGATE" && event.data.path) {
+        navigate(event.data.path);
+      }
+      if (event.data?.type === "MATERIO_SET_QUERY" && event.data.query) {
+        window.dispatchEvent(new CustomEvent("materio-set-query", { detail: event.data.query }));
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [navigate]);
+
+  return null;
+}
 
 export default function App() {
   const theme = useSettingsStore((s) => s.theme);
@@ -65,10 +84,12 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <IframeListener />
       <Routes>
         <Route path="/" element={<Navigate to="/new" replace />} />
         <Route path="/new" element={<ChatLayout />} />
         <Route path="/c/:id" element={<ChatLayout />} />
+        <Route path="/share/:id" element={<ChatLayout />} />
         <Route path="/settings" element={<ChatLayout />} />
         <Route path="/settings/:tab" element={<ChatLayout />} />
       </Routes>

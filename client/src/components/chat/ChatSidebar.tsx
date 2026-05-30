@@ -135,7 +135,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
       {open ? (
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-1 py-2">
-            {conversations.map((conv) => (
+            {conversations.filter(c => !c.isTemporary).map((conv) => (
               <div
                 key={conv.id}
                 className={cn(

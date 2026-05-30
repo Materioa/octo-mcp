@@ -46,10 +46,21 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue }:
   const [isParsing, setIsParsing] = useState(false);
 
   useEffect(() => {
-    if (initialValue && !value) {
+    if (initialValue) {
       setValue(initialValue);
     }
   }, [initialValue]);
+
+  useEffect(() => {
+    const handleSetQuery = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setValue(customEvent.detail);
+      }
+    };
+    window.addEventListener("materio-set-query", handleSetQuery);
+    return () => window.removeEventListener("materio-set-query", handleSetQuery);
+  }, []);
 
   const closeModelSelector = useCallback(() => {
     setModelSelectorClosing(true);

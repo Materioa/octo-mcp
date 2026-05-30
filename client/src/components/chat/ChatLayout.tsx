@@ -11,6 +11,8 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { DocumentPreview } from "./DocumentPreview";
+import { Share, Ghost } from "lucide-react";
+import { ShareDialog } from "./ShareDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
@@ -18,6 +20,7 @@ import { Loader } from "lucide-react";
 
 export function ChatLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("ai");
   const [settingsMobileView, setSettingsMobileView] = useState<"list" | "detail">("list");
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
@@ -29,6 +32,7 @@ export function ChatLayout() {
   const {
     activeConversationId,
     messages,
+    conversations,
     isSending,
     createConversation,
     setActiveConversation,
@@ -125,12 +129,14 @@ export function ChatLayout() {
     async (content: string, attachments?: any[]) => {
       let convId = activeConversationId;
       if (!convId) {
-        convId = await createConversation();
+        const isTemporary = searchParams.get("temporary") === "true";
+        convId = await createConversation(isTemporary);
         
-        // Only preserve shared-context to keep AI context alive, drop pre-filled queries
+        // Only preserve specific params to keep AI context alive, drop pre-filled queries
         const newParams = new URLSearchParams();
         const sharedCtx = searchParams.get("shared-context");
         if (sharedCtx) newParams.set("shared-context", sharedCtx);
+        if (isTemporary) newParams.set("temporary", "true");
         
         const paramStr = newParams.toString();
         navigate(`/c/${convId}${paramStr ? `?${paramStr}` : ''}`);
@@ -209,16 +215,58 @@ export function ChatLayout() {
             </button>
           )}
           
-          <button 
-            onClick={() => {
-              clearActiveConversation();
-              navigate("/new");
-            }}
-            className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors ml-auto text-muted-foreground hover:text-foreground"
-            title="New Chat"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
+          
+          <div className="ml-auto flex items-center gap-2">
+            {!activeConversationId ? (
+              <button 
+                onClick={() => {
+                  const newParams = new URLSearchParams(searchParams);
+                  if (searchParams.get("temporary") === "true") {
+                    newParams.delete("temporary");
+                  } else {
+                    newParams.set("temporary", "true");
+                  }
+                  navigate(`/new?${newParams.toString()}`);
+                }}
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+                  searchParams.get("temporary") === "true" 
+                    ? "bg-accent text-foreground" 
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+                title={searchParams.get("temporary") === "true" ? "Disable Temporary Chat" : "Enable Temporary Chat"}
+              >
+                <Ghost className="h-4 w-4" />
+              </button>
+            ) : (
+              conversations.find(c => c.id === activeConversationId)?.isTemporary && (
+                <div className="flex h-8 w-8 items-center justify-center rounded-md text-foreground bg-accent" title="Temporary Chat (Not Saved)">
+                  <Ghost className="h-4 w-4" />
+                </div>
+              )
+            )}
+            
+            {activeConversationId && (
+              <button 
+                onClick={() => setShareOpen(true)}
+                className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                title="Share Chat Link"
+              >
+                <Share className="h-4 w-4" />
+              </button>
+            )}
+
+            <button 
+              onClick={() => {
+                clearActiveConversation();
+                navigate("/new");
+              }}
+              className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+              title="New Chat"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
         </header>
 
         {activeConversationId ? (
@@ -278,6 +326,16 @@ export function ChatLayout() {
         defaultTab={settingsTab}
         defaultMobileView={settingsMobileView}
       />
+
+      {activeConversationId && (
+        <ShareDialog 
+          open={shareOpen} 
+          onOpenChange={setShareOpen} 
+          visibility={conversations.find(c => c.id === activeConversationId)?.visibility || "private"}
+          conversationId={activeConversationId}
+          onSaveVisibility={(vis) => useChatStore.getState().setConversationVisibility(activeConversationId, vis)}
+        />
+      )}
 
       {import.meta.env.DEV && (
         <div className={cn(
