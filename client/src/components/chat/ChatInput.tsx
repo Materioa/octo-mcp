@@ -20,6 +20,7 @@ interface ChatInputProps {
   onStop: () => void;
   disabled?: boolean;
   isSending?: boolean;
+  initialValue?: string;
 }
 
 interface Attachment {
@@ -31,10 +32,12 @@ interface Attachment {
   status: 'idle' | 'uploading' | 'error';
 }
 
-export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProps) {
-  const [value, setValue] = useState("");
+export function ChatInput({ onSend, onStop, disabled, isSending, initialValue }: ChatInputProps) {
+  const [value, setValue] = useState(initialValue || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
+  const [modelSelectorMounted, setModelSelectorMounted] = useState(false);
+  const [modelSelectorClosing, setModelSelectorClosing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,14 +46,38 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
   const [isParsing, setIsParsing] = useState(false);
 
   useEffect(() => {
+    if (initialValue && !value) {
+      setValue(initialValue);
+    }
+  }, [initialValue]);
+
+  const closeModelSelector = useCallback(() => {
+    setModelSelectorClosing(true);
+    setModelSelectorOpen(false);
+    setTimeout(() => {
+      setModelSelectorMounted(false);
+      setModelSelectorClosing(false);
+    }, 200);
+  }, []);
+
+  const toggleModelSelector = useCallback(() => {
+    if (modelSelectorOpen) {
+      closeModelSelector();
+    } else {
+      setModelSelectorMounted(true);
+      setModelSelectorOpen(true);
+    }
+  }, [modelSelectorOpen, closeModelSelector]);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setModelSelectorOpen(false);
+        if (modelSelectorOpen) closeModelSelector();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [modelSelectorOpen, closeModelSelector]);
 
   /** Derive a short display name from the model string */
   const modelDisplay = (() => {
@@ -298,7 +325,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
               <div className="relative" ref={dropdownRef}>
                 <button
                   type="button"
-                  onClick={() => setModelSelectorOpen(!modelSelectorOpen)}
+                  onClick={toggleModelSelector}
                   className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   {(() => {
@@ -317,9 +344,17 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="m6 9 6 6 6-6" /></svg>
                 </button>
 
-                {modelSelectorOpen && (
-                  <div className="absolute bottom-full right-0 mb-2 w-52 rounded-xl border border-border bg-card p-1 shadow-lg animate-in fade-in slide-in-from-bottom-2 z-50">
-                    <div className="max-h-60 overflow-y-auto p-1">
+                {modelSelectorMounted && (
+                  <>
+                    <div 
+                      className={`fixed inset-0 bg-black/60 z-[55] sm:hidden transition-opacity duration-200 ${modelSelectorClosing ? "opacity-0" : "opacity-100"}`}
+                      onClick={closeModelSelector}
+                    />
+                    <div className={`fixed inset-x-0 bottom-0 w-full rounded-t-3xl sm:rounded-xl border border-border bg-card p-3 sm:p-1 shadow-lg z-[60] pb-8 sm:pb-0 sm:absolute sm:bottom-full sm:right-0 sm:mb-2 sm:w-56 sm:left-auto duration-200 fill-mode-forwards ${modelSelectorClosing ? "animate-out fade-out slide-out-to-bottom-full sm:slide-out-to-bottom-2" : "animate-in fade-in slide-in-from-bottom-full sm:slide-in-from-bottom-2"}`}>
+                      <div className="sm:hidden w-full flex justify-center pt-2 pb-4">
+                        <div className="w-12 h-1.5 rounded-full bg-muted-foreground/30" />
+                      </div>
+                      <div className="max-h-[60vh] sm:max-h-60 overflow-y-auto p-1 space-y-1 sm:space-y-0">
                       {(() => {
                         const currentModel = settings.aiProvider.model;
                         const modelsToDisplay = [currentModel, ...preset.models.filter(m => m !== currentModel)];
@@ -352,14 +387,14 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                         return (
                           <div key={m} className="flex flex-col">
                             <button
-                              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${isSelected ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                              className={`flex w-full items-center justify-between rounded-xl sm:rounded-md px-4 sm:px-3 py-3 sm:py-2 text-[16px] sm:text-sm font-medium transition-colors ${isSelected ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                                 }`}
                               onClick={() => {
                                 if (m === "nvidia/nemotron-3-nano-30b-a3b:free" && isSelected) {
                                   // Don't do anything if they click the already selected parent button
                                 } else {
                                   settings.setAIProvider({ ...settings.aiProvider, model: m });
-                                  setModelSelectorOpen(false);
+                                  closeModelSelector();
                                 }
                               }}
                             >
@@ -396,9 +431,11 @@ export function ChatInput({ onSend, onStop, disabled, isSending }: ChatInputProp
                             )}
                           </div>
                         );
-                      })})()}
+                      });
+                      })()}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
 

@@ -12,7 +12,7 @@ import { SearchDialog } from "./SearchDialog";
 interface ChatSidebarProps {
   open: boolean;
   onToggle: () => void;
-  onOpenSettings: (tab?: string) => void;
+  onOpenSettings: (tab?: string, view?: "list" | "detail") => void;
 }
 
 export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps) {
@@ -51,12 +51,16 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
           title={open ? "Close sidebar" : "Open sidebar"}
         >
           <img
-            src="/sidebar.webp"
+            src="/sidebar.svg"
             alt="Toggle Sidebar"
             className="h-6 w-6 object-contain dark-invert"
           />
           {open && (
-            <span className="ml-2 text-lg font-semibold tracking-tight">Thinklet</span>
+            <img 
+              src="/wordmark.svg" 
+              alt="Thinklet" 
+              className="ml-2 h-5 object-contain dark-invert"
+            />
           )}
         </button>
       </div>
@@ -77,7 +81,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
           )}
           onClick={() => {
             clearActiveConversation();
-            navigate("/");
+            navigate("/new");
           }}
           title="New chat"
         >
@@ -140,20 +144,6 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                 )}
                 onClick={() => navigate(`/c/${conv.id}`)}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="shrink-0 text-muted-foreground"
-                >
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
                 <span className="flex-1 truncate">{conv.title}</span>
                 {generatingConversationIds.includes(conv.id) ? (
                   <div className="shrink-0 rounded p-1">
@@ -169,7 +159,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                       e.stopPropagation();
                       await deleteConversation(conv.id);
                       if (activeConversationId === conv.id) {
-                        navigate("/");
+                        navigate("/new");
                       }
                     }}
                   >

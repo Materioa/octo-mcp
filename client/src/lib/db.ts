@@ -13,7 +13,8 @@ function getHeaders() {
   
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
-  } else if (anonymousId) {
+  }
+  if (anonymousId) {
     headers["X-Anonymous-Id"] = anonymousId;
   }
   

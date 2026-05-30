@@ -31,7 +31,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
         className="fixed inset-0 bg-black/80"
         onClick={() => onOpenChange(false)}
       />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
+      <div className="fixed inset-0 flex items-center justify-center p-0 sm:p-4 pointer-events-none">
         {children}
       </div>
     </div>,
@@ -46,20 +46,20 @@ const DialogContent = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "relative z-50 flex w-full max-w-lg flex-col rounded-lg border bg-background p-6 shadow-lg",
+      "relative z-50 flex w-full max-w-lg flex-col border bg-background p-6 shadow-lg pointer-events-auto",
       "max-h-[min(85vh,700px)]",
       className
     )}
     {...props}
   >
-    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+    <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden min-h-0 h-full">
       {children}
     </div>
     {onClose && (
       <Button
         variant="ghost"
         size="icon"
-        className="absolute right-4 top-4 shrink-0"
+        className="absolute right-4 top-4 shrink-0 z-[100]"
         onClick={onClose}
       >
         <svg

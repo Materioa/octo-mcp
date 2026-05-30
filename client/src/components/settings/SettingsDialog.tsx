@@ -25,6 +25,7 @@ interface SettingsDialogProps {
   mcpConnected: boolean;
   tools: MCPTool[];
   defaultTab?: string;
+  defaultMobileView?: "list" | "detail";
 }
 
 export function SettingsDialog({
@@ -33,12 +34,14 @@ export function SettingsDialog({
   mcpConnected,
   tools,
   defaultTab = "ai",
+  defaultMobileView = "list",
 }: SettingsDialogProps) {
   const settings = useSettingsStore();
   const auth = useAuthStore();
   const userId = auth.user?.id || auth.anonymousId;
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [mcpView, setMcpView] = useState<"list" | "detail">("list");
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
 
   const [localSettings, setLocalSettings] = useState({
     providerId: settings.aiProvider.providerId ?? "openrouter-free",
@@ -71,8 +74,9 @@ export function SettingsDialog({
       });
       setActiveTab(defaultTab);
       setMcpView("list");
+      setMobileView(defaultMobileView);
     }
-  }, [open, settings, defaultTab]);
+  }, [open, settings, defaultTab, defaultMobileView]);
 
   // Load memories when Memory tab is active
   const loadMemories = useCallback(async () => {
@@ -147,32 +151,24 @@ export function SettingsDialog({
     }));
   };
 
-  const handleSave = () => {
-    settings.setAIProvider({
-      providerId: localSettings.providerId as ProviderId,
-      baseUrl: localSettings.baseUrl,
-      apiKey: localSettings.apiKey,
-      model: localSettings.model,
-    });
-    settings.setCustomInstructions(localCustomInstructions);
-    onOpenChange(false);
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         onClose={() => onOpenChange(false)} 
-        className="max-w-4xl p-0 overflow-hidden h-[80vh] min-h-[600px] bg-card border-border"
+        className="max-w-4xl p-0 overflow-hidden h-[100dvh] max-h-[100dvh] sm:max-h-[85vh] w-full max-w-none rounded-none sm:rounded-xl sm:h-[80vh] sm:min-h-[600px] sm:max-w-4xl bg-card border-0 sm:border-border flex flex-col"
       >
-        <div className="flex flex-col sm:flex-row w-full h-full">
+        <div className="flex flex-1 w-full relative overflow-hidden">
           {/* Sidebar */}
-        <div className="w-full sm:w-[240px] flex-shrink-0 border-r border-border bg-muted/20 flex flex-col p-4">
+        <div className={cn(
+          "w-full sm:w-[240px] flex-shrink-0 border-r border-border bg-muted/20 flex flex-col p-4 transition-transform duration-300 absolute sm:relative h-full z-10",
+          mobileView === "detail" ? "-translate-x-full sm:translate-x-0" : "translate-x-0"
+        )}>
           <div className="flex items-center justify-between mb-6 px-2 pt-2">
             <h2 className="text-xl font-bold">Settings</h2>
           </div>
           <div className="flex flex-col space-y-1">
             <button
-              onClick={() => setActiveTab('ai')}
+              onClick={() => { setActiveTab('ai'); setMobileView('detail'); }}
               className={cn(
                 'text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3',
                 activeTab === 'ai'
@@ -184,7 +180,7 @@ export function SettingsDialog({
               AI Provider
             </button>
             <button
-              onClick={() => setActiveTab('mcp')}
+              onClick={() => { setActiveTab('mcp'); setMobileView('detail'); }}
               className={cn(
                 'text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3',
                 activeTab === 'mcp'
@@ -196,7 +192,7 @@ export function SettingsDialog({
               Connectors
             </button>
             <button
-              onClick={() => setActiveTab('memory')}
+              onClick={() => { setActiveTab('memory'); setMobileView('detail'); }}
               className={cn(
                 'text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3',
                 activeTab === 'memory'
@@ -208,7 +204,7 @@ export function SettingsDialog({
               Memory
             </button>
             <button
-              onClick={() => setActiveTab('personalization')}
+              onClick={() => { setActiveTab('personalization'); setMobileView('detail'); }}
               className={cn(
                 'text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3',
                 activeTab === 'personalization'
@@ -220,7 +216,7 @@ export function SettingsDialog({
               Personalization
             </button>
             <button
-              onClick={() => setActiveTab('skills')}
+              onClick={() => { setActiveTab('skills'); setMobileView('detail'); }}
               className={cn(
                 'text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3',
                 activeTab === 'skills'
@@ -235,8 +231,18 @@ export function SettingsDialog({
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col min-w-0 bg-background h-full">
-          <div className="flex items-center border-b border-border px-8 py-5 shrink-0 h-[72px]">
+        {/* Main Content Area */}
+        <div className={cn(
+          "flex-1 flex flex-col min-w-0 bg-background h-full absolute sm:relative w-full transition-transform duration-300 z-20",
+          mobileView === "list" ? "translate-x-full sm:translate-x-0" : "translate-x-0"
+        )}>
+          <div className="flex items-center border-b border-border px-4 sm:px-8 py-5 shrink-0 h-[72px] gap-3 bg-background">
+            <button 
+              className="sm:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50"
+              onClick={() => setMobileView("list")}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
             <h3 className="text-xl font-semibold capitalize tracking-tight">
               {activeTab === 'ai' ? 'AI Provider' : activeTab === 'mcp' ? 'Connectors' : activeTab === 'memory' ? 'Memory' : activeTab === 'skills' ? 'Skills' : 'Personalization'}
             </h3>
@@ -391,6 +397,34 @@ export function SettingsDialog({
                       />
                     )}
                   </div>
+                  
+                  {(localSettings.providerId !== (settings.aiProvider.providerId ?? "openrouter-free") ||
+                    localSettings.baseUrl !== settings.aiProvider.baseUrl ||
+                    localSettings.apiKey !== settings.aiProvider.apiKey ||
+                    localSettings.model !== settings.aiProvider.model) && (
+                    <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">
+                      <Button variant="outline" onClick={() => {
+                        setLocalSettings({
+                          providerId: settings.aiProvider.providerId ?? "openrouter-free",
+                          baseUrl: settings.aiProvider.baseUrl,
+                          apiKey: settings.aiProvider.apiKey,
+                          model: settings.aiProvider.model,
+                        });
+                      }}>
+                        Cancel
+                      </Button>
+                      <Button onClick={() => {
+                        settings.setAIProvider({
+                          providerId: localSettings.providerId as ProviderId,
+                          baseUrl: localSettings.baseUrl,
+                          apiKey: localSettings.apiKey,
+                          model: localSettings.model,
+                        });
+                      }}>
+                        Save Provider
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -536,17 +570,6 @@ export function SettingsDialog({
               {activeTab === 'personalization' && (
                 <div className="space-y-6">
                   <div className="space-y-4">
-                    <h4 className="text-sm font-medium">Custom Instructions</h4>
-                    <Textarea 
-                      placeholder="What would you like Materio to know about you to provide better responses?"
-                      className="min-h-[120px] resize-none"
-                      value={localCustomInstructions}
-                      onChange={(e) => setLocalCustomInstructions(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">These instructions will be appended to the AI's system prompt.</p>
-                  </div>
-
-                  <div className="space-y-4">
                     <h4 className="text-sm font-medium">Appearance</h4>
                     <div className="flex items-center justify-between rounded-xl border border-border p-4 bg-muted/20">
                       <div>
@@ -614,6 +637,29 @@ export function SettingsDialog({
                           </span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium">Custom Instructions</h4>
+                    <Textarea 
+                      placeholder="What would you like Materio to know about you to provide better responses?"
+                      className="min-h-[120px] resize-none"
+                      value={localCustomInstructions}
+                      onChange={(e) => setLocalCustomInstructions(e.target.value)}
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">These instructions will be appended to the AI's system prompt.</p>
+                      {localCustomInstructions !== (settings.customInstructions || "") && (
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setLocalCustomInstructions(settings.customInstructions || "")}>
+                            Cancel
+                          </Button>
+                          <Button size="sm" onClick={() => settings.setCustomInstructions(localCustomInstructions)}>
+                            Save Instructions
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -684,17 +730,9 @@ export function SettingsDialog({
               )}
             </div>
           </ScrollArea>
-
-          <div className="border-t border-border px-8 py-4 bg-muted/10 flex justify-end gap-3 shrink-0">
-            <Button variant="outline" className="h-10" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button className="h-10 px-6" onClick={handleSave}>
-              Save Changes
-            </Button>
-          </div>
         </div>
         </div>
+        
       </DialogContent>
     </Dialog>
   );

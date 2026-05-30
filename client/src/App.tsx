@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Loader } from "lucide-react";
 
 export default function App() {
@@ -42,6 +42,16 @@ export default function App() {
     }
   }, [setAuth]);
 
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "MATERIO_AUTH" && event.data.token) {
+        setAuth(event.data.token, event.data.user);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [setAuth]);
+
   if (isExchanging) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
@@ -56,8 +66,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<ChatLayout />} />
+        <Route path="/" element={<Navigate to="/new" replace />} />
+        <Route path="/new" element={<ChatLayout />} />
         <Route path="/c/:id" element={<ChatLayout />} />
+        <Route path="/settings" element={<ChatLayout />} />
+        <Route path="/settings/:tab" element={<ChatLayout />} />
       </Routes>
     </BrowserRouter>
   );

@@ -29,6 +29,7 @@ import { generateDocumentTool, handleGenerateDocument } from "./tools/generate-d
 import { memoryTool, handleSaveMemory } from "./tools/memory.js";
 import { registerMaterioTools } from "./tools/materio.js";
 import { registerExaSearch } from "./tools/exa-search.js";
+import { registerUserInputTools } from "./tools/user-input.js";
 import {
   listSemesters,
   listSubjects,
@@ -138,6 +139,7 @@ function createMcpServer(): McpServer {
   });
   registerMaterioTools(server);
   registerExaSearch(server);
+  registerUserInputTools(server);
   server.tool(executeJsTool.name, executeJsTool.description, executeJsTool.inputSchema, handleExecuteJs);
   server.tool(generateDocumentTool.name, generateDocumentTool.description, generateDocumentTool.inputSchema, handleGenerateDocument);
   server.tool(memoryTool.name, memoryTool.description, memoryTool.inputSchema, handleSaveMemory);
@@ -163,13 +165,13 @@ export const app = express();
     if (_req.method === "GET" || _req.method === "HEAD") {
       applyIconHeaders(res);
     }
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
-    res.setHeader(
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id"
+      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url"
     );
-    res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+    res.header("Access-Control-Expose-Headers", "mcp-session-id");
+    res.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
     if (_req.method === "OPTIONS") {
       res.sendStatus(204);
       return;
@@ -603,6 +605,10 @@ export const app = express();
       });
 
       const text = await response.text();
+      if (response.status >= 500) {
+        console.error(`[Supermemory API Error] ${response.status}:`, text);
+      }
+      
       let data;
       try {
         data = JSON.parse(text);
@@ -611,7 +617,73 @@ export const app = express();
       }
       res.status(response.status).json(data);
     } catch (err: any) {
+      console.error("[Supermemory Proxy] Fetch Error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Secure LLM Proxy ──
+  app.post("/api/chat/completions", async (req, res) => {
+    try {
+      const targetUrl = req.headers["x-target-url"] as string;
+      if (!targetUrl) {
+         res.status(400).json({ error: "Missing x-target-url header" });
+         return;
+      }
+      
+      let apiKey = req.headers.authorization;
+      
+      // If no API key is provided by the client (Free tier)
+      if (!apiKey || apiKey.trim() === "Bearer" || apiKey.trim() === "Bearer undefined") {
+        if (targetUrl.includes("openrouter.ai")) {
+          // Fallback to server's env, allowing either OPENROUTER_API_KEY or VITE_OPENROUTER_API_KEY
+          const serverKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
+          if (serverKey) {
+            apiKey = `Bearer ${serverKey}`;
+          }
+        }
+      }
+      
+      const response = await fetch(`${targetUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { "Authorization": apiKey } : {}),
+          "HTTP-Referer": "https://mcp.getmaterio.app",
+          "X-Title": "Materio MCP",
+          "Connection": "close"
+        },
+        body: JSON.stringify(req.body)
+      });
+      
+      res.status(response.status);
+      const forbiddenHeaders = ["transfer-encoding", "content-encoding", "content-length", "connection", "keep-alive"];
+      response.headers.forEach((val, key) => {
+        if (!forbiddenHeaders.includes(key.toLowerCase())) {
+          res.setHeader(key, val);
+        }
+      });
+      
+      if (response.body) {
+        // Use Node's Web Streams API to pipe the stream
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+      } else {
+        res.end();
+      }
+    } catch (err: any) {
+      console.error("[LLM Proxy] Error:", err, err.cause);
+      if (res.headersSent) {
+        res.end();
+      } else {
+        const errorMsg = err.cause ? `${err.message} (${err.cause.message || err.cause.code})` : err.message;
+        res.status(500).json({ error: errorMsg });
+      }
     }
   });
 
@@ -626,10 +698,28 @@ export const app = express();
     }
   });
 
+  function buildOwnershipQuery(req: AuthenticatedRequest, id?: string) {
+    const conditions = [];
+    if (req.user) conditions.push({ userId: req.user.id });
+    if (req.anonymousId) conditions.push({ anonymousId: req.anonymousId });
+    
+    if (conditions.length === 0) return null;
+    
+    const query: any = {};
+    if (id) query.id = id;
+    
+    if (conditions.length === 1) {
+      Object.assign(query, conditions[0]);
+    } else {
+      query.$or = conditions;
+    }
+    return query;
+  }
+
   app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-      const query = req.user ? { userId: req.user.id } : { anonymousId: req.anonymousId };
-      if (!query.userId && !query.anonymousId) {
+      const query = buildOwnershipQuery(req);
+      if (!query) {
         return res.json([]);
       }
       const convos = await Conversation.find(query).sort({ updatedAt: -1 }).lean();
@@ -648,9 +738,21 @@ export const app = express();
       if (req.user) conv.userId = req.user.id;
       else if (req.anonymousId) conv.anonymousId = req.anonymousId;
 
-      const query = req.user ? { id: conv.id, userId: req.user.id } : { id: conv.id, anonymousId: req.anonymousId };
+      const ownershipQuery = buildOwnershipQuery(req, conv.id);
+      if (!ownershipQuery) return res.status(401).json({ error: "Unauthorized" });
       
-      const updated = await Conversation.findOneAndUpdate(query, conv, { upsert: true, new: true }).lean();
+      const existing = await Conversation.findOne(ownershipQuery);
+      let updated;
+      if (existing) {
+        updated = await Conversation.findOneAndUpdate({ _id: existing._id }, conv, { returnDocument: 'after' }).lean();
+      } else {
+        // Fallback to inserting with appropriate ownership fields if it didn't exist
+        updated = await Conversation.findOneAndUpdate(
+          req.user ? { id: conv.id, userId: req.user.id } : { id: conv.id, anonymousId: req.anonymousId },
+          conv,
+          { upsert: true, returnDocument: 'after' }
+        ).lean();
+      }
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -659,7 +761,8 @@ export const app = express();
 
   app.delete("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
+      const query = buildOwnershipQuery(req, req.params.id as string);
+      if (!query) return res.status(401).json({ error: "Unauthorized" });
       const convo = await Conversation.findOne(query);
       if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
 
@@ -673,7 +776,8 @@ export const app = express();
 
   app.get("/api/db/conversations/:id/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
+      const query = buildOwnershipQuery(req, req.params.id as string);
+      if (!query) return res.status(401).json({ error: "Unauthorized" });
       const convo = await Conversation.findOne(query);
       if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
 
@@ -728,8 +832,20 @@ export const app = express();
       if (req.user) msg.userId = req.user.id;
       else if (req.anonymousId) msg.anonymousId = req.anonymousId;
 
-      const query = req.user ? { id: msg.id, userId: req.user.id } : { id: msg.id, anonymousId: req.anonymousId };
-      const updated = await Message.findOneAndUpdate(query, msg, { upsert: true, new: true }).lean();
+      const ownershipQuery = buildOwnershipQuery(req, msg.id);
+      if (!ownershipQuery) return res.status(401).json({ error: "Unauthorized" });
+      
+      const existing = await Message.findOne(ownershipQuery);
+      let updated;
+      if (existing) {
+        updated = await Message.findOneAndUpdate({ _id: existing._id }, msg, { returnDocument: 'after' }).lean();
+      } else {
+        updated = await Message.findOneAndUpdate(
+          req.user ? { id: msg.id, userId: req.user.id } : { id: msg.id, anonymousId: req.anonymousId },
+          msg,
+          { upsert: true, returnDocument: 'after' }
+        ).lean();
+      }
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -738,11 +854,9 @@ export const app = express();
 
   app.delete("/api/db/messages/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-      if (!req.user && !req.anonymousId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
+      const query = buildOwnershipQuery(req, req.params.id as string);
+      if (!query) return res.status(401).json({ error: "Unauthorized" });
       
-      const query = req.user ? { id: req.params.id, userId: req.user.id } : { id: req.params.id, anonymousId: req.anonymousId };
       const deleted = await Message.findOneAndDelete(query);
       
       if (!deleted) {

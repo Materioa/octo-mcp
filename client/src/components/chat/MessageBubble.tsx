@@ -4,14 +4,14 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import type { Message } from "@/types";
 import { ToolCallGroup } from "./ToolCallCard";
 import { AskUserInputCard } from "./AskUserInputCard";
 import { DiagramRenderer } from "@/components/diagrams/DiagramRenderer";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
-import { DownloadIcon, FileIcon, FileTextIcon } from "lucide-react";
+import { DownloadIcon, FileIcon, FileTextIcon, Copy, Pencil, Trash2, AlertCircle, ThumbsUp, ThumbsDown, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings";
 import { getPreset } from "@/lib/providers/presets";
 import { OriginalThinkingLoader } from "./OriginalThinkingLoader";
@@ -34,13 +34,28 @@ function formatModelName(model: string): string {
 interface MessageBubbleProps {
   message: Message;
   onRetry?: (msgId: string, modelOverride: string) => void;
+  isLastUserMessage?: boolean;
+  prevSiblingId?: string;
+  nextSiblingId?: string;
+  siblingIndex?: number;
+  siblingCount?: number;
 }
 
-export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
+export const MessageBubble = React.memo(function MessageBubble({ 
+  message, 
+  onRetry,
+  isLastUserMessage,
+  prevSiblingId,
+  nextSiblingId,
+  siblingIndex,
+  siblingCount
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
   const updateMessage = useChatStore(s => s.updateMessage);
   const setActiveDocument = useChatStore(s => s.setActiveDocument);
-  const { branchMessage, allMessages, deleteMessage, switchBranch, messages } = useChatStore();
+  const branchMessage = useChatStore(s => s.branchMessage);
+  const deleteMessage = useChatStore(s => s.deleteMessage);
+  const switchBranch = useChatStore(s => s.switchBranch);
   const settings = useSettingsStore();
   const [retryOpen, setRetryOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
@@ -68,12 +83,8 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
       return () => clearInterval(interval);
     }
   }, [message.isStreaming, message.content, message.toolCalls]);
-
-  const siblings = allMessages.filter(m => m.parentId === message.parentId && m.role === message.role).sort((a, b) => a.timestamp - b.timestamp);
-  const siblingIndex = siblings.findIndex(m => m.id === message.id);
   
-  const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-  const isLastUserMessage = isUser && lastUserMessage && message.id === lastUserMessage.id;
+  const hasSiblings = !!(prevSiblingId || nextSiblingId);
   
   const handleEditSubmit = async () => {
     if (editContent.trim() && editContent !== message.content) {
@@ -137,6 +148,124 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
   if (cleanContent.length === 0 && thoughts.length > 0 && !message.isStreaming) {
     cleanContent = content;
   }
+
+  const markdownComponents = useMemo(() => ({
+    a(props: any) {
+      const { href, children, ...rest } = props;
+      
+      // Check if it's our special [Document: format | title](url) syntax
+      if (typeof children === 'string' && children.startsWith('Document:')) {
+        const parts = children.split('|').map((s: string) => s.trim());
+        const format = parts[0]?.replace('Document:', '').trim() || '';
+        const title = parts[1] || 'Document';
+        
+        return (
+          <span 
+            className="my-4 flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 max-w-sm cursor-pointer" 
+            onClick={() => setActiveDocument({ url: href!, format, title })}
+          >
+            <span className="flex items-center gap-3 overflow-hidden">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                {format === 'pdf' ? <FileIcon className="h-5 w-5" /> : <FileTextIcon className="h-5 w-5" />}
+              </span>
+              <span className="overflow-hidden flex flex-col">
+                <span className="truncate font-medium text-sm leading-tight text-foreground block">{title}</span>
+                <span className="truncate text-xs text-muted-foreground uppercase mt-0.5 block">Document · {format}</span>
+              </span>
+            </span>
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DownloadIcon className="h-3.5 w-3.5" />
+              Download
+            </a>
+          </span>
+        );
+      }
+
+      return <a href={href} target="_blank" rel="noreferrer" {...rest}>{children}</a>;
+    },
+    table({ children }: any) {
+      return (
+        <div className="overflow-x-auto my-6 rounded-md border border-border">
+          <table className="w-full border-collapse text-sm text-left">
+            {children}
+          </table>
+        </div>
+      );
+    },
+    thead({ children }: any) {
+      return <thead className="bg-muted/50">{children}</thead>;
+    },
+    th({ children }: any) {
+      return <th className="border border-border px-4 py-2.5 font-semibold text-foreground">{children}</th>;
+    },
+    td({ children }: any) {
+      return <td className="border border-border px-4 py-2.5">{children}</td>;
+    },
+    tr({ children }: any) {
+      return <tr className="hover:bg-muted/30 transition-colors">{children}</tr>;
+    },
+    code({ className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || "");
+      const lang = match?.[1];
+      const codeStr = String(children).replace(/\n$/, "");
+
+      if (lang && ["mermaid", "dot", "graphviz", "python", "javascript", "js", "html", "react", "jsx", "tsx", "markmap", "mindmap"].includes(lang)) {
+        return (
+          <DiagramRenderer
+            code={codeStr}
+            language={lang}
+            isStreaming={message.isStreaming}
+          />
+        );
+      }
+
+      const isInline = !className;
+      if (isInline) {
+        return (
+          <code
+            className="rounded bg-muted-foreground/20 px-1 py-0.5 text-xs font-mono"
+            {...props}
+          >
+            {children}
+          </code>
+        );
+      }
+
+      return (
+        <div className="relative rounded-lg overflow-hidden my-4 group border border-border shadow-sm">
+          <div className="flex items-center justify-between px-4 py-1.5 bg-muted/50 border-b border-border/50 text-xs font-medium text-muted-foreground">
+            <span>{lang || "code"}</span>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(codeStr);
+                // could add a mini copied state here
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground flex items-center gap-1"
+            >
+              <Copy className="w-3 h-3" />
+              Copy
+            </button>
+          </div>
+          <SyntaxHighlighter
+            style={isDark ? oneDark : oneLight}
+            language={lang}
+            PreTag="div"
+            className="!m-0 !bg-card text-sm"
+            customStyle={{ padding: '1rem', background: 'transparent' }}
+            {...props}
+          >
+            {codeStr}
+          </SyntaxHighlighter>
+        </div>
+      );
+    }
+  }), [isDark, message.isStreaming, setActiveDocument]);
 
   return (
     <div className={cn("flex w-full flex-col", isUser ? "items-end" : "items-start")}>
@@ -213,14 +342,14 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   onClick={() => navigator.clipboard.writeText(message.content)}
                   title="Copy"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <Copy className="w-3 h-3" />
                 </button>
                 <button 
                   className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-accent"
                   title="Edit"
                   onClick={() => { setEditContent(message.content); setIsEditing(true); }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  <Pencil className="w-3 h-3" />
                 </button>
                 {isLastUserMessage && (
                   <button 
@@ -228,7 +357,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                     title="Undo turn (Deletes message and response)"
                     onClick={() => deleteMessage(message.id)}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -264,122 +393,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkMath]}
                   rehypePlugins={[rehypeKatex]}
-                  components={{
-                    a(props) {
-                      const { href, children, ...rest } = props;
-                      
-                      // Check if it's our special [Document: format | title](url) syntax
-                      if (typeof children === 'string' && children.startsWith('Document:')) {
-                        const parts = children.split('|').map(s => s.trim());
-                        const format = parts[0]?.replace('Document:', '').trim() || '';
-                        const title = parts[1] || 'Document';
-                        
-                        return (
-                          <span 
-                            className="my-4 flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50 max-w-sm cursor-pointer" 
-                            onClick={() => setActiveDocument({ url: href!, format, title })}
-                          >
-                            <span className="flex items-center gap-3 overflow-hidden">
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                {format === 'pdf' ? <FileIcon className="h-5 w-5" /> : <FileTextIcon className="h-5 w-5" />}
-                              </span>
-                              <span className="overflow-hidden flex flex-col">
-                                <span className="truncate font-medium text-sm leading-tight text-foreground block">{title}</span>
-                                <span className="truncate text-xs text-muted-foreground uppercase mt-0.5 block">Document · {format}</span>
-                              </span>
-                            </span>
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <DownloadIcon className="h-3.5 w-3.5" />
-                              Download
-                            </a>
-                          </span>
-                        );
-                      }
-
-                      return <a href={href} target="_blank" rel="noreferrer" {...rest}>{children}</a>;
-                    },
-                    table({ children }) {
-                      return (
-                        <div className="overflow-x-auto my-6 rounded-md border border-border">
-                          <table className="w-full border-collapse text-sm text-left">
-                            {children}
-                          </table>
-                        </div>
-                      );
-                    },
-                    thead({ children }) {
-                      return <thead className="bg-muted/50">{children}</thead>;
-                    },
-                    th({ children }) {
-                      return <th className="border border-border px-4 py-2.5 font-semibold text-foreground">{children}</th>;
-                    },
-                    td({ children }) {
-                      return <td className="border border-border px-4 py-2.5">{children}</td>;
-                    },
-                    tr({ children }) {
-                      return <tr className="hover:bg-muted/30 transition-colors">{children}</tr>;
-                    },
-                    code({ className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const lang = match?.[1];
-                      const codeStr = String(children).replace(/\n$/, "");
-
-                      if (lang && ["mermaid", "dot", "graphviz", "python", "javascript", "js", "html", "react", "jsx", "tsx", "markmap", "mindmap"].includes(lang)) {
-                        return (
-                          <DiagramRenderer
-                            code={codeStr}
-                            language={lang}
-                            isStreaming={message.isStreaming}
-                          />
-                        );
-                      }
-
-                      const isInline = !className;
-                      if (isInline) {
-                        return (
-                          <code
-                            className="rounded bg-muted-foreground/20 px-1 py-0.5 text-xs font-mono"
-                            {...props}
-                          >
-                            {children}
-                          </code>
-                        );
-                      }
-
-                      return (
-                        <div className="relative rounded-lg overflow-hidden my-4 group border border-border shadow-sm">
-                          <div className="flex items-center justify-between px-4 py-1.5 bg-muted/50 border-b border-border/50 text-xs font-medium text-muted-foreground">
-                            <span>{lang || "code"}</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(codeStr);
-                                // could add a mini copied state here
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground flex items-center gap-1"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                              Copy
-                            </button>
-                          </div>
-                          <SyntaxHighlighter
-                            style={(isDark ? oneDark : oneLight) as any}
-                            language={lang || "text"}
-                            PreTag="div"
-                            customStyle={{ margin: 0, background: isDark ? "#282c34" : "#fafafa", padding: "1rem", fontSize: "0.85rem" }}
-                            {...(props as any)}
-                          >
-                            {codeStr}
-                          </SyntaxHighlighter>
-                        </div>
-                      );
-                    },
-                  }}
+                  components={markdownComponents as any}
                 >
                   {cleanContent
                     .replace(/\\\[/g, "$$")
@@ -391,8 +405,8 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
             )}
             {message.isStreaming && !message.content && !message.toolCalls?.length && (
               <div className="flex items-center gap-3 px-1 pt-2 pb-1 text-muted-foreground animate-in fade-in duration-500">
-                <OriginalThinkingLoader className="w-12 h-12" />
-                <span key={shimmerIndex} className="text-sm font-medium tracking-wide animate-pulse">
+                <OriginalThinkingLoader className="w-7 h-7" />
+                <span key={shimmerIndex} className="text-sm font-medium tracking-wide animate-shimmer-text">
                   {shimmerPhrases[shimmerIndex]}
                 </span>
               </div>
@@ -402,7 +416,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
               <div className="my-2 rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden shadow-sm flex flex-col">
                 <div className="flex items-center justify-between px-4 py-2 border-b border-destructive/20 bg-destructive/10">
                   <div className="flex items-center gap-2 text-destructive">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <AlertCircle className="w-3.5 h-3.5" />
                     <span className="font-semibold text-sm">Generation Error</span>
                   </div>
                 </div>
@@ -421,14 +435,14 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   className={cn("p-1 hover:bg-accent rounded transition-colors", message.rating === "like" && "text-primary bg-accent")}
                   title="Good response"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={message.rating === "like" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                  <ThumbsUp className="w-3.5 h-3.5" fill={message.rating === "like" ? "currentColor" : "none"} />
                 </button>
                 <button
                   onClick={() => updateMessage(message.id, { rating: message.rating === "dislike" ? null : "dislike" })}
                   className={cn("p-1 hover:bg-accent rounded transition-colors", message.rating === "dislike" && "text-destructive bg-accent")}
                   title="Bad response"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill={message.rating === "dislike" ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                  <ThumbsDown className="w-3.5 h-3.5" fill={message.rating === "dislike" ? "currentColor" : "none"} />
                 </button>
                 
                 <button
@@ -436,7 +450,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                   className="p-1 hover:bg-accent rounded transition-colors"
                   title="Copy"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <Copy className="w-3.5 h-3.5" />
                 </button>
                 
 
@@ -446,7 +460,7 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
                     className="p-1 hover:bg-accent rounded transition-colors flex items-center gap-1"
                     title="Retry"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <RotateCcw className="w-3.5 h-3.5" />
                   </button>
                   
                   {retryOpen && (
@@ -512,31 +526,31 @@ export function MessageBubble({ message, onRetry }: MessageBubbleProps) {
         </div>
       </div>
       
-      {siblings.length > 1 && (!isUser || !isEditing) && (
+      {hasSiblings && (
         <div className={cn("flex mt-1 text-xs text-muted-foreground gap-2 items-center", isUser ? "justify-end" : "justify-start")}>
-           <button 
-             onClick={() => {
-               const prev = siblings[siblingIndex - 1];
-               if (prev) switchBranch(prev.id);
-             }}
-             disabled={siblingIndex === 0}
-             className="hover:text-foreground disabled:opacity-30 transition-colors"
-           >
-             &lt;
-           </button>
-           <span>{siblingIndex + 1} / {siblings.length}</span>
-           <button 
-             onClick={() => {
-               const next = siblings[siblingIndex + 1];
-               if (next) switchBranch(next.id);
-             }}
-             disabled={siblingIndex === siblings.length - 1}
-             className="hover:text-foreground disabled:opacity-30 transition-colors"
-           >
-             &gt;
-           </button>
+          <div className="flex items-center gap-1.5 px-1">
+            <button
+              onClick={() => prevSiblingId && switchBranch(prevSiblingId)}
+              disabled={!prevSiblingId}
+              className="p-1 hover:bg-accent rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Previous Version"
+            >
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <span className="text-[10px] font-medium text-muted-foreground w-8 text-center">
+              {siblingIndex !== undefined && siblingCount !== undefined ? `${siblingIndex + 1} / ${siblingCount}` : 'Versions'}
+            </span>
+            <button
+              onClick={() => nextSiblingId && switchBranch(nextSiblingId)}
+              disabled={!nextSiblingId}
+              className="p-1 hover:bg-accent rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Next Version"
+            >
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
-}
+});

@@ -14,7 +14,7 @@ export class OpenAICompatProvider implements AIProvider {
 
   constructor(baseUrl: string, apiKey: string, model: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.apiKey = apiKey || import.meta.env.VITE_OPENROUTER_API_KEY || "";
+    this.apiKey = apiKey || "";
     this.model = model;
   }
 
@@ -45,10 +45,13 @@ export class OpenAICompatProvider implements AIProvider {
     }
 
     try {
-      const res = await fetch(`${this.baseUrl}/chat/completions`, {
+      const proxyUrl = "/api/chat/completions";
+
+      const res = await fetch(proxyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Target-Url": this.baseUrl,
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),

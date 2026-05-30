@@ -44,6 +44,8 @@ interface ChatStore {
   submitUserInput: (toolCallId: string, result: any) => void;
   activeDocument: { url: string; format: string; title: string } | null;
   setActiveDocument: (doc: { url: string; format: string; title: string } | null) => void;
+  sharedContext: string | null;
+  setSharedContext: (context: string) => void;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -67,6 +69,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   
   activeDocument: null,
   setActiveDocument: (doc) => set({ activeDocument: doc }),
+  sharedContext: null,
+  setSharedContext: (context) => set({ sharedContext: context }),
 
   loadConversations: async () => {
     const conversations = await getConversations();
@@ -113,6 +117,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         current.parentId = prev.id;
       }
     }
+
+    // Fix any stuck streaming states from interrupted generations
+    messages.forEach(m => {
+      if (m.isStreaming) {
+        m.isStreaming = false;
+        // Optionally save back to DB in background, but just fixing memory is enough for UI
+        saveMessage(id, m).catch(() => {});
+      }
+    });
     
     // Auto-select the most recent branch leaf
     if (messages.length > 0) {
@@ -194,7 +207,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     
     let updatedTitle = conv?.title;
     if (conv?.title === "New Chat" && message.role === "user") {
-      updatedTitle = message.content.slice(0, 50) + (message.content.length > 50 ? "..." : "");
+      // Don't auto-title based on the first message anymore, wait for AI response
+      // updatedTitle = message.content.slice(0, 50) + (message.content.length > 50 ? "..." : "");
     }
 
     const updatedConv = conv
@@ -303,10 +317,22 @@ IMPORTANT RULE: Your PRIMARY tool to reference anything from the Materio course 
 CRITICAL LIBRARY NAVIGATION: If you do not know the exact chapter or topic name, you MUST use \`ResourceLibrary\` first to list the materials for a subject. Do NOT guess chapter names in SnapSearch.
 CRITICAL WORKSHEET WORKFLOW: If the user asks to create or generate a worksheet, question bank, or sample paper, you MUST use the \`CreateWorksheetPaper\` tool AFTER gathering the required course content.
 DIAGRAMS: If the user asks you to draw a diagram (like a DFA, FSM, flowchart, mindmap, circuit, or plot), you MUST use the \`GenerateDiagramFromRequest\` tool first to get the correct format and syntax instructions before outputting any code block. Do NOT guess the syntax.
+CODE GENERATION: The chat interface natively sandboxes and renders React, HTML, JS, Markdown, and diagrams inline. DO NOT output boilerplate instructions like "npm install", "how to use", or "paste this in your App.tsx". Provide ONLY the code block and a very brief 1-2 sentence description.
 Current personality: ${settings.personality}${memoryContext}`;
 
+    let finalSystemPrompt = systemPrompt;
+    
+    const isFirstMessage = messages.filter(m => m.role === "user").length === 1;
+    if (isFirstMessage) {
+      finalSystemPrompt += `\n\nThis is the very first message in the chat. You MUST generate a short 3-5 word title for this conversation based on the user's intent. The title MUST be wrapped EXACTLY in <chat_title> tags at the VERY BEGINNING of your response, before any other text. Example: <chat_title>Learning about Python</chat_title> Hello! I can help you with Python...`;
+    }
+
+    if (get().sharedContext) {
+      finalSystemPrompt += `\n\n<shared_context>\n${get().sharedContext}\n</shared_context>`;
+    }
+
     const aiMessages: AIMessage[] = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: finalSystemPrompt },
       ...messages.map((m) => {
         if (!m.attachments?.length) {
           return { role: m.role, content: m.content, toolCalls: m.toolCalls } as AIMessage;
@@ -382,8 +408,31 @@ Current personality: ${settings.personality}${memoryContext}`;
           activeTools,
           (token) => {
             fullResponse += token;
+            
+            let displayContent = fullResponse;
+            if (isFirstMessage) {
+              const match = fullResponse.match(/<chat_title>(.*?)<\/chat_title>/s);
+              if (match) {
+                const title = match[1]?.trim() || "New Chat";
+                const convs = get().conversations;
+                const conv = convs.find(c => c.id === conversationId);
+                if (conv && conv.title === "New Chat") {
+                   const updated = { ...conv, title };
+                   set({ conversations: convs.map(c => c.id === conversationId ? updated : c) });
+                   saveConversation(updated).catch(console.error);
+                   if (get().activeConversationId === conversationId) {
+                      document.title = title;
+                   }
+                }
+              }
+              displayContent = fullResponse.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
+              if (displayContent.includes("<chat_title>")) {
+                 displayContent = ""; // Hide incomplete tag
+              }
+            }
+
             if (get().activeConversationId === conversationId) {
-               updateMessage(aiMessageId, { content: fullResponse });
+               updateMessage(aiMessageId, { content: displayContent });
             }
           },
           (tc) => {
@@ -495,7 +544,7 @@ Current personality: ${settings.personality}${memoryContext}`;
               aiMessages.push({
                 role: "tool",
                 tool_call_id: tc.id,
-                content: result,
+                content: JSON.stringify({ result: result }),
               });
             } catch (err: any) {
               if (existingTc) {
@@ -505,7 +554,7 @@ Current personality: ${settings.personality}${memoryContext}`;
               aiMessages.push({
                 role: "tool",
                 tool_call_id: tc.id,
-                content: `Error: ${err.message}`,
+                content: JSON.stringify({ error: err.message }),
               });
             }
 
@@ -531,10 +580,14 @@ Current personality: ${settings.personality}${memoryContext}`;
     await runTurn();
 
     // Finalize
+    let finalContent = fullResponse;
+    if (isFirstMessage) {
+      finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
+    }
     if (get().activeConversationId === conversationId) {
-      updateMessage(aiMessageId, { isStreaming: false, content: fullResponse });
+      updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
     } else {
-      saveMessage(conversationId, { ...newMsg, content: fullResponse, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+      saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
     }
     const { generatingConversationIds: currentGenerating } = get();
     set({
@@ -626,7 +679,19 @@ Current personality: ${settings.personality}${memoryContext}`;
     const originalAiMsg = allMessages.find(m => m.id === messageId);
     if (!originalAiMsg || !originalAiMsg.parentId) return;
 
-    await get().switchBranch(originalAiMsg.parentId);
+    // Construct the line exactly up to the parent (user message)
+    const line: Message[] = [];
+    let currentId: string | undefined = originalAiMsg.parentId;
+    
+    while (currentId) {
+      const msg = allMessages.find(m => m.id === currentId);
+      if (!msg) break;
+      line.unshift(msg);
+      currentId = msg.parentId;
+    }
+    
+    set({ messages: line });
+
     await generateResponse(activeConversationId, modelOverride);
   }
 }));

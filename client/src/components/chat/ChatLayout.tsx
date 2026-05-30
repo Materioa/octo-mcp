@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useChatStore } from "@/stores/chat";
 import { useSettingsStore } from "@/stores/settings";
 import { mcpClient } from "@/lib/mcp-client";
@@ -19,6 +19,7 @@ import { Loader } from "lucide-react";
 export function ChatLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("ai");
+  const [settingsMobileView, setSettingsMobileView] = useState<"list" | "detail">("list");
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -39,6 +40,7 @@ export function ChatLayout() {
     isLoading,
     activeDocument,
     setActiveDocument,
+    setSharedContext,
   } = useChatStore();
 
   const { user } = useAuthStore();
@@ -46,12 +48,45 @@ export function ChatLayout() {
 
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const initialQuery = useMemo(() => searchParams.get("q") || searchParams.get("query") || undefined, [searchParams]);
 
   useEffect(() => {
-    if (id && id !== activeConversationId) {
-      setActiveConversation(id);
+    // Safely check if we are embedded in getmaterio.app and parse shared context
+    try {
+      const isEmbedded = window.self !== window.top;
+      const isMaterio = document.referrer.includes("getmaterio.app") || document.referrer.includes("localhost:1000") || document.referrer.includes("localhost:3000");
+      const isDev = import.meta.env.DEV;
+
+      if ((isEmbedded && isMaterio) || isDev) {
+        const context = searchParams.get("shared-context");
+        if (context) {
+          setSharedContext(context);
+        }
+      }
+    } catch(e) {}
+  }, [searchParams, setSharedContext]);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/settings")) {
+      setSettingsOpen(true);
+      const tab = location.pathname.split("/")[2];
+      if (tab) {
+        setSettingsTab(tab);
+      }
     }
-  }, [id, activeConversationId, setActiveConversation]);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (id) {
+      if (id !== useChatStore.getState().activeConversationId) {
+        setActiveConversation(id);
+      }
+    } else {
+      clearActiveConversation();
+    }
+  }, [id, setActiveConversation, clearActiveConversation]);
 
   const settings = useSettingsStore();
 
@@ -91,7 +126,14 @@ export function ChatLayout() {
       let convId = activeConversationId;
       if (!convId) {
         convId = await createConversation();
-        navigate(`/c/${convId}`);
+        
+        // Only preserve shared-context to keep AI context alive, drop pre-filled queries
+        const newParams = new URLSearchParams();
+        const sharedCtx = searchParams.get("shared-context");
+        if (sharedCtx) newParams.set("shared-context", sharedCtx);
+        
+        const paramStr = newParams.toString();
+        navigate(`/c/${convId}${paramStr ? `?${paramStr}` : ''}`);
       }
 
       const parentId = messages[messages.length - 1]?.id;
@@ -110,7 +152,7 @@ export function ChatLayout() {
       } catch (err: any) {
         if (messages.length === 0) {
            await deleteConversation(convId);
-           navigate("/");
+           navigate("/new");
         }
         if (err.message && err.message.toLowerCase().includes("limit")) {
           useAuthStore.getState().setLoginOpen(true);
@@ -147,8 +189,9 @@ export function ChatLayout() {
       <ChatSidebar 
         open={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
-        onOpenSettings={(tab) => {
+        onOpenSettings={(tab, view) => {
           setSettingsTab(tab || "ai");
+          setSettingsMobileView(view || (tab ? "detail" : "list"));
           setSettingsOpen(true);
         }} 
       />
@@ -169,7 +212,7 @@ export function ChatLayout() {
           <button 
             onClick={() => {
               clearActiveConversation();
-              navigate("/");
+              navigate("/new");
             }}
             className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors ml-auto text-muted-foreground hover:text-foreground"
             title="New Chat"
@@ -211,6 +254,7 @@ export function ChatLayout() {
                 onStop={() => providerRef.current?.abort()}
                 disabled={isSending} 
                 isSending={isSending} 
+                initialValue={initialQuery}
               />
             </div>
           </div>
@@ -221,12 +265,18 @@ export function ChatLayout() {
         )}
       </div>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-        mcpConnected={connected}
+      <SettingsDialog 
+        open={settingsOpen} 
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open && location.pathname.startsWith("/settings")) {
+            navigate(id ? `/c/${id}` : "/new", { replace: true });
+          }
+        }} 
+        mcpConnected={connected} 
         tools={tools}
+        defaultTab={settingsTab}
+        defaultMobileView={settingsMobileView}
       />
 
       {import.meta.env.DEV && (

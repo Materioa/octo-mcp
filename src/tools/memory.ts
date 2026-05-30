@@ -8,6 +8,7 @@ export const memoryTool = {
 Use this ONLY for significant facts or explicitly requested saves (e.g. "remember that I use Windows", or "save this snippet").`,
   inputSchema: {
     content: z.string().describe("The content to save to memory."),
+    containerTag: z.string().optional().describe("Internal tag for the user. Injected by the client automatically."),
   },
 };
 

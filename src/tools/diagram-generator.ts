@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "markmap" | "auto";
+type DiagramFormat = "mermaid" | "dot" | "circuit" | "plot" | "gantt" | "logic" | "markmap" | "3d" | "auto";
 
 const SANDBOX_OUTPUT_DETECT = `
 def get_output_dir():
@@ -38,8 +38,8 @@ function appendDownload(script: string): string {
 const GenerateDiagramSchema = {
   request: z.string().describe("Natural language description of the diagram to generate (e.g., 'DFA that accepts binary strings ending in 01', 'Circuit diagram of an AND gate', 'Line plot of sin(x)')"),
   format: z
-    .enum(["mermaid", "dot", "circuit", "plot", "gantt", "logic", "markmap", "auto"])
-    .describe('Diagram format: "mermaid" (flowcharts, state diagrams), "dot" (FSMs, graphs, trees), "circuit" (electronic schematics), "plot" (Chart.js/React visualizations), "gantt" (project timelines), "logic" (logic gate circuits), "markmap" (mindmaps), or "auto" (infer best format)')
+    .enum(["mermaid", "dot", "circuit", "plot", "gantt", "logic", "markmap", "3d", "auto"])
+    .describe('Diagram format: "mermaid" (flowcharts, state diagrams), "dot" (FSMs, graphs, trees), "circuit" (electronic schematics), "plot" (Chart.js/React visualizations), "gantt" (project timelines), "logic" (logic gate circuits), "markmap" (mindmaps), "3d" (3D WebGL visualizations), or "auto" (infer best format)')
     .default("auto"),
 };
 
@@ -51,12 +51,18 @@ function recommendFormat(request: string): DiagramFormat {
   if (lower.includes("mermaid")) {
     return "mermaid";
   }
-  if (lower.includes("graphviz") || lower.includes("dot")) {
-    return "dot";
+  if (lower.includes("logic gate") || lower.includes("boolean circuit")) {
+    return "logic";
+  }
+  if (lower.includes("3d") || lower.includes("three.js") || lower.includes("webgl") || lower.includes("spatial") || lower.includes("geometry")) {
+    return "3d";
   }
   if (lower.includes("dfa") || lower.includes("fsm") || lower.includes("finite state") || 
       lower.includes("automaton") || lower.includes("state machine")) {
     return "dot"; // DOT is more accurate for FSMs than Mermaid
+  }
+  if (lower.includes("graphviz") || lower.includes("dot")) {
+    return "dot";
   }
   if (lower.includes("timeline") || lower.includes("roadmap")) {
     return "mermaid";
@@ -106,7 +112,8 @@ function buildFormatExample(format: DiagramFormat, environment: string): string 
 }
 
 function buildAccuracyRules(format: DiagramFormat, environment: string): string {
-  return "- Keep the diagram clean and highly accurate based on the user's request.";
+  return `- Keep the diagram clean and highly accurate based on the user's request.
+- CRITICAL: For scientific or engineering diagrams, graphs, and plots, reason deeply about the physical/mathematical relationships before generating code. Ensure all geometries, formulas, and visual representations are physically and mathematically accurate to scale.`;
 }
 
 function buildWebSandboxExample(format: DiagramFormat, request: string, environment: string): string {
@@ -232,7 +239,20 @@ plt.savefig('/tmp/diagram.png', dpi=150, bbox_inches='tight', transparent=True)
 \`\`\``;
   }
 
-    return `### Format Notes
+  if (format === "3d") {
+    return `### 3D Visualizations
+\`\`\`text
+CRITICAL QUALITY REQUIREMENT: When generating 3D visualizations using @react-three/fiber, you MUST put in maximum effort. 
+- ALWAYS include proper lighting (ambient, directional, or point lights).
+- ALWAYS include <OrbitControls /> from @react-three/drei so the user can interact.
+- ALWAYS set a sensible initial camera position in the <Canvas> component (e.g. <Canvas camera={{ position: [15, 10, 15], fov: 45 }}>) so the scene is viewed from a nice isometric or elevated angle, preventing flat/awkward default angles.
+- Build detailed, beautiful geometry and use rich materials (colors, wireframes, opacity). 
+- Do NOT just render a basic unlit shape on a blank canvas. Make it look like a high-quality, professional WebGL demo.
+- DO NOT use chartjs-chart-3d or any other unlisted packages. ONLY use 'three', '@react-three/fiber', and '@react-three/drei'.
+\`\`\``;
+  }
+
+  return `### Format Notes
 \`\`\`text
 Use the recommended format and keep the result faithful to the request.
 \`\`\``;
@@ -249,7 +269,7 @@ export function registerDiagramGeneratorTools(server: McpServer): void {
 1. **mermaid / dot**: Directly output the code block wrapped in \`\`\`mermaid or \`\`\`dot. The client natively renders these formats inline!
    - Note: For Finite State Machines (FSM) or state diagrams, prefer using **dot** (Graphviz) instead of mermaid for better routing and layout.
 2. **markmap**: Directly output the code block wrapped in \`\`\`markmap. Use standard markdown headings (#, ##) and lists (-, *) to represent the mindmap tree.
-3. **plot / circuit / gantt / logic**: The client features an advanced JS/React WebArtifactSandbox. Output the visualization code (using Chart.js, Recharts, basic HTML/SVG, etc.) inside \`\`\`react, \`\`\`html, or \`\`\`javascript blocks. The client will render these components inline.
+3. **plot / circuit / gantt / logic / 3d**: The client features an advanced JS/React WebArtifactSandbox. Output the visualization code (using Chart.js, Recharts, basic HTML/SVG, or @react-three/fiber for 3D/spatial visualizations) inside \`\`\`react, \`\`\`html, or \`\`\`javascript blocks. The client will render these components inline.
 
 NOTE: This system DOES NOT have a Python sandbox. Do NOT attempt to output Python or matplotlib code. If a complex visualization is needed, use standard web technologies (React/JS/SVG).
 IMPORTANT: The WebArtifactSandbox has an import map configured for esm.sh. Use bare imports (e.g. \`import Chart from 'chart.js/auto';\`) rather than absolute CDN URLs like jsdelivr or unpkg.
@@ -280,8 +300,15 @@ Args:
           ``,
           `## Your Task`,
           useSandbox 
-            ? `Write HTML or React code using JS visualization libraries (like Chart.js, Recharts, etc.) to satisfy the request. Return the code block tagged with \`\`\`html or \`\`\`react. ALWAYS use bare module imports (e.g. \`import Chart from 'chart.js/auto';\`), the sandbox has an import map.`
+            ? `Write HTML or React code using JS visualization libraries (like Chart.js, Recharts, three, @react-three/fiber, @react-three/drei, etc.) to satisfy the request. Return the code block tagged with \`\`\`html or \`\`\`react. ALWAYS use bare module imports (e.g. \`import Chart from 'chart.js/auto';\`), the sandbox has an import map.`
             : `Write the diagram using ${normalizedFormat.toUpperCase()} syntax. Return the code block tagged with \`\`\`${normalizedFormat}. The client will natively render it.`,
+          ``,
+          `## Formatting Rules`,
+          `- DO NOT include instructions, "How to use", "npm install", or boilerplate text in your output. You are writing for an environment that natively executes this code inline.`,
+          `- Provide ONLY the code block and a single-sentence summary of the visualization.`,
+          `- CRITICAL IMPORT RULE: The sandbox ONLY supports the following bare module imports: react, react-dom/client, plotly.js, chart.js, chart.js/auto, react-chartjs-2, recharts, three, @react-three/fiber, @react-three/drei, framer-motion, lucide-react.`,
+          `- Do NOT import ANY other libraries (e.g., chartjs-chart-3d, d3). If you need 3D graphics, use @react-three/fiber. If you need a chart, use chart.js or recharts.`,
+          `- AESTHETICS ARE CRITICAL: When using React, Recharts, or Three.js, ensure your visualizations are beautiful, detailed, responsive, and interactive. Use rich colors and professional layouts. Do not output lazy or minimal designs.`,
           ``,
           `## Rules for Accuracy`,
           buildAccuracyRules(normalizedFormat, "web"),

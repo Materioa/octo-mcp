@@ -79,7 +79,7 @@ export class MemoryManager {
     }
     try {
       const result = await this.request("/memories/list", "POST", {
-        containerTag: this.containerTag,
+        containerTags: [this.containerTag],
         limit,
       });
       return (result.memories ?? result.documents ?? []).map((d: any) => ({
