@@ -16,7 +16,7 @@
 //  /api/* for ChatGPT Custom GPT Actions.
 // ─────────────────────────────────────────────────────
 
-import "dotenv/config";
+import dotenv from "dotenv";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -24,6 +24,12 @@ import express from "express";
 import sharp from "sharp";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
+import path from "path";
+
+// Load env files: root .env + client/.env (contains VITE_OPENROUTER_API_KEY)
+const __srcDir = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__srcDir, "../.env") });
+dotenv.config({ path: path.join(__srcDir, "../client/.env") });
 import { executeJsTool, handleExecuteJs } from "./tools/execute-js.js";
 import { generateDocumentTool, handleGenerateDocument } from "./tools/generate-document.js";
 import { memoryTool, handleSaveMemory } from "./tools/memory.js";

@@ -58,18 +58,12 @@ export class OpenAICompatProvider implements AIProvider {
         || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
       const proxyUrl = `${apiBase}/api/chat/completions`;
 
-      // Use the client-side OpenRouter key for free-tier users who haven't set their own key
-      let authKey = this.apiKey;
-      if (!authKey && this.baseUrl.includes("openrouter.ai")) {
-        authKey = import.meta.env.VITE_OPENROUTER_API_KEY || "";
-      }
-
       const res = await fetch(proxyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Target-Url": this.baseUrl,
-          Authorization: `Bearer ${authKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(body),
         signal: this.abortController.signal,
