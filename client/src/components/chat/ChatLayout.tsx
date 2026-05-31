@@ -48,13 +48,13 @@ export function ChatLayout() {
   } = useChatStore();
 
   const { user, anonymousId } = useAuthStore();
-  const userName = user?.displayName || user?.fullName || user?.firstName || user?.username || "there";
+  const userName = user?.displayName || user?.fullName || user?.firstName || user?.name || user?.username || (user?.email ? user.email.split('@')[0] : undefined) || "there";
 
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const activeConv = conversations.find(c => c.id === activeConversationId);
+  const activeConv = conversations.find(c => c.id === activeConversationId || c.shareId === activeConversationId);
   const ownsIt = activeConv ? 
     (activeConv.userId && activeConv.userId === user?.id) || 
     (activeConv.anonymousId && activeConv.anonymousId === anonymousId && !user)
@@ -211,7 +211,7 @@ export function ChatLayout() {
   }, [userName]);
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="flex h-[100dvh] bg-background text-foreground relative overflow-hidden w-full">
       <ChatSidebar 
         open={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -223,17 +223,39 @@ export function ChatLayout() {
       />
 
       <div className="flex flex-1 overflow-hidden relative">
+        {sidebarOpen && (
+          <div 
+            className="absolute inset-0 z-40 bg-black/40 md:hidden backdrop-blur-sm animate-in fade-in-0 transition-opacity"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
         <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
           {/* Main chat header (Thinklet v) */}
         <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
           {!sidebarOpen && (
             <button 
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors"
+              className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors shrink-0"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
             </button>
           )}
+          <div className="font-medium text-sm text-foreground">
+            {(() => {
+              const rawTitle = activeConv?.title || (activeConversationId ? "New Chat" : "");
+              const truncatedTitle = rawTitle.length > 10 ? rawTitle.slice(0, 10) + ".." : rawTitle;
+              return (
+                <>
+                  <span className="md:hidden truncate block max-w-[200px]" title={rawTitle}>
+                    {truncatedTitle}
+                  </span>
+                  <span className="hidden md:block truncate max-w-[400px]" title={rawTitle}>
+                    {rawTitle}
+                  </span>
+                </>
+              );
+            })()}
+          </div>
           
           
           <div className="ml-auto flex items-center gap-2">
@@ -259,7 +281,7 @@ export function ChatLayout() {
                 <Ghost className="h-4 w-4" />
               </button>
             ) : (
-              conversations.find(c => c.id === activeConversationId)?.isTemporary && (
+              activeConv?.isTemporary && (
                 <div className="flex h-8 w-8 items-center justify-center rounded-md text-foreground bg-accent" title="Temporary Chat (Not Saved)">
                   <Ghost className="h-4 w-4" />
                 </div>
@@ -317,14 +339,16 @@ export function ChatLayout() {
             ) : (
               <ChatMessages onRetry={handleRetry} />
             )}
-            <div className="mx-auto w-full max-w-3xl pt-2 pb-4 px-4 md:px-0">
+            <div className="mx-auto w-full max-w-3xl pb-2 md:px-0">
               {isSharedView ? (
-                <button 
-                  onClick={() => navigate(`/c/${activeConversationId}`)}
-                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground py-3 text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
-                >
-                  Continue this conversation
-                </button>
+                <div className="px-4 pb-4 pt-2">
+                  <button 
+                    onClick={() => navigate(`/c/${activeConversationId}`)}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground py-3 text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                  >
+                    Continue this conversation
+                  </button>
+                </div>
               ) : (
                 <ChatInput 
                   onSend={handleSend} 
@@ -379,9 +403,9 @@ export function ChatLayout() {
         <ShareDialog 
           open={shareOpen} 
           onOpenChange={setShareOpen} 
-          visibility={conversations.find(c => c.id === activeConversationId)?.visibility || "private"}
+          visibility={activeConv?.visibility || "private"}
           conversationId={activeConversationId}
-          shareId={conversations.find(c => c.id === activeConversationId)?.shareId}
+          shareId={activeConv?.shareId}
           onSaveVisibility={(vis) => useChatStore.getState().setConversationVisibility(activeConversationId, vis)}
         />
       )}

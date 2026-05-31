@@ -782,7 +782,7 @@ export const app = express();
       
       let convo = null;
       if (ownershipQuery) {
-        convo = await Conversation.findOne({ ...idQuery, ...ownershipQuery }).lean();
+        convo = await Conversation.findOne({ $and: [idQuery, ownershipQuery] }).lean();
       }
       if (!convo) {
         convo = await Conversation.findOne({ ...idQuery, visibility: "public" }).lean();
@@ -802,7 +802,7 @@ export const app = express();
       
       let convo = null;
       if (ownershipQuery) {
-        convo = await Conversation.findOne({ ...idQuery, ...ownershipQuery });
+        convo = await Conversation.findOne({ $and: [idQuery, ownershipQuery] });
       }
       if (!convo) {
         convo = await Conversation.findOne({ ...idQuery, visibility: "public" });

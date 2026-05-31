@@ -96,6 +96,7 @@ export function MarkmapDiagram({ code }: MarkmapDiagramProps) {
         .markmap-svg-container .markmap-foreign code {
           color: #000000 !important;
           fill: #000000 !important;
+          font-family: "Epilogue", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         }
 
         /* Dark mode override */
@@ -109,6 +110,7 @@ export function MarkmapDiagram({ code }: MarkmapDiagramProps) {
         html.dark .markmap-svg-container .markmap-foreign code {
           color: #ffffff !important;
           fill: #ffffff !important;
+          font-family: "Epilogue", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         }
       `}</style>
       <div ref={containerRef} className="w-full h-full markmap-svg-container text-foreground flex items-center justify-center">

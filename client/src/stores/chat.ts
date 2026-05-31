@@ -75,15 +75,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setSharedContext: (context) => set({ sharedContext: context }),
 
   loadConversations: async () => {
-    const conversations = await getConversations();
-    set({ conversations });
+    const fetched = await getConversations();
+    // Preserve any active shared conversation that we don't own so it doesn't disappear from UI
+    const { activeConversationId, conversations: currentConvs } = get();
+    if (activeConversationId) {
+      const active = currentConvs.find(c => c.id === activeConversationId || c.shareId === activeConversationId);
+      if (active && !fetched.find(c => c.id === active.id)) {
+        fetched.push(active);
+      }
+    }
+    set({ conversations: fetched });
   },
 
   createConversation: async (isTemporary = false) => {
     const id = crypto.randomUUID();
     const now = Date.now();
     const { user } = useAuthStore.getState();
-    const userName = user?.displayName || user?.fullName || user?.firstName || user?.username || undefined;
+    const userName = user?.displayName || user?.fullName || user?.firstName || user?.name || user?.username || (user?.email ? user.email.split('@')[0] : undefined) || undefined;
 
     const conversation: Conversation = {
       id,
@@ -114,12 +122,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setActiveConversation: async (id) => {
     set({ activeConversationId: id, isLoading: true });
     let conversations = get().conversations;
-    let conv = conversations.find(c => c.id === id);
+    let conv = conversations.find(c => c.id === id || c.shareId === id);
     if (!conv) {
       const fetchedConv = await getConversation(id);
       if (fetchedConv) {
         conv = fetchedConv;
-        set((s) => ({ conversations: [...s.conversations, fetchedConv] }));
+        if (!get().conversations.find(c => c.id === fetchedConv.id)) {
+          set((s) => ({ conversations: [...s.conversations, fetchedConv] }));
+        }
       }
     }
     if (conv) document.title = conv.title;
@@ -139,8 +149,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     messages.forEach(m => {
       if (m.isStreaming) {
         m.isStreaming = false;
-        // Optionally save back to DB in background, but just fixing memory is enough for UI
-        const conv = get().conversations.find(c => c.id === id);
+        const conv = get().conversations.find(c => c.id === id || c.shareId === id);
         if (!conv?.isTemporary) {
           saveMessage(id, m).catch(() => {});
         }
@@ -195,7 +204,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let updatedAuthorName = conv.authorName;
     if (!updatedAuthorName || updatedAuthorName === "User") {
       const { user } = useAuthStore.getState();
-      updatedAuthorName = user?.displayName || user?.fullName || user?.firstName || user?.username || undefined;
+      updatedAuthorName = user?.displayName || user?.fullName || user?.firstName || user?.name || user?.username || (user?.email ? user.email.split('@')[0] : undefined) || undefined;
     }
 
     let shareId = conv.shareId;
@@ -462,7 +471,22 @@ Current personality: ${settings.personality}${memoryContext}`;
             
             let displayContent = fullResponse;
             if (isFirstMessage) {
-              const match = fullResponse.match(/<chat_title>(.*?)<\/chat_title>/s);
+              let match = fullResponse.match(/<chat_title>(.*?)<\/chat_title>/s);
+              
+              // Fallback for models that ignore tags (e.g., Google models)
+              if (!match && !fullResponse.includes("<chat_title>")) {
+                const titleFallbackMatch = fullResponse.match(/^\**(?:chat\s*)?title\**:?\s*(.+?)(?:\n|$)/i);
+                if (titleFallbackMatch) {
+                  match = titleFallbackMatch;
+                } else {
+                  // Final fallback: use the first line if it's short and looks like a title
+                  const firstLine = fullResponse.split('\n').find(l => l.trim().length > 0)?.replace(/<[^>]*>/g, '').replace(/^\**(?:chat\s*)?title\**:?\s*/i, '').trim();
+                  if (firstLine && firstLine.length > 0 && firstLine.length < 50) {
+                    match = [fullResponse, firstLine];
+                  }
+                }
+              }
+
               if (match) {
                 const title = match[1]?.trim() || "New Chat";
                 const convs = get().conversations;
@@ -477,6 +501,9 @@ Current personality: ${settings.personality}${memoryContext}`;
                 }
               }
               displayContent = fullResponse.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
+              if (match && !fullResponse.includes("<chat_title>")) {
+                  displayContent = fullResponse.replace(match[0], "").trim();
+              }
               if (displayContent.includes("<chat_title>")) {
                  displayContent = ""; // Hide incomplete tag
               }

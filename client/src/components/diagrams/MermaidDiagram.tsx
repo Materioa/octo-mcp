@@ -6,6 +6,7 @@ mermaid.initialize({
   theme: "dark",
   securityLevel: "loose",
   suppressErrorRendering: true,
+  fontFamily: 'inherit, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 });
 
 interface MermaidDiagramProps {

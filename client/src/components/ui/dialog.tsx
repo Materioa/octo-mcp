@@ -28,10 +28,10 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
   return createPortal(
     <div className="fixed inset-0 z-[100]">
       <div
-        className="fixed inset-0 bg-black/80"
+        className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in-0"
         onClick={() => onOpenChange(false)}
       />
-      <div className="fixed inset-0 flex items-center justify-center p-0 sm:p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
         {children}
       </div>
     </div>,
@@ -46,8 +46,10 @@ const DialogContent = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "relative z-50 flex w-full max-w-lg flex-col border bg-background p-6 shadow-lg pointer-events-auto",
-      "max-h-[min(85vh,700px)]",
+      "relative z-50 flex w-full max-w-lg flex-col border bg-background p-6 shadow-2xl pointer-events-auto",
+      "max-h-[90vh] sm:max-h-[min(85vh,700px)]",
+      "rounded-t-[28px] sm:rounded-2xl border-b-0 sm:border-b max-sm:pb-10 max-sm:px-5",
+      "animate-in slide-in-from-bottom-[100%] sm:zoom-in-95 sm:fade-in-0 duration-300 ease-out",
       className
     )}
     {...props}

@@ -8,6 +8,8 @@ import { LoginDialog } from "@/components/auth/LoginDialog";
 import { ProfileDropdown } from "./ProfileDropdown";
 import { cn } from "@/lib/utils";
 import { SearchDialog } from "./SearchDialog";
+import { PanelLeftClose } from "lucide-react";
+
 
 interface ChatSidebarProps {
   open: boolean;
@@ -39,30 +41,34 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
   return (
     <div
       className={cn(
-        "flex h-full flex-col border-r border-border bg-card transition-all duration-300 ease-in-out absolute md:relative z-50 shrink-0",
+        "flex h-full flex-col border-r border-border bg-card transition-all duration-300 ease-in-out absolute inset-y-0 left-0 md:relative z-50 shrink-0",
         open ? "w-[260px] translate-x-0" : "w-[260px] -translate-x-full md:w-[52px] md:translate-x-0"
       )}
     >
       {/* ── Top Area: Logo (Toggle) ── */}
-      <div className={cn("flex h-14 items-center gap-2", open ? "px-4" : "justify-center")}>
-        <button
+      <div className={cn("flex h-14 items-center justify-between", open ? "px-4" : "justify-center")}>
+        <div 
+          className={cn("flex shrink-0 items-center cursor-pointer", open ? "px-2 py-1.5 -ml-2" : "h-10 w-10 justify-center")}
           onClick={onToggle}
-          className={cn("flex shrink-0 items-center rounded-lg hover:bg-accent transition-colors", open ? "px-2 py-1.5 -ml-2" : "h-10 w-10 justify-center")}
-          title={open ? "Close sidebar" : "Open sidebar"}
         >
           <img
-            src="/sidebar.svg"
-            alt="Toggle Sidebar"
+            src="/sidebar.webp"
+            alt="Thinklet Logo"
             className="h-6 w-6 object-contain dark-invert"
           />
           {open && (
-            <img 
-              src="/wordmark.svg" 
-              alt="Thinklet" 
-              className="ml-2 h-5 object-contain dark-invert"
-            />
+            <span className="ml-2 text-lg font-semibold tracking-tight">Thinklet</span>
           )}
-        </button>
+        </div>
+        {open && (
+          <button 
+            onClick={onToggle}
+            className="flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+            title="Close sidebar"
+          >
+            <PanelLeftClose className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {/* ── Edge Hover Handle ── */}
