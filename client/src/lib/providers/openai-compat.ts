@@ -49,7 +49,10 @@ export class OpenAICompatProvider implements AIProvider {
     }
 
     try {
-      const proxyUrl = "/api/chat/completions";
+      // In dev, Vite proxies /api → localhost:3001. In production, we need the absolute URL.
+      const apiBase = import.meta.env.VITE_API_URL
+        || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+      const proxyUrl = `${apiBase}/api/chat/completions`;
 
       const res = await fetch(proxyUrl, {
         method: "POST",
