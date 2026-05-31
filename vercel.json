@@ -10,7 +10,7 @@
   ],
   "functions": {
     "api/**/*": {
-      "includeFiles": "{openapi*.json,client/.env,.env}"
+      "includeFiles": "openapi*.json"
     }
   }
 }
