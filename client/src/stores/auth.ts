@@ -6,6 +6,8 @@ export interface User {
   id: string;
   username?: string;
   displayName?: string;
+  fullName?: string;
+  firstName?: string;
   email?: string;
   hasAdminPrivileges: boolean;
   isPlusUser: boolean;

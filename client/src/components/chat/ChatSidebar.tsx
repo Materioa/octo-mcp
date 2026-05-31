@@ -135,7 +135,13 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
       {open ? (
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-1 py-2">
-            {conversations.filter(c => !c.isTemporary).map((conv) => (
+            {conversations.filter(c => {
+              if (c.isTemporary) return false;
+              if (c.userId && c.userId === user?.id) return true;
+              if (c.anonymousId && c.anonymousId === user?.id && !user) return true; // wait, anonymousId === user?.id? No, anonymousId === authStore.anonymousId
+              const owns = (c.userId && c.userId === user?.id) || (c.anonymousId && c.anonymousId === useAuthStore.getState().anonymousId && !user);
+              return owns;
+            }).map((conv) => (
               <div
                 key={conv.id}
                 className={cn(

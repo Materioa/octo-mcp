@@ -774,14 +774,42 @@ export const app = express();
     }
   });
 
+  app.get("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      const searchParam = req.params.id as string;
+      const idQuery = { $or: [{ id: searchParam }, { shareId: searchParam }] };
+      const ownershipQuery = buildOwnershipQuery(req);
+      
+      let convo = null;
+      if (ownershipQuery) {
+        convo = await Conversation.findOne({ ...idQuery, ...ownershipQuery }).lean();
+      }
+      if (!convo) {
+        convo = await Conversation.findOne({ ...idQuery, visibility: "public" }).lean();
+      }
+      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
+      res.json(convo);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/db/conversations/:id/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
-      const query = buildOwnershipQuery(req, req.params.id as string);
-      if (!query) return res.status(401).json({ error: "Unauthorized" });
-      const convo = await Conversation.findOne(query);
+      const searchParam = req.params.id as string;
+      const idQuery = { $or: [{ id: searchParam }, { shareId: searchParam }] };
+      const ownershipQuery = buildOwnershipQuery(req);
+      
+      let convo = null;
+      if (ownershipQuery) {
+        convo = await Conversation.findOne({ ...idQuery, ...ownershipQuery });
+      }
+      if (!convo) {
+        convo = await Conversation.findOne({ ...idQuery, visibility: "public" });
+      }
       if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
 
-      const msgs = await Message.find({ conversationId: req.params.id }).sort({ timestamp: 1 }).lean();
+      const msgs = await Message.find({ conversationId: convo.id }).sort({ timestamp: 1 }).lean();
       res.json(msgs);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

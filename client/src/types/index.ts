@@ -30,12 +30,16 @@ export interface Message {
 
 export interface Conversation {
   id: string;
+  shareId?: string;
   title: string;
   createdAt: number;
   updatedAt: number;
   messageCount: number;
   isTemporary?: boolean;
   visibility?: "private" | "public";
+  authorName?: string;
+  userId?: string;
+  anonymousId?: string;
 }
 
 export interface Memory {

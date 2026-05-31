@@ -47,12 +47,15 @@ export async function connectDB() {
 
 const ConversationSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
+  shareId: { type: String, index: true, sparse: true },
   title: { type: String, default: "New Chat" },
   userId: { type: String, index: true },
   anonymousId: { type: String, index: true },
+  authorName: { type: String },
   createdAt: { type: Number, default: Date.now },
   updatedAt: { type: Number, default: Date.now },
   messageCount: { type: Number, default: 0 },
+  visibility: { type: String, enum: ["private", "public"], default: "private" },
 });
 
 const MessageSchema = new mongoose.Schema({

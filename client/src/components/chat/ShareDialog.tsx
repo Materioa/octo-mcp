@@ -15,10 +15,11 @@ interface ShareDialogProps {
   onOpenChange: (open: boolean) => void;
   visibility: "private" | "public";
   conversationId: string;
+  shareId?: string;
   onSaveVisibility: (visibility: "private" | "public") => Promise<void>;
 }
 
-export function ShareDialog({ open, onOpenChange, visibility, conversationId, onSaveVisibility }: ShareDialogProps) {
+export function ShareDialog({ open, onOpenChange, visibility, conversationId, shareId, onSaveVisibility }: ShareDialogProps) {
   const [selected, setSelected] = useState<"private" | "public">(visibility);
   const [hasCopied, setHasCopied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -48,7 +49,7 @@ export function ShareDialog({ open, onOpenChange, visibility, conversationId, on
     }
   };
 
-  const linkUrl = `${window.location.origin}${selected === "public" ? "/share/" : "/c/"}${conversationId}`;
+  const linkUrl = `${window.location.origin}${selected === "public" ? "/share/" + (shareId || conversationId) : "/c/" + conversationId}`;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(linkUrl);
@@ -60,63 +61,63 @@ export function ShareDialog({ open, onOpenChange, visibility, conversationId, on
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px] bg-[#242424] text-[#E0E0E0] border-[#3F3F3F] p-6 shadow-2xl !rounded-[24px]">
+      <DialogContent className="sm:max-w-[440px] bg-card text-card-foreground border-border p-6 shadow-2xl sm:rounded-xl">
         <DialogHeader className="mb-4">
-          <DialogTitle className="text-[22px] font-medium text-white">
+          <DialogTitle className="text-[22px] font-medium text-foreground">
             {isSharedState ? "Chat shared" : "Share chat"}
           </DialogTitle>
-          <DialogDescription className="text-[15px] text-[#A0A0A0] mt-1">
+          <DialogDescription className="text-[15px] text-muted-foreground mt-1">
             {isSharedState ? "Future messages aren't included" : "Only messages up to this point will be shared."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col border border-[#3F3F3F] rounded-2xl overflow-hidden bg-transparent mt-2">
+        <div className="flex flex-col border border-border rounded-xl overflow-hidden bg-transparent mt-2">
           <button
             onClick={() => handleSelect("private")}
             disabled={isSaving}
             className={cn(
-              "flex items-center gap-3 p-4 text-left transition-colors hover:bg-[#2E2E2E]",
+              "flex items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50",
               isSaving && "opacity-50 cursor-not-allowed"
             )}
           >
             <div className="flex h-5 w-5 shrink-0 items-center justify-center bg-transparent">
-              <Lock className="h-4 w-4 text-[#A0A0A0]" />
+              <Lock className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="flex-1">
-              <p className="text-[15px] font-medium leading-none text-white">Keep private</p>
-              <p className="text-sm text-[#A0A0A0] mt-1.5">Only you have access</p>
+              <p className="text-[15px] font-medium leading-none text-foreground">Keep private</p>
+              <p className="text-sm text-muted-foreground mt-1.5">Only you have access</p>
             </div>
-            {selected === "private" && <Check className="h-5 w-5 text-[#3b82f6]" />}
+            {selected === "private" && <Check className="h-5 w-5 text-primary" />}
           </button>
 
-          <div className="h-px w-full bg-[#3F3F3F]" />
+          <div className="h-px w-full bg-border" />
 
           <button
             onClick={() => handleSelect("public")}
             disabled={isSaving}
             className={cn(
-              "flex items-center gap-3 p-4 text-left transition-colors hover:bg-[#2E2E2E]",
+              "flex items-center gap-3 p-4 text-left transition-colors hover:bg-muted/50",
               isSaving && "opacity-50 cursor-not-allowed"
             )}
           >
             <div className="flex h-5 w-5 shrink-0 items-center justify-center bg-transparent">
-              <Globe className="h-4 w-4 text-[#A0A0A0]" />
+              <Globe className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="flex-1">
-              <p className="text-[15px] font-medium leading-none text-white">Create public link</p>
-              <p className="text-sm text-[#A0A0A0] mt-1.5">Anyone with the link can view</p>
+              <p className="text-[15px] font-medium leading-none text-foreground">Create public link</p>
+              <p className="text-sm text-muted-foreground mt-1.5">Anyone with the link can view</p>
             </div>
-            {selected === "public" && <Check className="h-5 w-5 text-[#3b82f6]" />}
+            {selected === "public" && <Check className="h-5 w-5 text-primary" />}
           </button>
         </div>
 
-        <div className="mt-6 flex items-center justify-between bg-[#1E1E1E] border border-[#3F3F3F] rounded-xl p-1.5 pl-4">
-          <span className="text-[15px] text-[#A0A0A0] truncate pr-4 overflow-hidden select-all">
+        <div className="mt-6 flex items-center justify-between bg-muted/30 border border-border rounded-xl p-1.5 pl-4">
+          <span className="text-[15px] text-muted-foreground truncate pr-4 overflow-hidden select-all">
             {linkUrl}
           </span>
           <Button 
             onClick={handleCopy} 
-            className="rounded-lg px-4 h-[38px] font-medium bg-[#E0E0E0] text-black hover:bg-white shrink-0"
+            className="rounded-lg px-4 h-[38px] font-medium shrink-0"
           >
             {hasCopied ? "Copied" : "Copy link"}
           </Button>

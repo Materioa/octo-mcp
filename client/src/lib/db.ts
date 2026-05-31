@@ -32,6 +32,17 @@ export async function getConversations(): Promise<Conversation[]> {
   }
 }
 
+export async function getConversation(id: string): Promise<Conversation | null> {
+  try {
+    const res = await fetch(`${API_BASE}/conversations/${id}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error("Failed to fetch conversation");
+    return await res.json();
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
 export async function getMessages(conversationId: string): Promise<Message[]> {
   try {
     const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, { headers: getHeaders() });

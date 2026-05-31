@@ -24,7 +24,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[80vh] flex flex-col p-0">
+      <DialogContent className="sm:max-w-xl max-h-[80vh] flex flex-col p-0 sm:rounded-xl">
         <DialogHeader className="p-4 pb-2 border-b">
           <DialogTitle>Search Chats</DialogTitle>
           <div className="pt-2">

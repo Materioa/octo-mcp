@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Conversation, Message, ToolCall } from "@/types";
 import {
   getConversations,
+  getConversation,
   getMessages,
   saveMessage,
   saveConversation,
@@ -81,6 +82,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   createConversation: async (isTemporary = false) => {
     const id = crypto.randomUUID();
     const now = Date.now();
+    const { user } = useAuthStore.getState();
+    const userName = user?.displayName || user?.fullName || user?.firstName || user?.username || undefined;
+
     const conversation: Conversation = {
       id,
       title: "New Chat",
@@ -89,6 +93,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messageCount: 0,
       isTemporary,
       visibility: "private",
+      authorName: userName,
     };
     
     // Optimistic UI update
@@ -108,8 +113,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setActiveConversation: async (id) => {
     set({ activeConversationId: id, isLoading: true });
-    const conversations = get().conversations;
-    const conv = conversations.find(c => c.id === id);
+    let conversations = get().conversations;
+    let conv = conversations.find(c => c.id === id);
+    if (!conv) {
+      const fetchedConv = await getConversation(id);
+      if (fetchedConv) {
+        conv = fetchedConv;
+        set((s) => ({ conversations: [...s.conversations, fetchedConv] }));
+      }
+    }
     if (conv) document.title = conv.title;
     
     const messages = await getMessages(id);
@@ -179,7 +191,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
 
-    const updatedConv = { ...conv, visibility };
+    // Attach authorName if it's missing (for older conversations)
+    let updatedAuthorName = conv.authorName;
+    if (!updatedAuthorName || updatedAuthorName === "User") {
+      const { user } = useAuthStore.getState();
+      updatedAuthorName = user?.displayName || user?.fullName || user?.firstName || user?.username || undefined;
+    }
+
+    let shareId = conv.shareId;
+    if (visibility === "public") {
+      // Always generate a new share link when turned public
+      shareId = crypto.randomUUID();
+    } else {
+      // Clear share link when turned private
+      shareId = undefined;
+    }
+
+    const updatedConv = { ...conv, visibility, authorName: updatedAuthorName, shareId };
     set(s => ({
       conversations: s.conversations.map(c => c.id === id ? updatedConv : c)
     }));

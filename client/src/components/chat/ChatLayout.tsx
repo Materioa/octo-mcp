@@ -47,12 +47,20 @@ export function ChatLayout() {
     setSharedContext,
   } = useChatStore();
 
-  const { user } = useAuthStore();
-  const userName = user?.displayName || user?.username || "there";
+  const { user, anonymousId } = useAuthStore();
+  const userName = user?.displayName || user?.fullName || user?.firstName || user?.username || "there";
 
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const activeConv = conversations.find(c => c.id === activeConversationId);
+  const ownsIt = activeConv ? 
+    (activeConv.userId && activeConv.userId === user?.id) || 
+    (activeConv.anonymousId && activeConv.anonymousId === anonymousId && !user)
+    : false;
+
+  const isSharedView = location.pathname.startsWith("/share/");
   const [searchParams] = useSearchParams();
   const initialQuery = useMemo(() => searchParams.get("q") || searchParams.get("query") || undefined, [searchParams]);
 
@@ -91,6 +99,18 @@ export function ChatLayout() {
       clearActiveConversation();
     }
   }, [id, setActiveConversation, clearActiveConversation]);
+
+  // Automatically collapse sidebar on mobile
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const handleMediaChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        setSidebarOpen(false);
+      }
+    };
+    mediaQuery.addEventListener("change", handleMediaChange);
+    return () => mediaQuery.removeEventListener("change", handleMediaChange);
+  }, []);
 
   const settings = useSettingsStore();
 
@@ -246,7 +266,13 @@ export function ChatLayout() {
               )
             )}
             
-            {activeConversationId && (
+            {activeConversationId && isSharedView && (
+              <div className="flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-foreground border border-border mr-1">
+                {ownsIt ? "Shared by you" : `Shared by ${activeConv?.authorName || "User"}`}
+              </div>
+            )}
+            
+            {activeConversationId && !isSharedView && (
               <button 
                 onClick={() => setShareOpen(true)}
                 className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
@@ -271,6 +297,19 @@ export function ChatLayout() {
 
         {activeConversationId ? (
           <>
+            {isSharedView && (
+              <div className="mx-auto w-full max-w-3xl pt-4 px-4 pb-4 z-10 shrink-0">
+                <div className="flex items-start gap-3 rounded-xl bg-accent/50 p-4 border border-accent">
+                  <div className="mt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    This is a copy of a chat between Thinklet and {activeConv?.authorName || "User"}. Content may include unverified or unsafe content that do not represent the views of Thinklet.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {isLoading ? (
               <div className="flex-1 flex items-center justify-center">
                 <Loader className="h-8 w-8 animate-spin text-muted-foreground/50" />
@@ -278,13 +317,22 @@ export function ChatLayout() {
             ) : (
               <ChatMessages onRetry={handleRetry} />
             )}
-            <div className="mx-auto w-full max-w-3xl pt-2 pb-4">
-              <ChatInput 
-                onSend={handleSend} 
-                onStop={() => providerRef.current?.abort()}
-                disabled={isSending} 
-                isSending={isSending} 
-              />
+            <div className="mx-auto w-full max-w-3xl pt-2 pb-4 px-4 md:px-0">
+              {isSharedView ? (
+                <button 
+                  onClick={() => navigate(`/c/${activeConversationId}`)}
+                  className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground py-3 text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                >
+                  Continue this conversation
+                </button>
+              ) : (
+                <ChatInput 
+                  onSend={handleSend} 
+                  onStop={() => providerRef.current?.abort()}
+                  disabled={isSending} 
+                  isSending={isSending} 
+                />
+              )}
             </div>
           </>
         ) : (
@@ -333,6 +381,7 @@ export function ChatLayout() {
           onOpenChange={setShareOpen} 
           visibility={conversations.find(c => c.id === activeConversationId)?.visibility || "private"}
           conversationId={activeConversationId}
+          shareId={conversations.find(c => c.id === activeConversationId)?.shareId}
           onSaveVisibility={(vis) => useChatStore.getState().setConversationVisibility(activeConversationId, vis)}
         />
       )}
