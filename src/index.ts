@@ -641,6 +641,36 @@ export const app = express();
          res.status(400).json({ error: "Missing x-target-url header" });
          return;
       }
+
+      // Safety: only allow known AI provider domains
+      const ALLOWED_DOMAINS = [
+        "openrouter.ai",
+        "api.openai.com",
+        "api.anthropic.com",
+        "generativelanguage.googleapis.com",
+        "integrate.api.nvidia.com",
+        "api.llama.com",
+        "dashscope-intl.aliyuncs.com",
+        "api.moonshot.ai",
+        "api.perplexity.ai",
+        "openrouter.ai",
+        "api.deepseek.com",
+        "api.mistral.ai",
+        "api.groq.com",
+        "api.together.xyz",
+      ];
+      let targetHostname: string;
+      try {
+        targetHostname = new URL(targetUrl).hostname;
+      } catch {
+        res.status(400).json({ error: "Invalid x-target-url" });
+        return;
+      }
+      if (!ALLOWED_DOMAINS.some(d => targetHostname === d || targetHostname.endsWith(`.${d}`))) {
+        console.error(`[LLM Proxy] Blocked request to disallowed domain: ${targetHostname}`);
+        res.status(403).json({ error: `Domain not allowed: ${targetHostname}` });
+        return;
+      }
       
       let apiKey = req.headers.authorization as string | undefined;
       

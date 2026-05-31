@@ -49,6 +49,10 @@ export class OpenAICompatProvider implements AIProvider {
     }
 
     try {
+      if (!this.baseUrl || !this.baseUrl.startsWith("http")) {
+        throw new Error("No AI provider configured. Please set a provider in Settings.");
+      }
+
       // In dev, Vite proxies /api → localhost:3001. In production, we need the absolute URL.
       const apiBase = import.meta.env.VITE_API_URL
         || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
