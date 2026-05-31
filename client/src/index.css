@@ -26,6 +26,8 @@
   --color-input-bg: #ffffff;
   --color-ring: #b8270a;
   --radius: 0.625rem;
+  --incognito-frame: #2c2c2a;
+  --incognito-text: #efeeeb;
 }
 
 /* ─── Dark theme ─── */
@@ -53,6 +55,8 @@
   --color-ring: #b8270a;
   --color-chart-4: #2a9d8f;
   --color-chart-5: #e9c46a;
+  --incognito-frame: #efeeeb;
+  --incognito-text: #2c2c2a;
 }
 
 .dark .dark-invert {

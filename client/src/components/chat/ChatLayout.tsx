@@ -11,7 +11,7 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { DocumentPreview } from "./DocumentPreview";
-import { Share, Ghost } from "lucide-react";
+import { Share, Ghost, X } from "lucide-react";
 import { ShareDialog } from "./ShareDialog";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useAuthStore } from "@/stores/auth";
@@ -55,8 +55,8 @@ export function ChatLayout() {
   const location = useLocation();
 
   const activeConv = conversations.find(c => c.id === activeConversationId || c.shareId === activeConversationId);
-  const ownsIt = activeConv ? 
-    (activeConv.userId && activeConv.userId === user?.id) || 
+  const ownsIt = activeConv ?
+    (activeConv.userId && activeConv.userId === user?.id) ||
     (activeConv.anonymousId && activeConv.anonymousId === anonymousId && !user)
     : false;
 
@@ -77,7 +77,7 @@ export function ChatLayout() {
           setSharedContext(context);
         }
       }
-    } catch(e) {}
+    } catch (e) { }
   }, [searchParams, setSharedContext]);
 
   useEffect(() => {
@@ -96,9 +96,11 @@ export function ChatLayout() {
         setActiveConversation(id);
       }
     } else {
-      clearActiveConversation();
+      if (searchParams.get("incognito") !== "true") {
+        clearActiveConversation();
+      }
     }
-  }, [id, setActiveConversation, clearActiveConversation]);
+  }, [id, setActiveConversation, clearActiveConversation, searchParams]);
 
   // Automatically collapse sidebar on mobile
   useEffect(() => {
@@ -123,7 +125,7 @@ export function ChatLayout() {
         const mcpUrl = isLocal
           ? "http://localhost:3001/mcp"
           : "https://mcp.getmaterio.app/mcp";
-        
+
         // Re-connecting forces disconnect first under the hood if already connected
         await mcpClient.connect(mcpUrl);
         const serverTools = await mcpClient.listTools();
@@ -149,17 +151,21 @@ export function ChatLayout() {
     async (content: string, attachments?: any[]) => {
       let convId = activeConversationId;
       if (!convId) {
-        const isTemporary = searchParams.get("temporary") === "true";
+        const isIncognito = searchParams.get("incognito") === "true";
+        const isTemporary = searchParams.get("temporary") === "true" || isIncognito;
         convId = await createConversation(isTemporary);
-        
+
         // Only preserve specific params to keep AI context alive, drop pre-filled queries
         const newParams = new URLSearchParams();
         const sharedCtx = searchParams.get("shared-context");
         if (sharedCtx) newParams.set("shared-context", sharedCtx);
-        if (isTemporary) newParams.set("temporary", "true");
-        
+        if (isTemporary && !isIncognito) newParams.set("temporary", "true");
+        if (isIncognito) newParams.set("incognito", "true");
+
         const paramStr = newParams.toString();
-        navigate(`/c/${convId}${paramStr ? `?${paramStr}` : ''}`);
+        if (!isIncognito) {
+          navigate(`/c/${convId}${paramStr ? `?${paramStr}` : ''}`);
+        }
       }
 
       const parentId = messages[messages.length - 1]?.id;
@@ -172,13 +178,13 @@ export function ChatLayout() {
         timestamp: Date.now(),
         parentId,
       };
-      
+
       try {
         await addMessage(userMsg);
       } catch (err: any) {
         if (messages.length === 0) {
-           await deleteConversation(convId);
-           navigate("/new");
+          await deleteConversation(convId);
+          navigate("/new");
         }
         if (err.message && err.message.toLowerCase().includes("limit")) {
           useAuthStore.getState().setLoginOpen(true);
@@ -187,14 +193,29 @@ export function ChatLayout() {
         }
         return;
       }
-      
+
       // Generation is handled in the background
       useChatStore.getState().generateResponse(convId).catch(console.error);
     },
-    [activeConversationId, messages, createConversation, addMessage, navigate]
+    [activeConversationId, messages, createConversation, addMessage, navigate, searchParams]
   );
 
+  const isIncognito = searchParams.get("incognito") === "true";
+
   const greeting = useMemo(() => {
+    if (isIncognito) {
+      const sentences = [
+        "Greetings, whoever you are",
+        "Ask the question you've been afraid to ask.",
+        "Your secrets are safe here",
+        "Speak freely, friend",
+        "What's on your mind?",
+        "Going off the record...",
+        "Just you and the question. Go ahead.",
+        "Let's keep this between us."
+      ];
+      return sentences[Math.floor(Math.random() * sentences.length)];
+    }
     const hour = new Date().getHours();
     let timeGreeting = "Good morning";
     if (hour >= 12 && hour < 18) timeGreeting = "Good afternoon";
@@ -205,204 +226,242 @@ export function ChatLayout() {
       "What will you learn today?",
       `${userName}, ready to start learning?`,
       "Let's explore something new.",
-      `Ready to dive in, ${userName}?`
+      `Ready to dive in, ${userName}?`,
+      "No question is too basic. Seriously.",
+      `Hey ${userName}, stuck somewhere? I'm here`
     ];
     return sentences[Math.floor(Math.random() * sentences.length)];
-  }, [userName]);
+  }, [userName, isIncognito]);
 
   return (
-    <div className="flex h-[100dvh] bg-background text-foreground relative overflow-hidden w-full">
-      <ChatSidebar 
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        onOpenSettings={(tab, view) => {
-          setSettingsTab(tab || "ai");
-          setSettingsMobileView(view || (tab ? "detail" : "list"));
-          setSettingsOpen(true);
-        }} 
-      />
+    <div
+      className={cn("flex h-[100dvh] text-foreground relative w-full transition-all duration-300", isIncognito ? "flex-col p-1.5 md:p-2" : "flex-row bg-background")}
+      style={isIncognito ? { backgroundColor: "var(--incognito-frame)" } : undefined}
+    >
+      {isIncognito && (
+        <div
+          className="flex shrink-0 items-center justify-between px-2 pb-2 pt-1 md:px-3 md:pb-3 md:pt-2"
+          style={{ color: "var(--incognito-text)" }}
+        >
+          <div className="flex items-center gap-2 font-medium text-sm">
+            <Ghost className="h-4 w-4" />
+            Incognito chat
+          </div>
+          <button
+            onClick={() => {
+              const newParams = new URLSearchParams(searchParams);
+              newParams.delete("incognito");
+              navigate(`/new?${newParams.toString()}`);
+            }}
+            className="flex items-center justify-center hover:opacity-70 transition-opacity"
+            title="Exit Incognito Mode"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+      {!isIncognito && (
+        <ChatSidebar
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          onOpenSettings={(tab, view) => {
+            setSettingsTab(tab || "ai");
+            setSettingsMobileView(view || (tab ? "detail" : "list"));
+            setSettingsOpen(true);
+          }}
+        />
+      )}
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className={cn(
+        "flex flex-1 overflow-hidden relative transition-all duration-300",
+        isIncognito && "bg-background rounded-2xl border dark:border-white/20 shadow-2xl"
+      )}>
         {sidebarOpen && (
-          <div 
+          <div
             className="absolute inset-0 z-40 bg-black/40 md:hidden backdrop-blur-sm animate-in fade-in-0 transition-opacity"
             onClick={() => setSidebarOpen(false)}
           />
         )}
         <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
           {/* Main chat header (Thinklet v) */}
-        <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
-          {!sidebarOpen && (
-            <button 
-              onClick={() => setSidebarOpen(true)}
-              className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors shrink-0"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
-            </button>
-          )}
-          <div className="font-medium text-sm text-foreground">
-            {(() => {
-              const rawTitle = activeConv?.title || (activeConversationId ? "New Chat" : "");
-              const truncatedTitle = rawTitle.length > 10 ? rawTitle.slice(0, 10) + ".." : rawTitle;
-              return (
-                <>
-                  <span className="md:hidden truncate block max-w-[200px]" title={rawTitle}>
-                    {truncatedTitle}
-                  </span>
-                  <span className="hidden md:block truncate max-w-[400px]" title={rawTitle}>
-                    {rawTitle}
-                  </span>
-                </>
-              );
-            })()}
-          </div>
-          
-          
-          <div className="ml-auto flex items-center gap-2">
-            {!activeConversationId ? (
-              <button 
-                onClick={() => {
-                  const newParams = new URLSearchParams(searchParams);
-                  if (searchParams.get("temporary") === "true") {
-                    newParams.delete("temporary");
-                  } else {
-                    newParams.set("temporary", "true");
-                  }
-                  navigate(`/new?${newParams.toString()}`);
-                }}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
-                  searchParams.get("temporary") === "true" 
-                    ? "bg-accent text-foreground" 
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-                title={searchParams.get("temporary") === "true" ? "Disable Temporary Chat" : "Enable Temporary Chat"}
+          <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
+            {!sidebarOpen && !isIncognito && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors shrink-0"
               >
-                <Ghost className="h-4 w-4" />
-              </button>
-            ) : (
-              activeConv?.isTemporary && (
-                <div className="flex h-8 w-8 items-center justify-center rounded-md text-foreground bg-accent" title="Temporary Chat (Not Saved)">
-                  <Ghost className="h-4 w-4" />
-                </div>
-              )
-            )}
-            
-            {activeConversationId && isSharedView && (
-              <div className="flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-foreground border border-border mr-1">
-                {ownsIt ? "Shared by you" : `Shared by ${activeConv?.authorName || "User"}`}
-              </div>
-            )}
-            
-            {activeConversationId && !isSharedView && (
-              <button 
-                onClick={() => setShareOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-                title="Share Chat Link"
-              >
-                <Share className="h-4 w-4" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12" /><line x1="4" x2="20" y1="6" y2="6" /><line x1="4" x2="20" y1="18" y2="18" /></svg>
               </button>
             )}
+            <div className="font-medium text-sm text-foreground">
+              {(() => {
+                const rawTitle = activeConv?.title || (activeConversationId ? "New Chat" : "");
+                const truncatedTitle = rawTitle.length > 10 ? rawTitle.slice(0, 10) + ".." : rawTitle;
+                return (
+                  <>
+                    <span className="md:hidden truncate block max-w-[200px]" title={rawTitle}>
+                      {truncatedTitle}
+                    </span>
+                    <span className="hidden md:block truncate max-w-[400px]" title={rawTitle}>
+                      {rawTitle}
+                    </span>
+                  </>
+                );
+              })()}
+            </div>
 
-            <button 
-              onClick={() => {
-                clearActiveConversation();
-                navigate("/new");
-              }}
-              className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-              title="New Chat"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-          </div>
-        </header>
-
-        {activeConversationId ? (
-          <>
-            {isSharedView && (
-              <div className="mx-auto w-full max-w-3xl pt-4 px-4 pb-4 z-10 shrink-0">
-                <div className="flex items-start gap-3 rounded-xl bg-accent/50 p-4 border border-accent">
-                  <div className="mt-0.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    This is a copy of a chat between Thinklet and {activeConv?.authorName || "User"}. Content may include unverified or unsafe content that do not represent the views of Thinklet.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {isLoading ? (
-              <div className="flex-1 flex items-center justify-center">
-                <Loader className="h-8 w-8 animate-spin text-muted-foreground/50" />
-              </div>
-            ) : (
-              <ChatMessages onRetry={handleRetry} />
-            )}
-            <div className="mx-auto w-full max-w-3xl pb-2 md:px-0">
-              {isSharedView ? (
-                <div className="px-4 pb-4 pt-2">
-                  <button 
-                    onClick={() => navigate(`/c/${activeConversationId}`)}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground py-3 text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+            <div className="ml-auto flex items-center gap-2">
+              {!isIncognito && (
+                !activeConversationId ? (
+                  <button
+                    onClick={() => {
+                      const newParams = new URLSearchParams(searchParams);
+                      if (searchParams.get("incognito") === "true") {
+                        newParams.delete("incognito");
+                      } else {
+                        newParams.set("incognito", "true");
+                      }
+                      navigate(`/new?${newParams.toString()}`);
+                    }}
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-md transition-all active:scale-95",
+                      searchParams.get("incognito") === "true"
+                        ? "bg-accent text-foreground"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                    title={searchParams.get("incognito") === "true" ? "Exit Incognito Chat" : "Enter Incognito Chat"}
                   >
-                    Continue this conversation
+                    <Ghost className="h-4 w-4" />
                   </button>
+                ) : (
+                  activeConv?.isTemporary && (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md text-foreground bg-accent" title="Temporary Chat (Not Saved)">
+                      <Ghost className="h-4 w-4" />
+                    </div>
+                  )
+                )
+              )}
+
+              {activeConversationId && isSharedView && (
+                <div className="flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-foreground border border-border mr-1">
+                  {ownsIt ? "Shared by you" : `Shared by ${activeConv?.authorName || "User"}`}
+                </div>
+              )}
+
+              {activeConversationId && !isSharedView && !activeConv?.isTemporary && (
+                <button
+                  onClick={() => setShareOpen(true)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                  title="Share Chat Link"
+                >
+                  <Share className="h-4 w-4" />
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  clearActiveConversation();
+                  navigate("/new");
+                }}
+                className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                title="New Chat"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+              </button>
+            </div>
+          </header>
+
+          {activeConversationId ? (
+            <>
+              {isSharedView && (
+                <div className="mx-auto w-full max-w-3xl pt-4 px-4 pb-4 z-10 shrink-0">
+                  <div className="flex items-start gap-3 rounded-xl bg-accent/50 p-4 border border-accent">
+                    <div className="mt-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      This is a copy of a chat between Thinklet and {activeConv?.authorName || "User"}. Content may include unverified or unsafe content that do not represent the views of Thinklet.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {isLoading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <Loader className="h-8 w-8 animate-spin text-muted-foreground/50" />
                 </div>
               ) : (
-                <ChatInput 
-                  onSend={handleSend} 
-                  onStop={() => providerRef.current?.abort()}
-                  disabled={isSending} 
-                  isSending={isSending} 
-                />
+                <ChatMessages onRetry={handleRetry} />
               )}
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-1 flex-col px-4 md:items-center md:justify-center">
-            <div className="flex-1 flex flex-col items-center justify-center md:flex-none">
-              <div className="mb-8 text-center">
-                <h1 className="text-3xl font-semibold tracking-tight text-foreground/90">
-                  {greeting}
-                </h1>
+              <div className="mx-auto w-full max-w-3xl pb-2 md:px-0">
+                {isSharedView ? (
+                  <div className="px-4 pb-4 pt-2">
+                    <button
+                      onClick={() => navigate(`/c/${activeConversationId}`)}
+                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground py-3 text-sm font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                    >
+                      Continue this conversation
+                    </button>
+                  </div>
+                ) : (
+                  <ChatInput
+                    onSend={handleSend}
+                    onStop={() => providerRef.current?.abort()}
+                    disabled={isSending}
+                    isSending={isSending}
+                  />
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 flex-col px-4 md:items-center md:justify-center">
+              <div className="flex-1 flex flex-col items-center justify-center md:flex-none">
+                <div className="mb-8 text-center">
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground/90">
+                    {greeting}
+                  </h1>
+                </div>
+              </div>
+              <div className="w-full max-w-3xl pb-4 md:pb-0 mx-auto">
+                <ChatInput
+                  onSend={handleSend}
+                  onStop={() => providerRef.current?.abort()}
+                  disabled={isSending}
+                  isSending={isSending}
+                  initialValue={initialQuery}
+                />
+                {isIncognito && (
+                  <div className="mt-6 text-center text-xs text-muted-foreground">
+                    Incognito chats aren't saved or added to memory.
+                  </div>
+                )}
               </div>
             </div>
-            <div className="w-full max-w-3xl pb-4 md:pb-0 mx-auto">
-              <ChatInput 
-                onSend={handleSend} 
-                onStop={() => providerRef.current?.abort()}
-                disabled={isSending} 
-                isSending={isSending} 
-                initialValue={initialQuery}
-              />
-            </div>
-          </div>
-        )}
+          )}
         </main>
         {activeDocument && (
           <DocumentPreview document={activeDocument} onClose={() => setActiveDocument(null)} />
         )}
       </div>
 
-      <SettingsDialog 
-        open={settingsOpen} 
+      <SettingsDialog
+        open={settingsOpen}
         onOpenChange={(open) => {
           setSettingsOpen(open);
           if (!open && location.pathname.startsWith("/settings")) {
             navigate(id ? `/c/${id}` : "/new", { replace: true });
           }
-        }} 
-        mcpConnected={connected} 
+        }}
+        mcpConnected={connected}
         tools={tools}
         defaultTab={settingsTab}
         defaultMobileView={settingsMobileView}
       />
 
       {activeConversationId && (
-        <ShareDialog 
-          open={shareOpen} 
-          onOpenChange={setShareOpen} 
+        <ShareDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
           visibility={activeConv?.visibility || "private"}
           conversationId={activeConversationId}
           shareId={activeConv?.shareId}
@@ -416,22 +475,22 @@ export function ChatLayout() {
           isDebugOpen ? "w-64 p-3 animate-in slide-in-from-bottom-4" : "w-10 p-2 cursor-pointer hover:bg-accent"
         )}>
           {!isDebugOpen ? (
-            <div 
+            <div
               className="flex items-center justify-center h-full w-full opacity-50 hover:opacity-100"
               onClick={() => setIsDebugOpen(true)}
               title="Open Debug Panel"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
             </div>
           ) : (
             <>
               <h4 className="text-xs font-semibold mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <button 
+                  <button
                     onClick={() => setIsDebugOpen(false)}
                     className="p-1 hover:bg-accent rounded-sm"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
                   </button>
                   Debug Panel
                 </div>
@@ -440,7 +499,7 @@ export function ChatLayout() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">MCP Server</span>
-                  <select 
+                  <select
                     className="text-xs bg-background border border-border rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-ring w-full"
                     value={settings.mcpEnvironment}
                     onChange={(e) => settings.setMcpEnvironment(e.target.value as any)}

@@ -38,7 +38,12 @@ export default function App() {
   });
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    if (theme === "system") {
+      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", isDark);
+    } else {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+    }
   }, [theme]);
 
   useEffect(() => {

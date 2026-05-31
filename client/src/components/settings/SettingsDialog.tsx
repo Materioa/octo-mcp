@@ -142,13 +142,16 @@ export function SettingsDialog({
 
   const handleProviderSwitch = (id: ProviderId) => {
     const preset = getPreset(id);
-    setLocalSettings((s) => ({
-      ...s,
-      providerId: id,
-      baseUrl: preset.baseUrl,
-      model: preset.defaultModel,
-      apiKey: s.providerId === id ? s.apiKey : "",
-    }));
+    setLocalSettings((s) => {
+      const savedKey = settings.apiKeys[id];
+      return {
+        ...s,
+        providerId: id,
+        baseUrl: preset.baseUrl,
+        model: preset.defaultModel,
+        apiKey: savedKey || (s.providerId === id ? s.apiKey : ""),
+      };
+    });
   };
 
   return (
@@ -273,7 +276,7 @@ export function SettingsDialog({
                     </div>
                   </div>
 
-                  {!isFreeBuiltIn && (
+                  {localSettings.providerId === 'custom' && (
                     <div className="space-y-3">
                       <label className="text-sm font-medium">Base URL</label>
                       <Input
@@ -282,14 +285,8 @@ export function SettingsDialog({
                           setLocalSettings((s) => ({ ...s, baseUrl: e.target.value }))
                         }
                         placeholder={currentPreset.baseUrl || 'https://api.example.com/v1'}
-                        disabled={localSettings.providerId !== 'custom'}
                         className="h-10"
                       />
-                      {localSettings.providerId !== 'custom' && (
-                        <p className="text-xs text-muted-foreground">
-                          Auto-configured for {currentPreset.name}
-                        </p>
-                      )}
                     </div>
                   )}
 

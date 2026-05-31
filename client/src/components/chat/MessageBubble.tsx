@@ -63,6 +63,20 @@ export const MessageBubble = React.memo(function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   
+  const [showMobileActions, setShowMobileActions] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTouchStart = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      setShowMobileActions(true);
+    }, 2000);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+  };
+  
   // Shimmering loader state
   const [shimmerIndex, setShimmerIndex] = useState(0);
   const shimmerPhrases = [
@@ -303,7 +317,12 @@ export const MessageBubble = React.memo(function MessageBubble({
           )}
         >
         {isUser ? (
-          <div className="group relative">
+          <div 
+            className="group relative"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchEnd}
+          >
             {isEditing ? (
               <div className="flex flex-col">
                 <textarea
@@ -336,10 +355,16 @@ export const MessageBubble = React.memo(function MessageBubble({
             )}
             
             {!isEditing && (
-              <div className="absolute -bottom-6 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-background/80 backdrop-blur rounded p-1 border border-border shadow-sm">
+              <div className={cn(
+                "absolute -bottom-6 right-0 transition-opacity flex gap-1 bg-background/80 backdrop-blur rounded p-1 border border-border shadow-sm",
+                showMobileActions ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+              )}>
                 <button 
                   className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-accent"
-                  onClick={() => navigator.clipboard.writeText(message.content)}
+                  onClick={() => {
+                    navigator.clipboard.writeText(message.content);
+                    setShowMobileActions(false);
+                  }}
                   title="Copy"
                 >
                   <Copy className="w-3 h-3" />
@@ -347,7 +372,7 @@ export const MessageBubble = React.memo(function MessageBubble({
                 <button 
                   className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-accent"
                   title="Edit"
-                  onClick={() => { setEditContent(message.content); setIsEditing(true); }}
+                  onClick={() => { setEditContent(message.content); setIsEditing(true); setShowMobileActions(false); }}
                 >
                   <Pencil className="w-3 h-3" />
                 </button>
@@ -355,7 +380,10 @@ export const MessageBubble = React.memo(function MessageBubble({
                   <button 
                     className="p-1 text-muted-foreground hover:text-red-500 transition-colors rounded hover:bg-red-500/10"
                     title="Undo turn (Deletes message and response)"
-                    onClick={() => deleteMessage(message.id)}
+                    onClick={() => {
+                      deleteMessage(message.id);
+                      setShowMobileActions(false);
+                    }}
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>

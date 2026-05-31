@@ -4,6 +4,7 @@ import { getPreset } from "@/lib/providers/presets";
 import { parseFileContent, generatePdfPreview } from "@/lib/file-parser";
 import { uploadFileToSupabase } from "@/lib/supabase";
 import { Loader, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ interface ChatInputProps {
   disabled?: boolean;
   isSending?: boolean;
   initialValue?: string;
+  isIncognito?: boolean;
 }
 
 interface Attachment {
@@ -32,7 +34,7 @@ interface Attachment {
   status: 'idle' | 'uploading' | 'error';
 }
 
-export function ChatInput({ onSend, onStop, disabled, isSending, initialValue }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, isIncognito }: ChatInputProps) {
   const [value, setValue] = useState(initialValue || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
@@ -201,9 +203,9 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue }:
   }, [value]);
 
   return (
-    <div className="bg-background px-4 pb-4 pt-2">
+    <div className="bg-transparent px-4 pb-4 pt-2">
       <div className="mx-auto max-w-3xl">
-        <div className="rounded-2xl border border-input bg-input-bg shadow-sm">
+        <div className={cn("rounded-2xl border border-input bg-input-bg shadow-sm", isIncognito && "border-dotted border-[2px]")}>
           {/* Thumbnails Row */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-4 pt-4 pb-1">

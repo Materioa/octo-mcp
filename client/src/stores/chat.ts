@@ -47,7 +47,8 @@ interface ChatStore {
   activeDocument: { url: string; format: string; title: string } | null;
   setActiveDocument: (doc: { url: string; format: string; title: string } | null) => void;
   sharedContext: string | null;
-  setSharedContext: (context: string) => void;
+  setSharedContext: (context: string | null) => void;
+  renameConversation: (id: string, newTitle: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -132,7 +133,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
     }
-    if (conv) document.title = conv.title;
+    if (conv && !conv.isTemporary) document.title = conv.title;
     
     const messages = await getMessages(id);
     
@@ -180,8 +181,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ messages, allMessages: messages, isLoading: false });
   },
 
+  renameConversation: async (id: string, newTitle: string) => {
+    let conv: Conversation | null | undefined = get().conversations.find(c => c.id === id);
+    if (!conv) {
+      conv = await getConversation(id);
+      if (!conv) return;
+    }
+    const updated = { ...conv, title: newTitle };
+    set({ conversations: get().conversations.map(c => c.id === id ? updated : c) });
+    if (!updated.isTemporary) {
+      saveConversation(updated).catch(console.error);
+    }
+  },
+
   clearActiveConversation: () => {
     set({ activeConversationId: null, messages: [], allMessages: [] });
+    document.title = "Thinklet";
   },
 
   deleteConversation: async (id) => {
@@ -445,8 +460,11 @@ Current personality: ${settings.personality}${memoryContext}`;
     if (get().activeConversationId === conversationId) {
       await get().addMessage(newMsg);
     } else {
-      // Just save to DB directly if it's in background
-      await saveMessage(conversationId, newMsg).catch(console.error);
+      // Just save to DB directly if it's in background, provided it's not temporary
+      const conv = get().conversations.find(c => c.id === conversationId);
+      if (conv && !conv.isTemporary) {
+        await saveMessage(conversationId, newMsg).catch(console.error);
+      }
     }
 
     const toolCallMap = new Map<string, ToolCall>();
@@ -494,8 +512,10 @@ Current personality: ${settings.personality}${memoryContext}`;
                 if (conv && conv.title === "New Chat") {
                    const updated = { ...conv, title };
                    set({ conversations: convs.map(c => c.id === conversationId ? updated : c) });
-                   saveConversation(updated).catch(console.error);
-                   if (get().activeConversationId === conversationId) {
+                   if (!updated.isTemporary) {
+                     saveConversation(updated).catch(console.error);
+                   }
+                   if (get().activeConversationId === conversationId && !updated.isTemporary) {
                       document.title = title;
                    }
                 }
@@ -682,7 +702,10 @@ Current personality: ${settings.personality}${memoryContext}`;
     if (get().activeConversationId === conversationId) {
       updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
     } else {
-      saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+      const conv = get().conversations.find(c => c.id === conversationId);
+      if (conv && !conv.isTemporary) {
+        saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+      }
     }
     const { generatingConversationIds: currentGenerating } = get();
     set({

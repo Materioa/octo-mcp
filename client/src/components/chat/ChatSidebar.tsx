@@ -8,7 +8,8 @@ import { LoginDialog } from "@/components/auth/LoginDialog";
 import { ProfileDropdown } from "./ProfileDropdown";
 import { cn } from "@/lib/utils";
 import { SearchDialog } from "./SearchDialog";
-import { PanelLeftClose } from "lucide-react";
+import { PanelLeftClose, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 
 interface ChatSidebarProps {
@@ -25,6 +26,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
     createConversation,
     setActiveConversation,
     deleteConversation,
+    renameConversation,
     clearActiveConversation,
     generatingConversationIds,
   } = useChatStore();
@@ -33,6 +35,16 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
   const { user, logout, loginOpen, setLoginOpen } = useAuthStore();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  const handleRenameSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (editingId && editTitle.trim()) {
+      await renameConversation(editingId, editTitle.trim());
+    }
+    setEditingId(null);
+  };
 
   useEffect(() => {
     loadConversations();
@@ -156,7 +168,25 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                 )}
                 onClick={() => navigate(`/c/${conv.id}`)}
               >
-                <span className="flex-1 truncate">{conv.title}</span>
+                {editingId === conv.id ? (
+                  <form 
+                    className="flex-1 flex items-center gap-1 min-w-0"
+                    onSubmit={handleRenameSubmit}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="text"
+                      className="flex-1 min-w-0 h-6 px-1 text-sm bg-background border rounded outline-none focus:ring-1 focus:ring-ring"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      autoFocus
+                      onBlur={() => handleRenameSubmit()}
+                    />
+                  </form>
+                ) : (
+                  <span className="flex-1 truncate">{conv.title}</span>
+                )}
+                
                 {generatingConversationIds.includes(conv.id) ? (
                   <div className="shrink-0 rounded p-1">
                     <svg className="animate-spin h-4 w-4 text-orange-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -165,30 +195,40 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                     </svg>
                   </div>
                 ) : (
-                  <button
-                    className="hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground group-hover:block"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await deleteConversation(conv.id);
-                      if (activeConversationId === conv.id) {
-                        navigate("/new");
-                      }
-                    }}
-                  >
-                    <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                  </svg>
-                </button>
+                  editingId !== conv.id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <button className="hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-accent-foreground/10 group-hover:block data-[state=open]:block">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-32">
+                        <DropdownMenuItem 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingId(conv.id);
+                            setEditTitle(conv.title);
+                          }}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          <span>Rename</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await deleteConversation(conv.id);
+                            if (activeConversationId === conv.id) {
+                              navigate("/new");
+                            }
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          <span>Delete</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )
                 )}
               </div>
             ))}

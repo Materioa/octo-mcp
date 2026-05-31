@@ -5,6 +5,7 @@ import { getPreset } from "@/lib/providers/presets";
 
 interface SettingsStore extends Settings {
   mcpEnvironment: "production" | "development";
+  apiKeys: Record<string, string>;
   setMcpEnvironment: (env: "production" | "development") => void;
   setAIProvider: (config: Partial<Settings["aiProvider"]>) => void;
   switchProvider: (providerId: ProviderId) => void;
@@ -17,7 +18,8 @@ interface SettingsStore extends Settings {
   deleteSkill: (id: string) => void;
 }
 
-const defaultSettings: Settings & { mcpEnvironment: "production" | "development" } = {
+const defaultSettings: Settings & { mcpEnvironment: "production" | "development", apiKeys: Record<string, string> } = {
+  apiKeys: {},
   aiProvider: {
     providerId: "openrouter-free",
     baseUrl: "https://openrouter.ai/api/v1",
@@ -38,17 +40,27 @@ export const useSettingsStore = create<SettingsStore>()(
       ...defaultSettings,
       setMcpEnvironment: (env) => set({ mcpEnvironment: env }),
       setAIProvider: (config) =>
-        set((s) => ({ aiProvider: { ...s.aiProvider, ...config } })),
+        set((s) => {
+          const newAiProvider = { ...s.aiProvider, ...config };
+          const newApiKeys = { ...s.apiKeys };
+          if (config.apiKey !== undefined) {
+            newApiKeys[newAiProvider.providerId] = config.apiKey;
+          }
+          return { aiProvider: newAiProvider, apiKeys: newApiKeys };
+        }),
       switchProvider: (providerId) => {
         const preset = getPreset(providerId);
-        set((s) => ({
-          aiProvider: {
-            providerId,
-            baseUrl: preset.baseUrl,
-            apiKey: s.aiProvider.providerId === providerId ? s.aiProvider.apiKey : "",
-            model: preset.defaultModel,
-          },
-        }));
+        set((s) => {
+          const newApiKey = s.apiKeys[providerId] || (s.aiProvider.providerId === providerId ? s.aiProvider.apiKey : "");
+          return {
+            aiProvider: {
+              providerId,
+              baseUrl: preset.baseUrl,
+              apiKey: newApiKey,
+              model: preset.defaultModel,
+            },
+          };
+        });
       },
       setTheme: (theme) => {
         if (theme === "system") {
