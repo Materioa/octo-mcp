@@ -160,6 +160,17 @@ export const app = express();
   // ── Parse JSON bodies for MCP JSON-RPC requests ──
   app.use(express.json());
 
+  // ── Lazy DB connect for Vercel serverless (no persistent process) ──
+  app.use(async (_req, res, next) => {
+    try {
+      await connectDB();
+    } catch (err) {
+      // Non-DB routes (health, MCP, openapi) should still work even if DB fails
+      console.error("DB connect error (will retry next request):", err);
+    }
+    next();
+  });
+
   // ── CORS for all origins (needed by remote connectors) ──
   app.use((_req, res, next) => {
     if (_req.method === "GET" || _req.method === "HEAD") {

@@ -14,3 +14,4 @@ test-db.ts
 test-memory.ts 
 .vercel
 .env*.local
+test-*

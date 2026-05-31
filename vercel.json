@@ -5,7 +5,8 @@
     { "source": "/mcp/(.*)", "destination": "/api/index" },
     { "source": "/health", "destination": "/api/index" },
     { "source": "/openapi.json", "destination": "/api/index" },
-    { "source": "/openapi.search-lite.json", "destination": "/api/index" }
+    { "source": "/openapi.search-lite.json", "destination": "/api/index" },
+    { "source": "/(.*)", "destination": "/api/index" }
   ],
   "functions": {
     "api/**/*": {
