@@ -91,7 +91,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   createConversation: async (isTemporary = false) => {
     const id = crypto.randomUUID();
     const now = Date.now();
-    const { user } = useAuthStore.getState();
+    const { user, anonymousId } = useAuthStore.getState();
     const userName = user?.displayName || user?.fullName || user?.firstName || user?.name || user?.username || (user?.email ? user.email.split('@')[0] : undefined) || undefined;
 
     const conversation: Conversation = {
@@ -103,6 +103,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isTemporary,
       visibility: "private",
       authorName: userName,
+      userId: user?.id,
+      anonymousId: !user ? anonymousId : undefined,
     };
     
     // Optimistic UI update
@@ -348,6 +350,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { messages, generatingConversationIds, isSending, updateMessage } = get();
     if (isSending || generatingConversationIds.includes(conversationId)) return;
 
+    // Helper: strip <thought>, <thinking>, <Thought process> etc. from display
+    const stripThinking = (text: string): string => {
+      return text
+        .replace(/<(?:thought|thinking|Thought process)[^>]*>[\s\S]*?<\/(?:thought|thinking|Thought process)>/gi, "")
+        .replace(/<(?:thought|thinking|Thought process)[^>]*>[\s\S]*/gi, "") // unclosed thinking tag — hide everything after it
+        .trim();
+    };
+
     // Use current settings
     const settings = useSettingsStore.getState();
     const providerConfig = settings.aiProvider;
@@ -364,6 +374,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     get().setAbortController(provider["abortController"] as any);
 
     const parentId = messages[messages.length - 1]?.id;
+
+    const aiMessageId = crypto.randomUUID();
+
+    // Add empty placeholder message IMMEDIATELY so UI doesn't hang
+    const newMsg: Message = {
+      id: aiMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+      isStreaming: true,
+      modelUsed: modelOverride || providerConfig.model,
+      parentId,
+    };
+    
+    if (get().activeConversationId === conversationId) {
+      await get().addMessage(newMsg);
+    } else {
+      const conv = get().conversations.find(c => c.id === conversationId);
+      if (conv && !conv.isTemporary) {
+        saveMessage(conversationId, newMsg).catch(console.error);
+      }
+    }
 
     // Fetch all memory context to inject into system prompt
     let memoryContext = "";
@@ -399,7 +431,13 @@ Current personality: ${settings.personality}${memoryContext}`;
     
     const isFirstMessage = messages.filter(m => m.role === "user").length === 1;
     if (isFirstMessage) {
-      finalSystemPrompt += `\n\nThis is the very first message in the chat. You MUST generate a short 3-5 word title for this conversation based on the user's intent. The title MUST be wrapped EXACTLY in <chat_title> tags at the VERY BEGINNING of your response, before any other text. Example: <chat_title>Learning about Python</chat_title> Hello! I can help you with Python...`;
+      finalSystemPrompt += `\n\nThis is the very first message in the chat. You MUST generate a short 3-5 word title for this conversation based on the user's message. The title should be a natural summary of what the user asked about.
+RULES FOR THE TITLE:
+- Wrap the title EXACTLY in <chat_title> tags at the VERY BEGINNING of your response, before any other text.
+- Do NOT put any thinking, reasoning, or planning before or inside the <chat_title> tags.
+- The title must be 3-5 words that describe the user's intent (e.g. "Learning about Python", "Help with homework").
+- For simple greetings like "hi" or "hello", use a friendly title like "Quick Hello" or "Casual Chat".
+- Example: <chat_title>Learning about Python</chat_title> Hello! I can help you with Python...`;
     }
 
     if (get().sharedContext) {
@@ -443,30 +481,6 @@ Current personality: ${settings.personality}${memoryContext}`;
       }),
     ];
 
-    const aiMessageId = crypto.randomUUID();
-
-    // Add empty placeholder message
-    const newMsg: Message = {
-      id: aiMessageId,
-      role: "assistant",
-      content: "",
-      timestamp: Date.now(),
-      isStreaming: true,
-      modelUsed: modelOverride || providerConfig.model,
-      parentId,
-    };
-    
-    // Switch to target conversation if we are still on it
-    if (get().activeConversationId === conversationId) {
-      await get().addMessage(newMsg);
-    } else {
-      // Just save to DB directly if it's in background, provided it's not temporary
-      const conv = get().conversations.find(c => c.id === conversationId);
-      if (conv && !conv.isTemporary) {
-        await saveMessage(conversationId, newMsg).catch(console.error);
-      }
-    }
-
     const toolCallMap = new Map<string, ToolCall>();
     let fullResponse = "";
     
@@ -487,29 +501,38 @@ Current personality: ${settings.personality}${memoryContext}`;
           (token) => {
             fullResponse += token;
             
-            let displayContent = fullResponse;
+            // Strip thinking/thought tags first, then process title
+            let displayContent = stripThinking(fullResponse);
             if (isFirstMessage) {
-              let match = fullResponse.match(/<chat_title>(.*?)<\/chat_title>/s);
+              // Extract title from the cleaned (thought-stripped) content
+              let match = displayContent.match(/<chat_title>(.*?)<\/chat_title>/s);
               
               // Fallback for models that ignore tags (e.g., Google models)
-              if (!match && !fullResponse.includes("<chat_title>")) {
-                const titleFallbackMatch = fullResponse.match(/^\**(?:chat\s*)?title\**:?\s*(.+?)(?:\n|$)/i);
+              if (!match && !displayContent.includes("<chat_title>")) {
+                const titleFallbackMatch = displayContent.match(/^\**(?:chat\s*)?title\**:?\s*(.+?)(?:\n|$)/i);
                 if (titleFallbackMatch) {
                   match = titleFallbackMatch;
-                } else {
-                  // Final fallback: use the first line if it's short and looks like a title
-                  const firstLine = fullResponse.split('\n').find(l => l.trim().length > 0)?.replace(/<[^>]*>/g, '').replace(/^\**(?:chat\s*)?title\**:?\s*/i, '').trim();
-                  if (firstLine && firstLine.length > 0 && firstLine.length < 50) {
-                    match = [fullResponse, firstLine];
-                  }
                 }
+                // Removed aggressive first-line fallback — it caused junk titles
               }
 
               if (match) {
-                const title = match[1]?.trim() || "New Chat";
+                // Clean up the title: strip leftover tags, backticks, "tags.", planning text, etc.
+                let title = (match[1] || "").trim()
+                  .replace(/<[^>]*>/g, '')       // strip any HTML/XML tags
+                  .replace(/`/g, '')             // strip backticks
+                  .replace(/^tags\.?\s*/i, '')   // strip "tags." prefix
+                  .replace(/^plan:?.*/i, '')     // strip "Plan:..." junk
+                  .trim();
+                
+                // If title is still garbage or too long, fallback
+                if (!title || title.length > 60 || title.length < 2) {
+                  title = "New Chat";
+                }
+                
                 const convs = get().conversations;
                 const conv = convs.find(c => c.id === conversationId);
-                if (conv && conv.title === "New Chat") {
+                if (conv && conv.title === "New Chat" && title !== "New Chat") {
                    const updated = { ...conv, title };
                    set({ conversations: convs.map(c => c.id === conversationId ? updated : c) });
                    if (!updated.isTemporary) {
@@ -520,12 +543,14 @@ Current personality: ${settings.personality}${memoryContext}`;
                    }
                 }
               }
-              displayContent = fullResponse.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
-              if (match && !fullResponse.includes("<chat_title>")) {
-                  displayContent = fullResponse.replace(match[0], "").trim();
+              // Remove chat_title tags from display
+              displayContent = displayContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
+              if (match && !displayContent.includes("<chat_title>")) {
+                  displayContent = displayContent.replace(match[0], "").trim();
               }
+              // Hide incomplete chat_title tag while streaming
               if (displayContent.includes("<chat_title>")) {
-                 displayContent = ""; // Hide incomplete tag
+                 displayContent = "";
               }
             }
 
@@ -694,11 +719,9 @@ Current personality: ${settings.personality}${memoryContext}`;
 
     await runTurn();
 
-    // Finalize
-    let finalContent = fullResponse;
-    if (isFirstMessage) {
-      finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
-    }
+    // Finalize — strip thinking and chat_title tags from persisted content
+    let finalContent = stripThinking(fullResponse);
+    finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
     if (get().activeConversationId === conversationId) {
       updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
     } else {

@@ -665,14 +665,24 @@ export const app = express();
       });
       
       if (response.body) {
-        // Use Node's Web Streams API to pipe the stream
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
+        if (typeof (response.body as any).getReader === 'function') {
+          const reader = (response.body as any).getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              res.write(Buffer.isBuffer(value) ? value : Buffer.from(value));
+            }
+          }
+          res.end();
+        } else if (typeof (response.body as any).pipe === 'function') {
+          // Fallback for node-fetch / Node.js Readable streams
+          (response.body as any).pipe(res);
+        } else {
+          // Fallback if body is somehow not a stream
+          const text = await response.text();
+          res.send(text);
         }
-        res.end();
       } else {
         res.end();
       }

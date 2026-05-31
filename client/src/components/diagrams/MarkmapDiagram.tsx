@@ -114,7 +114,7 @@ export function MarkmapDiagram({ code }: MarkmapDiagramProps) {
         }
       `}</style>
       <div ref={containerRef} className="w-full h-full markmap-svg-container text-foreground flex items-center justify-center">
-        <svg ref={svgRef} />
+        <svg ref={svgRef} width="600" height="400" style={{ width: '100%', height: '100%' }} />
       </div>
       
       <div className="absolute bottom-4 right-4 flex gap-1 bg-background/80 backdrop-blur-sm rounded-md shadow-sm border border-border p-1">

@@ -12,10 +12,14 @@ export class OpenAICompatProvider implements AIProvider {
   private model: string;
   private abortController: AbortController | null = null;
 
-  constructor(baseUrl: string, apiKey: string, model: string) {
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
+  constructor(baseUrl: string = "", apiKey: string = "", model: string = "") {
+    let cleanBaseUrl = (baseUrl || "").replace(/\/+$/, "");
+    if (cleanBaseUrl.endsWith("/chat/completions")) {
+      cleanBaseUrl = cleanBaseUrl.replace(/\/chat\/completions$/, "");
+    }
+    this.baseUrl = cleanBaseUrl;
     this.apiKey = apiKey || "";
-    this.model = model;
+    this.model = model || "";
   }
 
   abort(): void {
