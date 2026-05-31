@@ -642,12 +642,14 @@ export const app = express();
          return;
       }
       
-      let apiKey = req.headers.authorization;
+      let apiKey = req.headers.authorization as string | undefined;
       
-      // If no API key is provided by the client (Free tier)
-      if (!apiKey || apiKey.trim() === "Bearer" || apiKey.trim() === "Bearer undefined") {
+      // If no API key is provided by the client (Free tier) — catches: missing, "Bearer", "Bearer undefined", "Bearer "
+      const keyValue = apiKey?.replace(/^Bearer\s*/i, "").trim() ?? "";
+      if (!keyValue || keyValue === "undefined" || keyValue === "null") {
+        apiKey = undefined;
         if (targetUrl.includes("openrouter.ai")) {
-          // Fallback to server's env, allowing either OPENROUTER_API_KEY or VITE_OPENROUTER_API_KEY
+          // Fallback to server's env OpenRouter key
           const serverKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
           if (serverKey) {
             apiKey = `Bearer ${serverKey}`;
