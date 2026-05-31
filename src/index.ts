@@ -947,3 +947,6 @@ export const app = express();
       process.exit(1);
     });
   }
+
+// ── Default export for Vercel serverless (api/index.ts re-exports this) ──
+export default app;
