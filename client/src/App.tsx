@@ -10,11 +10,37 @@ function IframeListener() {
   
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Security check: Only allow postMessage from trusted origins
+      const allowedOrigins = [
+        "https://getmaterio.app",
+        "https://www.getmaterio.app"
+      ];
+      
+      // Only allow localhost:1000 if the chat app itself is running locally
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        allowedOrigins.push("http://localhost:1000");
+      }
+      
+      // Allow from same origin just in case (e.g. self-messaging in dev)
+      if (!allowedOrigins.includes(event.origin) && event.origin !== window.location.origin) {
+        return;
+      }
+
       if (event.data?.type === "MATERIO_NAVIGATE" && event.data.path) {
         navigate(event.data.path);
       }
       if (event.data?.type === "MATERIO_SET_QUERY" && event.data.query) {
-        window.dispatchEvent(new CustomEvent("materio-set-query", { detail: event.data.query }));
+        window.dispatchEvent(new CustomEvent("materio-set-query", { 
+          detail: { query: event.data.query, autoSubmit: !!event.data.autoSubmit } 
+        }));
+      }
+      if (event.data?.type === "MATERIO_SET_THEME" && event.data.theme) {
+        useSettingsStore.getState().setTheme(event.data.theme);
+      }
+      if (event.data?.type === "MATERIO_HIDE_SIDEBAR_ICON") {
+        window.dispatchEvent(new CustomEvent("materio-hide-sidebar-icon", {
+          detail: { hide: event.data.hide !== false }
+        }));
       }
     };
     window.addEventListener("message", handleMessage);
@@ -36,6 +62,16 @@ export default function App() {
   const [initialHandoffCode] = useState(() => {
     return new URLSearchParams(window.location.search).get("handoff");
   });
+  
+  const [initialTheme] = useState(() => {
+    return new URLSearchParams(window.location.search).get("theme");
+  });
+
+  useEffect(() => {
+    if (initialTheme && (initialTheme === "dark" || initialTheme === "light" || initialTheme === "system")) {
+      useSettingsStore.getState().setTheme(initialTheme as any);
+    }
+  }, [initialTheme]);
 
   useEffect(() => {
     if (theme === "system") {

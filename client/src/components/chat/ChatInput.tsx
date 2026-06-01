@@ -53,11 +53,27 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     }
   }, [initialValue]);
 
+  const onSendRef = useRef(onSend);
+  useEffect(() => {
+    onSendRef.current = onSend;
+  }, [onSend]);
+
   useEffect(() => {
     const handleSetQuery = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
-        setValue(customEvent.detail);
+        if (typeof customEvent.detail === 'string') {
+          setValue(customEvent.detail);
+        } else {
+          const { query, autoSubmit } = customEvent.detail;
+          if (query) {
+            setValue(query);
+            if (autoSubmit) {
+              onSendRef.current(query);
+              setValue("");
+            }
+          }
+        }
       }
     };
     window.addEventListener("materio-set-query", handleSetQuery);

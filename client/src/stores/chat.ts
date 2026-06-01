@@ -436,7 +436,7 @@ RULES FOR THE TITLE:
 - Wrap the title EXACTLY in <chat_title> tags at the VERY BEGINNING of your response, before any other text.
 - Do NOT put any thinking, reasoning, or planning before or inside the <chat_title> tags.
 - The title must be 3-5 words that describe the user's intent (e.g. "Learning about Python", "Help with homework").
-- For simple greetings like "hi" or "hello", use a friendly title like "Quick Hello" or "Casual Chat".
+- Base the title on the user's underlying intent, even for simple greetings. Avoid generic or cliché phrases like "Quick Hello", "Casual Chat", or "Friendly Greeting".
 - Example: <chat_title>Learning about Python</chat_title> Hello! I can help you with Python...`;
     }
 

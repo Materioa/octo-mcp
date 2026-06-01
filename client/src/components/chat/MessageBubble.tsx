@@ -70,7 +70,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       setShowMobileActions(true);
-    }, 2000);
+    }, 800);
   };
 
   const handleTouchEnd = () => {
@@ -322,6 +322,11 @@ export const MessageBubble = React.memo(function MessageBubble({
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             onTouchMove={handleTouchEnd}
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setShowMobileActions(!showMobileActions);
+              }
+            }}
           >
             {isEditing ? (
               <div className="flex flex-col">

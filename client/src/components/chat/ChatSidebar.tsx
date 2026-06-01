@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useChatStore } from "@/stores/chat";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
@@ -34,6 +34,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
   const { theme, setTheme } = useSettingsStore();
   const { user, logout, loginOpen, setLoginOpen } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -166,7 +167,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                   "group flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-accent",
                   activeConversationId === conv.id && "bg-accent"
                 )}
-                onClick={() => navigate(`/c/${conv.id}`)}
+                onClick={() => navigate(`/c/${conv.id}${location.search}`)}
               >
                 {editingId === conv.id ? (
                   <form 
@@ -198,7 +199,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                   editingId !== conv.id && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <button className="hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-accent-foreground/10 group-hover:block data-[state=open]:block">
+                        <button className="flex md:hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-accent-foreground/10 md:group-hover:flex data-[state=open]:flex">
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                       </DropdownMenuTrigger>
@@ -219,7 +220,7 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
                             e.stopPropagation();
                             await deleteConversation(conv.id);
                             if (activeConversationId === conv.id) {
-                              navigate("/new");
+                              navigate(`/new${location.search}`);
                             }
                           }}
                         >

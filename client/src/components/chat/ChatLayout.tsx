@@ -155,10 +155,10 @@ export function ChatLayout() {
         const isTemporary = searchParams.get("temporary") === "true" || isIncognito;
         convId = await createConversation(isTemporary);
 
-        // Only preserve specific params to keep AI context alive, drop pre-filled queries
-        const newParams = new URLSearchParams();
-        const sharedCtx = searchParams.get("shared-context");
-        if (sharedCtx) newParams.set("shared-context", sharedCtx);
+        // Preserve all params except the pre-filled queries
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete("q");
+        newParams.delete("query");
         if (isTemporary && !isIncognito) newParams.set("temporary", "true");
         if (isIncognito) newParams.set("incognito", "true");
 
@@ -201,6 +201,18 @@ export function ChatLayout() {
   );
 
   const isIncognito = searchParams.get("incognito") === "true";
+  const [hideSidebarIcon, setHideSidebarIcon] = useState(() => searchParams.get("hide-sidebar-icon") === "true");
+
+  useEffect(() => {
+    const handleHideSidebar = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.hide === "boolean") {
+        setHideSidebarIcon(customEvent.detail.hide);
+      }
+    };
+    window.addEventListener("materio-hide-sidebar-icon", handleHideSidebar);
+    return () => window.removeEventListener("materio-hide-sidebar-icon", handleHideSidebar);
+  }, []);
 
   const greeting = useMemo(() => {
     if (isIncognito) {
@@ -285,7 +297,7 @@ export function ChatLayout() {
         <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
           {/* Main chat header (Thinklet v) */}
           <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
-            {!sidebarOpen && !isIncognito && (
+            {!sidebarOpen && !isIncognito && !hideSidebarIcon && (
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors shrink-0"
@@ -449,7 +461,7 @@ export function ChatLayout() {
         onOpenChange={(open) => {
           setSettingsOpen(open);
           if (!open && location.pathname.startsWith("/settings")) {
-            navigate(id ? `/c/${id}` : "/new", { replace: true });
+            navigate(`${id ? `/c/${id}` : "/new"}${location.search}`, { replace: true });
           }
         }}
         mcpConnected={connected}

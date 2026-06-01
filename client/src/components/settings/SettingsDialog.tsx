@@ -158,7 +158,7 @@ export function SettingsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
         onClose={() => onOpenChange(false)} 
-        className="max-w-4xl p-0 overflow-hidden h-[100dvh] max-h-[100dvh] sm:max-h-[85vh] w-full max-w-none rounded-none sm:rounded-xl sm:h-[80vh] sm:min-h-[600px] sm:max-w-4xl bg-card border-0 sm:border-border flex flex-col"
+        className="max-w-4xl !p-0 overflow-hidden h-[100dvh] max-h-[100dvh] sm:max-h-[85vh] w-full max-w-none !rounded-none sm:!rounded-xl sm:h-[80vh] sm:min-h-[600px] sm:max-w-4xl bg-card border-0 sm:border-border flex flex-col"
       >
         <div className="flex flex-1 w-full relative overflow-hidden">
           {/* Sidebar */}
