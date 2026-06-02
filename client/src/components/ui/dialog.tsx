@@ -48,7 +48,7 @@ const DialogContent = React.forwardRef<
     className={cn(
       "relative z-50 flex w-full max-w-lg flex-col border bg-background p-6 shadow-2xl pointer-events-auto",
       "max-h-[90vh] sm:max-h-[min(85vh,700px)]",
-      "rounded-t-[28px] sm:rounded-2xl border-b-0 sm:border-b max-sm:pb-10 max-sm:px-5",
+      "rounded-t-[28px] sm:rounded-2xl border-b-0 sm:border-b max-sm:pb-10 max-sm:px-5 squircle-mask squircle-t-[28px] sm:squircle-2xl",
       "animate-in slide-in-from-bottom-[100%] sm:zoom-in-95 sm:fade-in-0 duration-300 ease-out",
       className
     )}

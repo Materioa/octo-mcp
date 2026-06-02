@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settings";
-import { getPreset } from "@/lib/providers/presets";
 import { parseFileContent, generatePdfPreview } from "@/lib/file-parser";
 import { uploadFileToSupabase } from "@/lib/supabase";
 import { Loader, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useChatStore } from "@/stores/chat";
+import { saveDraftAttachment, getDraftAttachments, deleteDraftAttachment, clearDraftAttachments } from "@/lib/draftsDb";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ModelSelector } from "@/components/ui/ModelSelector";
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: any[]) => void;
@@ -37,15 +39,21 @@ interface Attachment {
 export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, isIncognito }: ChatInputProps) {
   const [value, setValue] = useState(initialValue || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [modelSelectorMounted, setModelSelectorMounted] = useState(false);
-  const [modelSelectorClosing, setModelSelectorClosing] = useState(false);
+  const [isComposing, setIsComposing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settings = useSettingsStore();
-  const preset = getPreset(settings.aiProvider.providerId ?? "openrouter");
   const [isParsing, setIsParsing] = useState(false);
+  const activeConversationId = useChatStore(s => s.activeConversationId) || 'new';
+  const rateLimitResetTime = useChatStore(s => s.rateLimitResetTime);
+
+  useEffect(() => {
+    getDraftAttachments(activeConversationId).then(drafts => {
+      if (drafts.length > 0) setAttachments(drafts);
+      else setAttachments([]); // clear if no drafts for this convo
+    });
+  }, [activeConversationId]);
 
   useEffect(() => {
     if (initialValue) {
@@ -80,48 +88,6 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     return () => window.removeEventListener("materio-set-query", handleSetQuery);
   }, []);
 
-  const closeModelSelector = useCallback(() => {
-    setModelSelectorClosing(true);
-    setModelSelectorOpen(false);
-    setTimeout(() => {
-      setModelSelectorMounted(false);
-      setModelSelectorClosing(false);
-    }, 200);
-  }, []);
-
-  const toggleModelSelector = useCallback(() => {
-    if (modelSelectorOpen) {
-      closeModelSelector();
-    } else {
-      setModelSelectorMounted(true);
-      setModelSelectorOpen(true);
-    }
-  }, [modelSelectorOpen, closeModelSelector]);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        if (modelSelectorOpen) closeModelSelector();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [modelSelectorOpen, closeModelSelector]);
-
-  /** Derive a short display name from the model string */
-  const modelDisplay = (() => {
-    const m = settings.aiProvider.model;
-    // Strip provider prefix (e.g. "anthropic/claude-sonnet-4" → "claude-sonnet-4")
-    const short = m.includes("/") ? m.split("/").pop()! : m;
-    // Prettify common patterns
-    return short
-      .replace(/-instruct$/i, "")
-      .replace(/-20\d{6}$/, "")
-      .split("-")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-  })();
-
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
     if (!trimmed && attachments.length === 0) return;
@@ -155,13 +121,19 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     onSend(trimmed, uploadedAttachments);
     setValue("");
     setAttachments([]);
+    clearDraftAttachments(activeConversationId);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
   }, [value, disabled, attachments, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isComposing) {
+      // Allow enter to be newline on mobile devices
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
@@ -188,6 +160,22 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     try {
       if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) {
         newAtt.previewUrl = URL.createObjectURL(file);
+        
+        // Auto-route to vision model if current model isn't one
+        const m = settings.aiProvider.model;
+        const nonVisionModels = [
+          "meta-llama/llama-3.3-70b-instruct:free",
+          "deepseek/deepseek-v4-flash:free",
+          "z-ai/glm-4.5-air:free",
+          "moonshotai/kimi-k2.6:free",
+          "nvidia/nemotron-3-nano-30b-a3b:free",
+          "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "minimax/minimax-m2.5:free"
+        ];
+        if (nonVisionModels.includes(m)) {
+          settings.setAIProvider({ ...settings.aiProvider, model: "openrouter/free" });
+          import("@/stores/alert").then(mod => mod.useAlertStore.getState().addAlert("Switched to a vision-capable model to read your image.", "info"));
+        }
       } else if (extension === 'pdf') {
         try {
           newAtt.previewUrl = await generatePdfPreview(file);
@@ -200,6 +188,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
       newAtt.extractedText = content;
 
       setAttachments(prev => prev.map(a => a.id === id ? newAtt : a));
+      saveDraftAttachment(activeConversationId, newAtt);
     } catch (err: any) {
       alert(`Failed to parse file: ${err.message}`);
       setAttachments(prev => prev.filter(a => a.id !== id));
@@ -220,8 +209,13 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
   return (
     <div className="bg-transparent px-4 pb-4 pt-2">
-      <div className="mx-auto max-w-3xl">
-        <div className={cn("rounded-2xl border border-input bg-input-bg shadow-sm", isIncognito && "border-dotted border-[2px]")}>
+      <div className="mx-auto max-w-3xl flex flex-col">
+        {rateLimitResetTime && (
+          <div className="bg-[#a3a3a3] dark:bg-[#4a4a4a] text-black dark:text-white/80 text-[13px] px-5 py-2.5 rounded-t-xl border border-b-0 border-input font-medium flex items-center">
+            You're out of messages for today, come back tomorrow at {rateLimitResetTime}.
+          </div>
+        )}
+        <div className={cn("border border-input bg-input-bg shadow-sm", rateLimitResetTime ? "rounded-b-xl" : "squircle-mask squircle-2xl", isIncognito && "border-dotted border-[2px]")}>
           {/* Thumbnails Row */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-4 pt-4 pb-1">
@@ -243,7 +237,10 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
                   {att.status !== 'uploading' && (
                     <button
-                      onClick={() => setAttachments(prev => prev.filter(a => a.id !== att.id))}
+                      onClick={() => {
+                        setAttachments(prev => prev.filter(a => a.id !== att.id));
+                        deleteDraftAttachment(att.id);
+                      }}
                       className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
                     >
                       <X className="h-2.5 w-2.5" />
@@ -260,6 +257,8 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => setIsComposing(true)}
+            onCompositionEnd={() => setIsComposing(false)}
             placeholder="Write a message…"
             disabled={disabled}
             rows={1}
@@ -350,123 +349,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             />
 
             <div className="flex items-center gap-1.5">
-              {/* Custom Model selector */}
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  type="button"
-                  onClick={toggleModelSelector}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  {(() => {
-                    const m = settings.aiProvider.model;
-                    if (m === "openai/gpt-oss-120b:free") return "GPT OSS";
-                    if (m === "google/gemma-4-31b-it:free") return "Gemma 4";
-                    if (m === "meta-llama/llama-3.3-70b-instruct:free") return "Llama 3.3";
-                    if (m === "z-ai/glm-4.5-air:free") return "GLM 4.5 Air";
-                    if (m === "deepseek/deepseek-v4-flash:free") return "DeepSeek v4";
-                    if (m === "minimax/minimax-m2.5:free") return "MiniMax M2.5";
-                    if (m === "nvidia/nemotron-3-nano-30b-a3b:free" || m === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") return "Nemotron 3 Nano";
-                    if (m === "moonshotai/kimi-k2.6:free") return "Kimi K2.6";
-                    if (m === "openrouter/free") return "Best";
-                    return modelDisplay;
-                  })()}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="m6 9 6 6 6-6" /></svg>
-                </button>
-
-                {modelSelectorMounted && (
-                  <>
-                    <div 
-                      className={`fixed inset-0 bg-black/60 z-[55] sm:hidden transition-opacity duration-200 ${modelSelectorClosing ? "opacity-0" : "opacity-100"}`}
-                      onClick={closeModelSelector}
-                    />
-                    <div className={`fixed inset-x-0 bottom-0 w-full rounded-t-3xl sm:rounded-xl border border-border bg-card p-3 sm:p-1 shadow-lg z-[60] pb-8 sm:pb-0 sm:absolute sm:bottom-full sm:right-0 sm:mb-2 sm:w-56 sm:left-auto duration-200 fill-mode-forwards ${modelSelectorClosing ? "animate-out fade-out slide-out-to-bottom-full sm:slide-out-to-bottom-2" : "animate-in fade-in slide-in-from-bottom-full sm:slide-in-from-bottom-2"}`}>
-                      <div className="sm:hidden w-full flex justify-center pt-2 pb-4">
-                        <div className="w-12 h-1.5 rounded-full bg-muted-foreground/30" />
-                      </div>
-                      <div className="max-h-[60vh] sm:max-h-60 overflow-y-auto p-1 space-y-1 sm:space-y-0">
-                      {(() => {
-                        const currentModel = settings.aiProvider.model;
-                        const modelsToDisplay = [currentModel, ...preset.models.filter(m => m !== currentModel)];
-                        return modelsToDisplay.filter(m => m !== "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").filter((v, i, a) => a.indexOf(v) === i).map((m) => {
-                          let label = m;
-                        if (m === "openai/gpt-oss-120b:free") label = "GPT OSS";
-                        else if (m === "google/gemma-4-31b-it:free") label = "Gemma 4";
-                        else if (m === "meta-llama/llama-3.3-70b-instruct:free") label = "Llama 3.3";
-                        else if (m === "z-ai/glm-4.5-air:free") label = "GLM 4.5 Air";
-                        else if (m === "deepseek/deepseek-v4-flash:free") label = "DeepSeek v4";
-                        else if (m === "minimax/minimax-m2.5:free") label = "MiniMax M2.5";
-                        else if (m === "nvidia/nemotron-3-nano-30b-a3b:free") label = "Nemotron 3 Nano";
-                        else if (m === "moonshotai/kimi-k2.6:free") label = "Kimi k2.6";
-                        else if (m === "openrouter/free") label = "Best";
-                        else {
-                          const short = m.includes("/") ? m.split("/").pop()! : m;
-                          label = short
-                            .replace(/-instruct$/i, "")
-                            .replace(/-20\d{6}$/, "")
-                            .split("-")
-                            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                            .join(" ");
-                        }
-
-                        let isSelected = settings.aiProvider.model === m;
-                        if (m === "nvidia/nemotron-3-nano-30b-a3b:free" && settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") {
-                          isSelected = true;
-                        }
-
-                        return (
-                          <div key={m} className="flex flex-col">
-                            <button
-                              className={`flex w-full items-center justify-between rounded-xl sm:rounded-md px-4 sm:px-3 py-3 sm:py-2 text-[16px] sm:text-sm font-medium transition-colors ${isSelected ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                                }`}
-                              onClick={() => {
-                                if (m === "nvidia/nemotron-3-nano-30b-a3b:free" && isSelected) {
-                                  // Don't do anything if they click the already selected parent button
-                                } else {
-                                  settings.setAIProvider({ ...settings.aiProvider, model: m });
-                                  closeModelSelector();
-                                }
-                              }}
-                            >
-                              <span>{label}</span>
-                              {isSelected && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground"><path d="M20 6 9 17l-5-5" /></svg>
-                              )}
-                            </button>
-
-                            {m === "nvidia/nemotron-3-nano-30b-a3b:free" && isSelected && (
-                              <div className="flex items-center justify-between px-3 py-1.5 mx-2 mt-1 mb-1 rounded bg-secondary/30">
-                                <span className="text-[11px] text-muted-foreground font-medium">Reasoning Mode</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const isReasoning = settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
-                                    settings.setAIProvider({
-                                      ...settings.aiProvider,
-                                      model: isReasoning ? "nvidia/nemotron-3-nano-30b-a3b:free" : "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
-                                    });
-                                  }}
-                                  className={`relative inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                    settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" ? 'bg-brand' : 'bg-muted-foreground/30'
-                                  }`}
-                                >
-                                  <span
-                                    className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                      settings.aiProvider.model === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" ? 'translate-x-2.5' : 'translate-x-0'
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      });
-                      })()}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+              <ModelSelector placement="top" />
 
               {/* Send / Stop button */}
               {isSending ? (

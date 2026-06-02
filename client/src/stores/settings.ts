@@ -24,7 +24,7 @@ const defaultSettings: Settings & { mcpEnvironment: "production" | "development"
     providerId: "openrouter-free",
     baseUrl: "https://openrouter.ai/api/v1",
     apiKey: "",
-    model: "openai/gpt-oss-120b:free",
+    model: "openrouter/free",
   },
   theme: "dark",
   personality: "default",

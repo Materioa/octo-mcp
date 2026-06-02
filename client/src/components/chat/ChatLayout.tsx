@@ -23,7 +23,13 @@ export function ChatLayout() {
   const [shareOpen, setShareOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("ai");
   const [settingsMobileView, setSettingsMobileView] = useState<"list" | "detail">("list");
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    if (window.innerWidth < 768) return false;
+    const saved = localStorage.getItem("sidebarOpen");
+    if (saved !== null) return saved === "true";
+    return true;
+  });
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [tools, setTools] = useState<MCPTool[]>([]);
@@ -93,14 +99,19 @@ export function ChatLayout() {
   useEffect(() => {
     if (id) {
       if (id !== useChatStore.getState().activeConversationId) {
-        setActiveConversation(id);
+        setActiveConversation(id).then((success) => {
+          if (success === false) {
+            navigate("/new", { replace: true });
+            import("@/stores/alert").then(m => m.useAlertStore.getState().addAlert("Conversation not found", "error"));
+          }
+        });
       }
     } else {
       if (searchParams.get("incognito") !== "true") {
         clearActiveConversation();
       }
     }
-  }, [id, setActiveConversation, clearActiveConversation, searchParams]);
+  }, [id, setActiveConversation, clearActiveConversation, searchParams, navigate]);
 
   // Automatically collapse sidebar on mobile
   useEffect(() => {
@@ -113,6 +124,13 @@ export function ChatLayout() {
     mediaQuery.addEventListener("change", handleMediaChange);
     return () => mediaQuery.removeEventListener("change", handleMediaChange);
   }, []);
+
+  // Save sidebar state to localStorage
+  useEffect(() => {
+    if (window.innerWidth >= 768) {
+      localStorage.setItem("sidebarOpen", String(sidebarOpen));
+    }
+  }, [sidebarOpen]);
 
   const settings = useSettingsStore();
 
@@ -168,7 +186,7 @@ export function ChatLayout() {
         }
       }
 
-      const parentId = messages[messages.length - 1]?.id;
+      const parentId = messages[messages.length - 1]?.id || "root";
 
       const userMsg: Message = {
         id: crypto.randomUUID(),
@@ -202,6 +220,10 @@ export function ChatLayout() {
 
   const isIncognito = searchParams.get("incognito") === "true";
   const [hideSidebarIcon, setHideSidebarIcon] = useState(() => searchParams.get("hide-sidebar-icon") === "true");
+
+  const renameConversation = useChatStore(s => s.renameConversation);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState("");
 
   useEffect(() => {
     const handleHideSidebar = (e: Event) => {
@@ -308,16 +330,53 @@ export function ChatLayout() {
             <div className="font-medium text-sm text-foreground">
               {(() => {
                 const rawTitle = activeConv?.title || (activeConversationId ? "New Chat" : "");
+                
+                if (editingTitle && activeConversationId && activeConv) {
+                  return (
+                    <input
+                      type="text"
+                      autoFocus
+                      className="h-7 w-[150px] md:w-[300px] rounded-md border border-input bg-transparent px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      value={titleValue}
+                      onChange={(e) => setTitleValue(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter") {
+                          if (titleValue.trim() && titleValue.trim() !== rawTitle) {
+                            await renameConversation(activeConversationId, titleValue.trim());
+                          }
+                          setEditingTitle(false);
+                        } else if (e.key === "Escape") {
+                          setEditingTitle(false);
+                        }
+                      }}
+                      onBlur={async () => {
+                        if (titleValue.trim() && titleValue.trim() !== rawTitle) {
+                          await renameConversation(activeConversationId, titleValue.trim());
+                        }
+                        setEditingTitle(false);
+                      }}
+                    />
+                  );
+                }
+
                 const truncatedTitle = rawTitle.length > 10 ? rawTitle.slice(0, 10) + ".." : rawTitle;
                 return (
-                  <>
+                  <div 
+                    className={cn("cursor-pointer hover:bg-accent hover:text-accent-foreground px-2 py-1 -ml-2 rounded-md transition-colors", !activeConversationId && "cursor-default hover:bg-transparent hover:text-foreground")}
+                    onClick={() => {
+                      if (activeConversationId && activeConv) {
+                        setTitleValue(rawTitle);
+                        setEditingTitle(true);
+                      }
+                    }}
+                  >
                     <span className="md:hidden truncate block max-w-[200px]" title={rawTitle}>
                       {truncatedTitle}
                     </span>
                     <span className="hidden md:block truncate max-w-[400px]" title={rawTitle}>
                       {rawTitle}
                     </span>
-                  </>
+                  </div>
                 );
               })()}
             </div>

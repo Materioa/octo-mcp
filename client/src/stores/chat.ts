@@ -11,6 +11,7 @@ import {
 } from "@/lib/db";
 import { useSettingsStore } from "./settings";
 import { useAuthStore } from "./auth";
+import { useAlertStore } from "./alert";
 import { OpenAICompatProvider } from "@/lib/providers/openai-compat";
 import type { AIMessage, AIToolCall } from "@/lib/ai-provider";
 import { mcpClient } from "@/lib/mcp-client";
@@ -22,10 +23,14 @@ interface ChatStore {
   allMessages: Message[];
   isLoading: boolean;
   isSending: boolean;
+  isSearchMode: boolean;
+  setIsSearchMode: (val: boolean) => void;
+  rateLimitResetTime: string | null;
+  setRateLimitResetTime: (time: string | null) => void;
 
   loadConversations: () => Promise<void>;
   createConversation: (isTemporary?: boolean) => Promise<string>;
-  setActiveConversation: (id: string) => Promise<void>;
+  setActiveConversation: (id: string) => Promise<boolean>;
   clearActiveConversation: () => void;
   deleteConversation: (id: string) => Promise<void>;
   setConversationVisibility: (id: string, visibility: "private" | "public") => Promise<void>;
@@ -58,6 +63,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   allMessages: [],
   isLoading: false,
   isSending: false,
+  isSearchMode: false,
+  setIsSearchMode: (val: boolean) => set({ isSearchMode: val }),
+  rateLimitResetTime: null,
+  setRateLimitResetTime: (time: string | null) => set({ rateLimitResetTime: time }),
   _abortController: null as AbortController | null,
   generatingConversationIds: [],
   resolveUserInput: null,
@@ -135,7 +144,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
     }
-    if (conv && !conv.isTemporary) document.title = conv.title;
+    
+    if (!conv) {
+      set({ activeConversationId: null, isLoading: false });
+      return false;
+    }
+    
+    if (!conv.isTemporary) document.title = conv.title;
     
     const messages = await getMessages(id);
     
@@ -175,12 +190,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (leaf) {
           set({ allMessages: messages, isLoading: false });
           get().switchBranch(leaf.id);
-          return;
+          return true;
         }
       }
     }
     
     set({ messages, allMessages: messages, isLoading: false });
+    return true;
   },
 
   renameConversation: async (id: string, newTitle: string) => {
@@ -309,6 +325,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     } catch (err) {
       // Rollback UI to previous state on failure
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      let time = "12:00 AM";
+      const match = errorMsg.match(/at\s+(\d{1,2}:\d{2}(?:\s*(?:AM|PM))?)/i);
+      if (match) {
+        time = match[1] || time;
+      } else {
+        const fallbackMatch = errorMsg.match(/try again in\s+(.*)/i);
+        if (fallbackMatch) time = fallbackMatch[1] || time;
+      }
+      set({ rateLimitResetTime: time });
       set((s) => ({
         messages: currentMessages,
         conversations: conversations,
@@ -373,7 +399,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
     get().setAbortController(provider["abortController"] as any);
 
-    const parentId = messages[messages.length - 1]?.id;
+    const parentId = messages[messages.length - 1]?.id || "root";
 
     const aiMessageId = crypto.randomUUID();
 
@@ -583,8 +609,23 @@ RULES FOR THE TITLE:
           },
           (err) => {
             console.error("Stream error:", err);
+            const errMsg = err.message || "";
             if (get().activeConversationId === conversationId) {
-              updateMessage(aiMessageId, { error: err.message, isStreaming: false });
+              updateMessage(aiMessageId, { isStreaming: false });
+            }
+            if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
+              if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
+                useAlertStore.getState().addAlert("Provider overloaded. Retrying with a fallback model...", "warning");
+                // Remove the failed placeholder message and retry
+                get().deleteMessage(aiMessageId);
+                setTimeout(() => {
+                  get().generateResponse(conversationId, "openrouter/free");
+                }, 500);
+              } else {
+                useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+              }
+            } else {
+              useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
             }
           }
         );
@@ -708,11 +749,24 @@ RULES FOR THE TITLE:
         }
       } catch (err: any) {
          console.error("Start stream error:", err);
+         const errMsg = err.message || "";
          if (get().activeConversationId === conversationId) {
            updateMessage(aiMessageId, {
-             error: err.message,
              isStreaming: false
            });
+         }
+         if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
+           if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
+             useAlertStore.getState().addAlert("Provider overloaded. Retrying with a fallback model...", "warning");
+             get().deleteMessage(aiMessageId);
+             setTimeout(() => {
+               get().generateResponse(conversationId, "openrouter/free");
+             }, 500);
+           } else {
+             useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+           }
+         } else {
+           useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
          }
       }
     };
@@ -759,7 +813,7 @@ RULES FOR THE TITLE:
     const line: Message[] = [];
     let currentId: string | undefined = leafId;
     
-    while (currentId) {
+    while (currentId && currentId !== "root") {
       const msg = allMessages.find(m => m.id === currentId);
       if (!msg) {
         // We hit a broken link (e.g. a parent was deleted)
@@ -797,7 +851,7 @@ RULES FOR THE TITLE:
       role: "user",
       content: newContent,
       timestamp: Date.now(),
-      parentId: originalMsg.parentId, // Sibling of the original message
+      parentId: originalMsg.parentId || "root", // Sibling of the original message
     };
 
     // Construct the new line up to the parent
@@ -824,9 +878,23 @@ RULES FOR THE TITLE:
     const line: Message[] = [];
     let currentId: string | undefined = originalAiMsg.parentId;
     
-    while (currentId) {
+    while (currentId && currentId !== "root") {
       const msg = allMessages.find(m => m.id === currentId);
-      if (!msg) break;
+      if (!msg) {
+        // Fallback for broken links (e.g. deleted messages)
+        const oldestInLine = line[0];
+        if (oldestInLine) {
+          const olderMessages = allMessages
+            .filter(m => m.timestamp < oldestInLine.timestamp)
+            .sort((a, b) => b.timestamp - a.timestamp); // descending
+            
+          if (olderMessages.length > 0 && olderMessages[0]) {
+            currentId = olderMessages[0].id;
+            continue;
+          }
+        }
+        break;
+      }
       line.unshift(msg);
       currentId = msg.parentId;
     }

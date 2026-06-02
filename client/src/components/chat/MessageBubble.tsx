@@ -310,10 +310,9 @@ export const MessageBubble = React.memo(function MessageBubble({
       >
         <div
           className={cn(
-            "py-3",
             isUser
-              ? "max-w-[80%] rounded-2xl bg-muted px-4 text-foreground"
-              : "w-full max-w-none text-foreground"
+              ? "max-w-[80%]"
+              : "py-3 w-full max-w-none text-foreground"
           )}
         >
         {isUser ? (
@@ -328,10 +327,11 @@ export const MessageBubble = React.memo(function MessageBubble({
               }
             }}
           >
-            {isEditing ? (
+            <div className="squircle-mask squircle-2xl bg-muted px-4 py-3 text-foreground">
+              {isEditing ? (
               <div className="flex flex-col">
                 <textarea
-                  className="w-full min-h-[20px] resize-none bg-transparent text-foreground p-0 text-sm focus:outline-none focus:ring-0 overflow-hidden"
+                  className="w-full min-w-[250px] sm:min-w-[350px] md:min-w-[450px] min-h-[20px] resize-none bg-transparent text-foreground p-0 text-sm focus:outline-none focus:ring-0 overflow-hidden"
                   value={editContent}
                   onChange={(e) => {
                     setEditContent(e.target.value);
@@ -354,10 +354,25 @@ export const MessageBubble = React.memo(function MessageBubble({
                   }}
                   autoFocus
                 />
+                <div className="flex justify-end gap-2 mt-3">
+                  <button 
+                    onClick={() => setIsEditing(false)}
+                    className="px-3 py-1.5 text-[13px] font-medium rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleEditSubmit}
+                    className="px-3 py-1.5 text-[13px] font-medium bg-brand text-white rounded-md hover:bg-brand/90 transition-colors"
+                  >
+                    Send
+                  </button>
+                </div>
               </div>
             ) : (
               <p className="whitespace-pre-wrap text-sm">{message.content}</p>
             )}
+            </div>
             
             {!isEditing && (
               <div className={cn(
@@ -445,21 +460,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               </div>
             )}
             
-            {message.error && (
-              <div className="my-2 rounded-xl border border-destructive/30 bg-destructive/5 overflow-hidden shadow-sm flex flex-col">
-                <div className="flex items-center justify-between px-4 py-2 border-b border-destructive/20 bg-destructive/10">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span className="font-semibold text-sm">Generation Error</span>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="text-destructive/90 font-mono text-xs whitespace-pre-wrap break-words">
-                    {message.error}
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Internal error rendering removed in favor of global alerts */}
             
             {!isUser && !message.isStreaming && (
               <div className="mt-4 flex items-center gap-2 pt-2 border-t border-border/50 text-xs text-muted-foreground">

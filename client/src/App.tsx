@@ -50,6 +50,8 @@ function IframeListener() {
   return null;
 }
 
+import { GlobalAlert } from "@/components/ui/GlobalAlert";
+
 export default function App() {
   const theme = useSettingsStore((s) => s.theme);
   const { setAuth, setLoginOpen } = useAuthStore();
@@ -168,6 +170,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <GlobalAlert />
       <IframeListener />
       <Routes>
         <Route path="/" element={<Navigate to="/new" replace />} />

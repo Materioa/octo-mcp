@@ -5,7 +5,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: "openrouter-free",
     name: "Built-in (Free)",
     baseUrl: "https://openrouter.ai/api/v1",
-    defaultModel: "openai/gpt-oss-120b:free",
+    defaultModel: "openrouter/free",
     models: [
       "openai/gpt-oss-120b:free",
       "moonshotai/kimi-k2.6:free",

@@ -18,6 +18,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { WandSparkles } from "lucide-react";
+import { ModelSelector } from "@/components/ui/ModelSelector";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -312,29 +313,12 @@ export function SettingsDialog({
                     </label>
                     {localSettings.providerId === "gemini" && geminiModels.length > 0 ? (
                       <>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          value={
-                            geminiModels.find(m => m.name === localSettings.model)
-                              ? localSettings.model
-                              : '__custom__'
-                          }
-                          onChange={(e) => {
-                            if (e.target.value !== '__custom__') {
-                              setLocalSettings((s) => ({
-                                ...s,
-                                model: e.target.value,
-                              }));
-                            }
-                          }}
-                        >
-                          {geminiModels.map((m) => (
-                            <option key={m.name} value={m.name}>
-                              {m.displayName}
-                            </option>
-                          ))}
-                          <option value="__custom__">Custom model…</option>
-                        </select>
+                        <ModelSelector
+                          value={localSettings.model}
+                          onChange={(m) => setLocalSettings((s) => ({ ...s, model: m }))}
+                          providerId={localSettings.providerId}
+                          models={geminiModels.map(m => m.name)}
+                        />
                         {!geminiModels.find(m => m.name === localSettings.model) && (
                           <Input
                             value={localSettings.model}
@@ -348,29 +332,11 @@ export function SettingsDialog({
                       </>
                     ) : currentPreset.models.length > 0 ? (
                       <>
-                        <select
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          value={
-                            currentPreset.models.includes(localSettings.model)
-                              ? localSettings.model
-                              : '__custom__'
-                          }
-                          onChange={(e) => {
-                            if (e.target.value !== '__custom__') {
-                              setLocalSettings((s) => ({
-                                ...s,
-                                model: e.target.value,
-                              }));
-                            }
-                          }}
-                        >
-                          {currentPreset.models.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                          {!isFreeBuiltIn && <option value="__custom__">Custom model…</option>}
-                        </select>
+                        <ModelSelector
+                          value={localSettings.model}
+                          onChange={(m) => setLocalSettings((s) => ({ ...s, model: m }))}
+                          providerId={localSettings.providerId}
+                        />
                         {!isFreeBuiltIn && !currentPreset.models.includes(localSettings.model) && (
                           <Input
                             value={localSettings.model}
