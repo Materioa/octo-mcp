@@ -46,10 +46,16 @@ export async function getDraftAttachments(conversationId: string): Promise<any[]
   const drafts = await draftsDb.draftAttachments.where('conversationId').equals(conversationId || 'new').toArray();
   return drafts.map(draft => {
     const file = new File([draft.fileBuffer], draft.fileName, { type: draft.fileType });
+    
+    let previewUrl = draft.previewUrl;
+    if (draft.extension && ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(draft.extension.toLowerCase())) {
+      previewUrl = URL.createObjectURL(file);
+    }
+    
     return {
       id: draft.id,
       file,
-      previewUrl: draft.previewUrl,
+      previewUrl,
       extractedText: draft.extractedText,
       extension: draft.extension,
       status: draft.status

@@ -139,10 +139,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
     const id = Math.random().toString(36).substring(7);
 
@@ -195,6 +192,29 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1 || items[i].kind === 'file') {
+        const file = items[i].getAsFile();
+        if (file) {
+          let finalFile = file;
+          if (file.name === 'image.png' || !file.name.includes('.')) {
+            const ext = file.type.split('/')[1] || 'png';
+            finalFile = new File([file], `pasted-image-${Date.now()}.${ext}`, { type: file.type });
+          }
+          await processFile(finalFile);
+        }
       }
     }
   };
@@ -257,6 +277,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             onCompositionStart={() => setIsComposing(true)}
             onCompositionEnd={() => setIsComposing(false)}
             placeholder="Write a message…"
