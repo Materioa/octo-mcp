@@ -270,7 +270,7 @@ export function ChatLayout() {
 
   return (
     <div
-      className={cn("flex h-[100dvh] text-foreground relative w-full transition-all duration-300", isIncognito ? "flex-col p-1.5 md:p-2" : "flex-row bg-background")}
+      className={cn("flex h-[100dvh] text-foreground relative w-full transition-all duration-300 print:h-auto print:bg-white", isIncognito ? "flex-col p-1.5 md:p-2" : "flex-row bg-background")}
       style={isIncognito ? { backgroundColor: "var(--incognito-frame)" } : undefined}
     >
       {isIncognito && (

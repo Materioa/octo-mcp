@@ -182,7 +182,7 @@
     overflow: visible !important;
   }
   
-  [data-radix-scroll-area-viewport], .flex-1, .h-full, .overflow-hidden {
+  [data-radix-scroll-area-viewport], .flex-1, .h-full, .h-\[100dvh\], .overflow-hidden {
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;
