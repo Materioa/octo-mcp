@@ -11,7 +11,7 @@ import { AskUserInputCard } from "./AskUserInputCard";
 import { DiagramRenderer } from "@/components/diagrams/DiagramRenderer";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
-import { DownloadIcon, FileIcon, FileTextIcon, Copy, Pencil, Trash2, AlertCircle, ThumbsUp, ThumbsDown, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { DownloadIcon, FileIcon, FileTextIcon, Copy, Pencil, Trash2, AlertCircle, ThumbsUp, ThumbsDown, RotateCcw, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings";
 import { getPreset } from "@/lib/providers/presets";
 import { OriginalThinkingLoader } from "./OriginalThinkingLoader";
@@ -63,6 +63,8 @@ export const MessageBubble = React.memo(function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
   const [showMobileActions, setShowMobileActions] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -294,7 +296,12 @@ export const MessageBubble = React.memo(function MessageBubble({
                 const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(att.extension?.toLowerCase() || '');
                 const imgSrc = isImage ? att.url : att.previewUrl;
                 return imgSrc ? (
-                  <img src={imgSrc} alt="Preview" className="h-full w-full object-cover" />
+                  <img 
+                    src={imgSrc} 
+                    alt="Preview" 
+                    className="h-full w-full object-cover cursor-pointer hover:opacity-90 transition-opacity" 
+                    onClick={() => setPreviewImage(imgSrc)}
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-xs font-bold uppercase text-muted-foreground">
                     {att.extension}
@@ -586,6 +593,26 @@ export const MessageBubble = React.memo(function MessageBubble({
               <ChevronRight className="w-3 h-3" />
             </button>
           </div>
+        </div>
+      )}
+      
+      {previewImage && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 sm:p-8 animate-in fade-in-0"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button 
+            className="absolute top-4 right-4 text-white/70 hover:text-white p-2"
+            onClick={() => setPreviewImage(null)}
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img 
+            src={previewImage} 
+            alt="Expanded Preview" 
+            className="max-w-full max-h-full object-contain rounded-md shadow-2xl animate-in zoom-in-95 duration-200" 
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>
