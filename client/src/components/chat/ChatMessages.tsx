@@ -48,7 +48,7 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
 
   return (
     <ScrollArea viewportRef={viewportRef} className="flex-1">
-      <div className="mx-auto max-w-3xl space-y-4 p-4 pb-8">
+      <div className="mx-auto max-w-3xl space-y-4 p-4 pb-8 chat-messages-container">
         {messages.map((msg) => {
           const sData = siblingData.get(msg.id);
           return (

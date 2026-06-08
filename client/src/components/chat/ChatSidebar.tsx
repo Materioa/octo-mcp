@@ -54,14 +54,14 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
   return (
     <div
       className={cn(
-        "flex h-full flex-col border-r border-border bg-card transition-all duration-300 ease-in-out absolute inset-y-0 left-0 md:relative z-50 shrink-0",
+        "flex h-full flex-col border-r border-border bg-card transition-all duration-300 ease-in-out absolute inset-y-0 left-0 md:relative z-50 shrink-0 print:hidden",
         open ? "w-[260px] translate-x-0" : "w-[260px] -translate-x-full md:w-[52px] md:translate-x-0"
       )}
     >
       {/* ── Top Area: Logo (Toggle) ── */}
       <div className={cn("flex h-14 items-center justify-between", open ? "px-4" : "justify-center")}>
         <div 
-          className={cn("flex shrink-0 items-center cursor-pointer", open ? "px-2 py-1.5 -ml-2" : "h-10 w-10 justify-center")}
+          className={cn("flex shrink-0 items-center cursor-pointer select-none", open ? "px-2 py-1.5 -ml-2" : "h-10 w-10 justify-center")}
           onClick={onToggle}
         >
           <img

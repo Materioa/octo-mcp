@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "/src",
+      "html2canvas": "html2canvas-pro",
     },
   },
   server: {

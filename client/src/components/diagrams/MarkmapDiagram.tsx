@@ -86,38 +86,49 @@ export function MarkmapDiagram({ code }: MarkmapDiagramProps) {
       {/* Hardcoded explicit white/black logic avoiding all CSS variables and inheritance */}
       <style>{`
         /* Light mode default */
+        .markmap-svg-container {
+          --markmap-text-color: #09090b !important;
+          --markmap-circle-stroke: #09090b !important;
+          --markmap-circle-fill: #ffffff !important;
+        }
         .markmap-svg-container svg text,
         .markmap-svg-container svg foreignObject,
+        .markmap-svg-container foreignObject div,
         .markmap-svg-container .markmap-foreign,
         .markmap-svg-container .markmap-foreign div,
         .markmap-svg-container .markmap-foreign span,
         .markmap-svg-container .markmap-foreign p,
         .markmap-svg-container .markmap-foreign a,
         .markmap-svg-container .markmap-foreign code {
-          color: #000000 !important;
-          fill: #000000 !important;
-          font-family: "Epilogue", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+          color: #09090b !important;
+          fill: #09090b !important;
+          font-family: "PP Mori", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
         }
 
         /* Dark mode override */
-        html.dark .markmap-svg-container svg text,
-        html.dark .markmap-svg-container svg foreignObject,
-        html.dark .markmap-svg-container .markmap-foreign,
-        html.dark .markmap-svg-container .markmap-foreign div,
-        html.dark .markmap-svg-container .markmap-foreign span,
-        html.dark .markmap-svg-container .markmap-foreign p,
-        html.dark .markmap-svg-container .markmap-foreign a,
-        html.dark .markmap-svg-container .markmap-foreign code {
-          color: #ffffff !important;
-          fill: #ffffff !important;
-          font-family: "Epilogue", BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+        .dark .markmap-svg-container {
+          --markmap-text-color: #fafafa !important;
+          --markmap-circle-stroke: #fafafa !important;
+          --markmap-circle-fill: #1f1f1e !important;
+        }
+        .dark .markmap-svg-container svg text,
+        .dark .markmap-svg-container svg foreignObject,
+        .dark .markmap-svg-container foreignObject div,
+        .dark .markmap-svg-container .markmap-foreign,
+        .dark .markmap-svg-container .markmap-foreign div,
+        .dark .markmap-svg-container .markmap-foreign span,
+        .dark .markmap-svg-container .markmap-foreign p,
+        .dark .markmap-svg-container .markmap-foreign a,
+        .dark .markmap-svg-container .markmap-foreign code {
+          color: #fafafa !important;
+          fill: #fafafa !important;
         }
       `}</style>
       <div ref={containerRef} className="w-full h-full markmap-svg-container text-foreground flex items-center justify-center">
         <svg ref={svgRef} width="600" height="400" style={{ width: '100%', height: '100%' }} />
       </div>
       
-      <div className="absolute bottom-4 right-4 flex gap-1 bg-background/80 backdrop-blur-sm rounded-md shadow-sm border border-border p-1">
+      <div className="absolute bottom-4 right-4 flex gap-1 bg-background/80 backdrop-blur-sm rounded-md shadow-sm border border-border p-1 print:hidden">
         <button 
           onClick={() => { try { mmRef.current?.rescale(1.2) } catch(e) {} }}
           className="flex items-center justify-center w-8 h-8 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"

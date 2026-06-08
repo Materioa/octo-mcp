@@ -209,13 +209,13 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
   return (
     <div className="bg-transparent px-4 pb-4 pt-2">
-      <div className="mx-auto max-w-3xl flex flex-col">
+      <div className="mx-auto max-w-3xl w-full flex flex-col">
         {rateLimitResetTime && (
           <div className="bg-[#a3a3a3] dark:bg-[#4a4a4a] text-black dark:text-white/80 text-[13px] px-5 py-2.5 rounded-t-xl border border-b-0 border-input font-medium flex items-center">
             You're out of messages for today, come back tomorrow at {rateLimitResetTime}.
           </div>
         )}
-        <div className={cn("border border-input bg-input-bg shadow-sm", rateLimitResetTime ? "rounded-b-xl" : "squircle-mask squircle-2xl", isIncognito && "border-dotted border-[2px]")}>
+        <div className={cn("border border-input bg-input-bg shadow-sm", rateLimitResetTime ? "rounded-b-xl" : "rounded-2xl", isIncognito && "border-dotted border-[2px]")}>
           {/* Thumbnails Row */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-4 pt-4 pb-1">

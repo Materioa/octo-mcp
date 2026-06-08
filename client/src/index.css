@@ -1,4 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Epilogue:ital,wght@0,400..900;1,400..900&display=swap');
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/PPMori_Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'PP Mori';
+  src: url('/fonts/PPMori_SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-style: normal;
+}
 @import "tailwindcss";
 @import "@squircle/tailwindcss";
 @source "./";
@@ -99,7 +111,7 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: "Epilogue", sans-serif !important;
+    font-family: "PP Mori", sans-serif !important;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
@@ -114,6 +126,11 @@
     /* IE and Edge */
     scrollbar-width: none;
     /* Firefox */
+  }
+
+  ::selection {
+    background-color: #b8270a4D;
+    color: inherit;
   }
 }
 
@@ -134,4 +151,45 @@
   -webkit-background-clip: text;
   background-clip: text;
   animation: shimmer 2s linear infinite;
+}
+
+@media print {
+  :root, .dark {
+    --color-background: #ffffff !important;
+    --color-foreground: #000000 !important;
+    --color-card: #f8f8f8 !important;
+    --color-card-foreground: #000000 !important;
+    --color-popover: #ffffff !important;
+    --color-popover-foreground: #000000 !important;
+    --color-primary: #000000 !important;
+    --color-primary-foreground: #ffffff !important;
+    --color-border: #dddddd !important;
+    --color-muted: #f0f0f0 !important;
+    --color-muted-foreground: #555555 !important;
+    --color-accent: #f0f0f0 !important;
+    --color-accent-foreground: #000000 !important;
+  }
+
+  /* Hide interactive elements */
+  button, .lucide, .tool-call-block, .thought-process, iframe, canvas, .model-name {
+    display: none !important;
+  }
+  
+  /* Make main area full width and fix 1-page cutoff issue */
+  html, body, #root, main, .chat-messages-container {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  [data-radix-scroll-area-viewport], .flex-1, .h-full, .overflow-hidden {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  body {
+    background-color: var(--color-background) !important;
+    color: var(--color-foreground) !important;
+  }
 }

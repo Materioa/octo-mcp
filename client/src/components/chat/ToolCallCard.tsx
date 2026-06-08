@@ -15,7 +15,7 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
   const isRunning = toolCalls.some(tc => tc.status === "running");
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full max-w-2xl tool-call-block">
       <button
         className="flex w-fit items-center gap-2 px-1 py-1.5 hover:bg-muted/40 rounded transition-colors text-[13px] font-medium text-muted-foreground/80 mb-2"
         onClick={() => setOpen(!open)}

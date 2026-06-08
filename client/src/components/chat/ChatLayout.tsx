@@ -33,6 +33,7 @@ export function ChatLayout() {
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [connected, setConnected] = useState(false);
   const [tools, setTools] = useState<MCPTool[]>([]);
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const providerRef = useRef<any>(null);
 
   const {
@@ -318,7 +319,7 @@ export function ChatLayout() {
         )}
         <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
           {/* Main chat header (Thinklet v) */}
-          <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start">
+          <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start print:hidden">
             {!sidebarOpen && !isIncognito && !hideSidebarIcon && (
               <button
                 onClick={() => setSidebarOpen(true)}
@@ -420,13 +421,34 @@ export function ChatLayout() {
               )}
 
               {activeConversationId && !isSharedView && !activeConv?.isTemporary && (
-                <button
-                  onClick={() => setShareOpen(true)}
-                  className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-                  title="Share Chat Link"
-                >
-                  <Share className="h-4 w-4" />
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      setIsPreparingPrint(true);
+                      setTimeout(() => {
+                        window.print();
+                        setIsPreparingPrint(false);
+                      }, 2500);
+                    }}
+                    disabled={isPreparingPrint}
+                    className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    title={isPreparingPrint ? "Preparing PDF..." : "Export as PDF"}
+                  >
+                    {isPreparingPrint ? (
+                      <Loader className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setShareOpen(true)}
+                    className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                    title="Share Chat Link"
+                  >
+                    <Share className="h-4 w-4" />
+                  </button>
+                </>
               )}
 
               <button
@@ -462,9 +484,15 @@ export function ChatLayout() {
                   <Loader className="h-8 w-8 animate-spin text-muted-foreground/50" />
                 </div>
               ) : (
-                <ChatMessages onRetry={handleRetry} />
+                <>
+                  <div className="hidden print:flex items-center gap-3 border-b border-border/50 pb-4 mb-4 pt-4 px-4 mx-auto w-full max-w-3xl">
+                    <img src="/sidebar.svg" alt="Thinklet" className="h-8 dark-invert" />
+                    <h1 className="text-2xl font-bold m-0 text-foreground">Thinklet</h1>
+                  </div>
+                  <ChatMessages onRetry={handleRetry} />
+                </>
               )}
-              <div className="mx-auto w-full max-w-3xl pb-2 md:px-0">
+              <div className="mx-auto w-full max-w-3xl pb-2 md:px-0 print:hidden">
                 {isSharedView ? (
                   <div className="px-4 pb-4 pt-2">
                     <button
@@ -477,7 +505,7 @@ export function ChatLayout() {
                 ) : (
                   <ChatInput
                     onSend={handleSend}
-                    onStop={() => providerRef.current?.abort()}
+                    onStop={() => useChatStore.getState().abortStream()}
                     disabled={isSending}
                     isSending={isSending}
                   />
@@ -496,7 +524,7 @@ export function ChatLayout() {
               <div className="w-full max-w-3xl pb-4 md:pb-0 mx-auto">
                 <ChatInput
                   onSend={handleSend}
-                  onStop={() => providerRef.current?.abort()}
+                  onStop={() => useChatStore.getState().abortStream()}
                   disabled={isSending}
                   isSending={isSending}
                   initialValue={initialQuery}
@@ -542,7 +570,7 @@ export function ChatLayout() {
 
       {import.meta.env.DEV && (
         <div className={cn(
-          "fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-card shadow-lg transition-all duration-300",
+          "fixed bottom-4 right-4 z-50 rounded-lg border border-border bg-card shadow-lg transition-all duration-300 print:hidden",
           isDebugOpen ? "w-64 p-3 animate-in slide-in-from-bottom-4" : "w-10 p-2 cursor-pointer hover:bg-accent"
         )}>
           {!isDebugOpen ? (

@@ -77,7 +77,7 @@ export function ThinkingView({ thoughts, isStreaming }: ThinkingViewProps) {
   );
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full max-w-2xl thought-process">
       {trigger}
       
       {/* Desktop Inline Accordion */}
