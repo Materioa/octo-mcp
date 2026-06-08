@@ -205,8 +205,10 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1 || items[i].kind === 'file') {
-        const file = items[i].getAsFile();
+      const item = items[i];
+      if (!item) continue;
+      if (item.type.indexOf('image') !== -1 || item.kind === 'file') {
+        const file = item.getAsFile();
         if (file) {
           let finalFile = file;
           if (file.name === 'image.png' || !file.name.includes('.')) {
