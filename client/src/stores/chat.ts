@@ -519,6 +519,7 @@ RULES FOR THE TITLE:
 
     const runTurn = async (): Promise<void> => {
       const pendingToolCalls: AIToolCall[] = [];
+      let hasError = false;
 
       try {
         await provider.streamChat(
@@ -609,9 +610,10 @@ RULES FOR THE TITLE:
           },
           (err) => {
             console.error("Stream error:", err);
+            hasError = true;
             const errMsg = err.message || "";
             if (get().activeConversationId === conversationId) {
-              updateMessage(aiMessageId, { isStreaming: false });
+              updateMessage(aiMessageId, { isStreaming: false, content: `**Error:** ${errMsg}` });
             }
             if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
               if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
@@ -749,10 +751,12 @@ RULES FOR THE TITLE:
         }
       } catch (err: any) {
          console.error("Start stream error:", err);
+         hasError = true;
          const errMsg = err.message || "";
          if (get().activeConversationId === conversationId) {
            updateMessage(aiMessageId, {
-             isStreaming: false
+             isStreaming: false,
+             content: `**Error:** ${errMsg}`
            });
          }
          if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
@@ -776,13 +780,24 @@ RULES FOR THE TITLE:
     // Finalize — strip thinking and chat_title tags from persisted content
     let finalContent = stripThinking(fullResponse);
     finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
-    if (get().activeConversationId === conversationId) {
-      updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
-    } else {
-      const conv = get().conversations.find(c => c.id === conversationId);
-      if (conv && !conv.isTemporary) {
-        saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+    
+    // Only overwrite if there wasn't an error, otherwise preserve the error message
+    const currentMessage = get().messages.find(m => m.id === aiMessageId);
+    if (!currentMessage?.content?.startsWith("**Error:**")) {
+      if (get().activeConversationId === conversationId) {
+        updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
+      } else {
+        const conv = get().conversations.find(c => c.id === conversationId);
+        if (conv && !conv.isTemporary) {
+          saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+        }
       }
+    } else {
+       // If there was an error, still save it to DB
+       const conv = get().conversations.find(c => c.id === conversationId);
+       if (conv && !conv.isTemporary) {
+         saveMessage(conversationId, { ...newMsg, content: currentMessage.content, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+       }
     }
     const { generatingConversationIds: currentGenerating } = get();
     set({

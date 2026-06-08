@@ -68,6 +68,7 @@ const MessageSchema = new mongoose.Schema({
   timestamp: { type: Number, default: Date.now },
   isStreaming: { type: Boolean, default: false },
   toolCalls: { type: mongoose.Schema.Types.Mixed, default: [] },
+  attachments: { type: mongoose.Schema.Types.Mixed, default: [] },
   error: { type: String },
   result: { type: String },
   rating: { type: String, enum: ["like", "dislike", null], default: null },
