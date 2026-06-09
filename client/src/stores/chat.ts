@@ -386,11 +386,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // Use current settings
     const settings = useSettingsStore.getState();
-    const providerConfig = settings.aiProvider;
+    let providerConfig = settings.aiProvider;
+    let finalModelOverride = modelOverride;
+
+    const userMsg = messages.filter(m => m.role === "user").pop();
+    if (userMsg && !modelOverride) {
+      const intentRegex = /\b(create|generate|visualize|code|build|make|draw|write a script|web artifact|dashboard|component|app|website|react|html|css|js|diagram)\b/i;
+      if (intentRegex.test(userMsg.content)) {
+         finalModelOverride = "qwen/qwen3-coder:free";
+         providerConfig = {
+           ...providerConfig,
+           baseUrl: "https://openrouter.ai/api/v1",
+           apiKey: settings.apiKeys["openrouter-free"] || settings.apiKeys["openrouter"] || ""
+         };
+      }
+    }
+
     const provider = new OpenAICompatProvider(
       providerConfig.baseUrl,
       providerConfig.apiKey,
-      modelOverride || providerConfig.model
+      finalModelOverride || providerConfig.model
     );
     
     set({ 
@@ -410,7 +425,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: "",
       timestamp: Date.now(),
       isStreaming: true,
-      modelUsed: modelOverride || providerConfig.model,
+      modelUsed: finalModelOverride || providerConfig.model,
       parentId,
     };
     
@@ -450,6 +465,7 @@ IMPORTANT RULE: Your PRIMARY tool to reference anything from the Materio course 
 CRITICAL LIBRARY NAVIGATION: If you do not know the exact chapter or topic name, you MUST use \`ResourceLibrary\` first to list the materials for a subject. Do NOT guess chapter names in SnapSearch.
 CRITICAL WORKSHEET WORKFLOW: If the user asks to create or generate a worksheet, question bank, or sample paper, you MUST use the \`CreateWorksheetPaper\` tool AFTER gathering the required course content.
 DIAGRAMS: If the user asks you to draw a diagram (like a DFA, FSM, flowchart, mindmap, circuit, or plot), you MUST use the \`GenerateDiagramFromRequest\` tool first to get the correct format and syntax instructions before outputting any code block. Do NOT guess the syntax.
+CIRCUITS: When asked to generate electronic circuit diagrams or schematics in React, you MUST use the "react-circuit-schematics" or "tscircuit" (@tscircuit/core) libraries which are natively supported. Do NOT generate raw custom SVGs for circuits.
 CODE GENERATION: The chat interface natively sandboxes and renders React, HTML, JS, Markdown, and diagrams inline. DO NOT output boilerplate instructions like "npm install", "how to use", or "paste this in your App.tsx". Provide ONLY the code block and a very brief 1-2 sentence description.
 Current personality: ${settings.personality}${memoryContext}`;
 
@@ -609,11 +625,10 @@ RULES FOR THE TITLE:
             // internal stream finish handler
           },
           (err) => {
-            console.error("Stream error:", err);
             hasError = true;
             const errMsg = err.message || "";
             if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
-              if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
+              if (!modelOverride && settings.aiProvider.model !== "openrouter/free" && (settings.aiProvider.baseUrl || "").toLowerCase().includes("openrouter")) {
                 useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
                 // Remove the failed placeholder message and retry
                 get().deleteMessage(aiMessageId);
@@ -749,11 +764,10 @@ RULES FOR THE TITLE:
           await runTurn();
         }
       } catch (err: any) {
-         console.error("Start stream error:", err);
          hasError = true;
          const errMsg = err.message || "";
          if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
-           if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
+           if (!modelOverride && settings.aiProvider.model !== "openrouter/free" && (settings.aiProvider.baseUrl || "").toLowerCase().includes("openrouter")) {
              useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
              get().deleteMessage(aiMessageId);
              setTimeout(() => {

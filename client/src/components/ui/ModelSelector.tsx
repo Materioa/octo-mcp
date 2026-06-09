@@ -65,6 +65,8 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
     if (m === "minimax/minimax-m2.5:free") return "MiniMax M2.5";
     if (m === "nvidia/nemotron-3-nano-30b-a3b:free" || m === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free") return "Nemotron 3 Nano";
     if (m === "moonshotai/kimi-k2.6:free") return "Kimi K2.6";
+    if (m === "qwen/qwen3-coder:free") return "Qwen 3 Coder";
+    if (m === "qwen/qwen-2.5-coder-32b-instruct:free") return "Qwen 2.5 Coder";
     if (m === "openrouter/free") return "Best";
     return modelDisplay;
   })();
@@ -99,6 +101,8 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
             else if (m === "minimax/minimax-m2.5:free") label = "MiniMax M2.5";
             else if (m === "nvidia/nemotron-3-nano-30b-a3b:free") label = "Nemotron 3 Nano";
             else if (m === "moonshotai/kimi-k2.6:free") label = "Kimi k2.6";
+            else if (m === "qwen/qwen3-coder:free") label = "Qwen 3 Coder";
+            else if (m === "qwen/qwen-2.5-coder-32b-instruct:free") label = "Qwen 2.5 Coder";
             else if (m === "openrouter/free") label = "Best";
             else {
               const short = m.includes("/") ? m.split("/").pop()! : m;

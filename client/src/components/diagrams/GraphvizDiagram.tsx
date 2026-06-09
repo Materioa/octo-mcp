@@ -42,11 +42,14 @@ export function GraphvizDiagram({ code }: GraphvizDiagramProps) {
   }
 
   return (
-    <div className="my-2 overflow-x-auto rounded-lg bg-background/50 p-4">
+    <div className="my-2 rounded-lg bg-background/50 p-4 w-full flex justify-center">
       {svg ? (
-        <div dangerouslySetInnerHTML={{ __html: svg }} />
+        <div 
+          className="[&>svg]:max-w-full [&>svg]:h-auto w-full flex justify-center"
+          dangerouslySetInnerHTML={{ __html: svg }} 
+        />
       ) : (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground w-full">
           <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           Rendering graph...
         </div>

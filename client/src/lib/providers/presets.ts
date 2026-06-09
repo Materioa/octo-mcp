@@ -16,6 +16,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       "nvidia/nemotron-3-nano-30b-a3b:free",
       "minimax/minimax-m2.5:free",
       "meta-llama/llama-3.3-70b-instruct:free",
+      "qwen/qwen-2.5-coder-32b-instruct:free",
+      "qwen/qwen3-coder:free",
       "openrouter/free"
     ],
     keyPlaceholder: "Managed automatically by Thinklet",
