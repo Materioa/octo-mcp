@@ -100,7 +100,7 @@ export async function deleteMessage(id: string): Promise<void> {
       method: "DELETE",
       headers: getHeaders(),
     });
-    if (!res.ok) throw new Error("Failed to delete message");
+    if (!res.ok && res.status !== 404) throw new Error("Failed to delete message");
   } catch (err) {
     console.error(err);
   }

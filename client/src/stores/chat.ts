@@ -612,12 +612,9 @@ RULES FOR THE TITLE:
             console.error("Stream error:", err);
             hasError = true;
             const errMsg = err.message || "";
-            if (get().activeConversationId === conversationId) {
-              updateMessage(aiMessageId, { isStreaming: false, content: `**Error:** ${errMsg}` });
-            }
-            if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
+            if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
               if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
-                useAlertStore.getState().addAlert("Provider overloaded. Retrying with a fallback model...", "warning");
+                useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
                 // Remove the failed placeholder message and retry
                 get().deleteMessage(aiMessageId);
                 setTimeout(() => {
@@ -625,9 +622,11 @@ RULES FOR THE TITLE:
                 }, 500);
               } else {
                 useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+                get().deleteMessage(aiMessageId);
               }
             } else {
               useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+              get().deleteMessage(aiMessageId);
             }
           }
         );
@@ -753,24 +752,20 @@ RULES FOR THE TITLE:
          console.error("Start stream error:", err);
          hasError = true;
          const errMsg = err.message || "";
-         if (get().activeConversationId === conversationId) {
-           updateMessage(aiMessageId, {
-             isStreaming: false,
-             content: `**Error:** ${errMsg}`
-           });
-         }
-         if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit")) {
+         if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
            if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
-             useAlertStore.getState().addAlert("Provider overloaded. Retrying with a fallback model...", "warning");
+             useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
              get().deleteMessage(aiMessageId);
              setTimeout(() => {
                get().generateResponse(conversationId, "openrouter/free");
              }, 500);
            } else {
              useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+             get().deleteMessage(aiMessageId);
            }
          } else {
            useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
+           get().deleteMessage(aiMessageId);
          }
       }
     };
@@ -781,23 +776,19 @@ RULES FOR THE TITLE:
     let finalContent = stripThinking(fullResponse);
     finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
     
-    // Only overwrite if there wasn't an error, otherwise preserve the error message
-    const currentMessage = get().messages.find(m => m.id === aiMessageId);
-    if (!currentMessage?.content?.startsWith("**Error:**")) {
-      if (get().activeConversationId === conversationId) {
-        updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
-      } else {
-        const conv = get().conversations.find(c => c.id === conversationId);
-        if (conv && !conv.isTemporary) {
-          saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+    if (!hasError) {
+      // Only overwrite and save if there wasn't an error. If there was an error, the message was already deleted.
+      const currentMessage = get().messages.find(m => m.id === aiMessageId);
+      if (currentMessage) {
+        if (get().activeConversationId === conversationId) {
+          updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
+        } else {
+          const conv = get().conversations.find(c => c.id === conversationId);
+          if (conv && !conv.isTemporary) {
+            saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+          }
         }
       }
-    } else {
-       // If there was an error, still save it to DB
-       const conv = get().conversations.find(c => c.id === conversationId);
-       if (conv && !conv.isTemporary) {
-         saveMessage(conversationId, { ...newMsg, content: currentMessage.content, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
-       }
     }
     const { generatingConversationIds: currentGenerating } = get();
     set({
