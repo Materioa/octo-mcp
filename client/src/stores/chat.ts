@@ -509,6 +509,7 @@ RULES FOR THE TITLE:
 
     const toolCallMap = new Map<string, ToolCall>();
     let fullResponse = "";
+    let hasError = false;
     
     let activeTools: any[] = [];
     if (mcpClient.isConnected()) {
@@ -519,7 +520,6 @@ RULES FOR THE TITLE:
 
     const runTurn = async (): Promise<void> => {
       const pendingToolCalls: AIToolCall[] = [];
-      let hasError = false;
 
       try {
         await provider.streamChat(
