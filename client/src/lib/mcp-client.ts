@@ -62,8 +62,10 @@ class MCPClientManager {
                 { name: "mcp-chat-client", version: "1.0.0" },
                 { capabilities: {} }
               );
+              const proxyUrl = new URL("/api/mcp-proxy", window.location.origin);
+              proxyUrl.searchParams.set("target", connector.url);
               const transport = new StreamableHTTPClientTransport(
-                new URL(connector.url, window.location.origin),
+                proxyUrl,
                 { requestInit: { headers } }
               );
               await client.connect(transport);

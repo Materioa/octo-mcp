@@ -192,7 +192,7 @@ export const app = express();
     res.header("Access-Control-Allow-Origin", "*");
     res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url, X-Materio-Client"
+      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url, X-Materio-Client, last-event-id"
     );
     res.header("Access-Control-Expose-Headers", "mcp-session-id");
     res.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
@@ -808,6 +808,95 @@ export const app = express();
     } catch (err: any) {
       console.error("[LLM Models Proxy] Error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Secure MCP proxy to bypass CORS restrictions on custom connectors ──
+  app.all("/api/mcp-proxy", async (req, res) => {
+    try {
+      const targetUrl = (req.query.target || req.headers["x-target-url"]) as string;
+      if (!targetUrl) {
+        res.status(400).json({ error: "Missing target URL parameter or x-target-url header" });
+        return;
+      }
+
+      let parsedTargetUrl: URL;
+      try {
+        parsedTargetUrl = new URL(targetUrl);
+      } catch {
+        res.status(400).json({ error: "Invalid target URL" });
+        return;
+      }
+
+      const hostname = parsedTargetUrl.hostname.toLowerCase();
+      const isPrivateOrLoopback = 
+        hostname === "localhost" || 
+        hostname === "127.0.0.1" || 
+        hostname === "::1" ||
+        hostname.startsWith("169.254.") || 
+        hostname.startsWith("10.") || 
+        hostname.startsWith("192.168.") || 
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+        
+      if (isPrivateOrLoopback) {
+        res.status(403).json({ error: "Access to private/local networks is not allowed" });
+        return;
+      }
+
+      const forwardedHeaders: Record<string, string> = {};
+      const excludedHeaders = ["host", "origin", "referer", "connection", "content-length"];
+      Object.entries(req.headers).forEach(([key, val]) => {
+        if (!excludedHeaders.includes(key.toLowerCase()) && typeof val === "string") {
+          forwardedHeaders[key] = val;
+        }
+      });
+
+      const fetchOpts: RequestInit = {
+        method: req.method,
+        headers: forwardedHeaders,
+      };
+
+      if (req.method !== "GET" && req.method !== "HEAD" && req.body) {
+        fetchOpts.body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+      }
+
+      const response = await fetch(targetUrl, fetchOpts);
+
+      res.status(response.status);
+      const forbiddenHeaders = ["transfer-encoding", "content-encoding", "content-length", "connection", "keep-alive"];
+      response.headers.forEach((val, key) => {
+        if (!forbiddenHeaders.includes(key.toLowerCase())) {
+          res.setHeader(key, val);
+        }
+      });
+
+      if (response.body) {
+        if (typeof (response.body as any).getReader === 'function') {
+          const reader = (response.body as any).getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              res.write(Buffer.isBuffer(value) ? value : Buffer.from(value));
+            }
+          }
+          res.end();
+        } else if (typeof (response.body as any).pipe === 'function') {
+          (response.body as any).pipe(res);
+        } else {
+          const text = await response.text();
+          res.send(text);
+        }
+      } else {
+        res.end();
+      }
+    } catch (err: any) {
+      console.error("[MCP Proxy] Error proxying request:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.end();
+      }
     }
   });
 
