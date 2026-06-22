@@ -85,6 +85,19 @@ export interface Skill {
   createdAt: number;
 }
 
+export interface CustomConnector {
+  id: string;
+  name: string;
+  url: string;
+  authType: "none" | "api_key" | "oauth";
+  apiKey?: string;
+  oauthClientId?: string;
+  oauthClientSecret?: string;
+  oauthAuthUrl?: string;
+  oauthTokenUrl?: string;
+  oauthToken?: string;
+}
+
 export interface Settings {
   aiProvider: AIProviderConfig;
   theme: "light" | "dark" | "system";
@@ -92,6 +105,10 @@ export interface Settings {
   customInstructions?: string;
   exaSearchEnabled?: boolean;
   skills: Skill[];
+  customNvidiaModels?: { slug: string; label: string }[];
+  showOnlyFreeModels?: boolean;
+  fetchedModels?: Record<string, string[]>;
+  customConnectors?: CustomConnector[];
 }
 
 export interface MCPTool {

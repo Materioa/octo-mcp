@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settings";
-import { getPreset } from "@/lib/providers/presets";
+import { getPreset, getAvailableModels } from "@/lib/providers/presets";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -24,7 +24,6 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
   const currentModel = value ?? settings.aiProvider.model;
   const [open, setOpen] = useState(false);
 
-  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   useEffect(() => {
     if (currentProviderId === 'gemini' && !models) {
       const fetchGeminiModels = async () => {
@@ -34,15 +33,44 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
           const data = await response.json();
           if (data.models) {
-            setFetchedModels(data.models.filter((m: any) => m.name.includes("models/gemini") || m.name.includes("models/learnlm")).map((m: any) => m.name.replace("models/", "")));
+            const geminiFetched = data.models.filter((m: any) => m.name.includes("models/gemini") || m.name.includes("models/learnlm")).map((m: any) => m.name.replace("models/", ""));
+            settings.setFetchedModels(currentProviderId, geminiFetched);
           }
         } catch (error) {
           console.error("Failed to fetch Gemini models:", error);
         }
       };
       fetchGeminiModels();
+    } else if (currentProviderId !== 'openrouter-free' && !models) {
+      const fetchModels = async () => {
+        const key = settings.apiKeys[currentProviderId] || settings.aiProvider.apiKey;
+        const baseUrl = preset.baseUrl || settings.aiProvider.baseUrl;
+        if (!key || !baseUrl) return;
+        try {
+          const apiBase = import.meta.env.VITE_API_URL
+            || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+          const proxyUrl = `${apiBase}/api/chat/models`;
+
+          const response = await fetch(proxyUrl, {
+            headers: {
+              "X-Target-Url": baseUrl,
+              Authorization: `Bearer ${key}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.data && Array.isArray(data.data)) {
+              const modelIds = data.data.map((m: any) => m.id);
+              settings.setFetchedModels(currentProviderId, modelIds);
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to fetch models for ${currentProviderId}:`, error);
+        }
+      };
+      fetchModels();
     }
-  }, [currentProviderId, models, settings.apiKeys, settings.aiProvider.apiKey]);
+  }, [currentProviderId, models, settings.apiKeys, settings.aiProvider.apiKey, preset.baseUrl, settings.aiProvider.baseUrl]);
 
   const modelDisplay = (() => {
     const m = currentModel;
@@ -57,6 +85,8 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
 
   const currentModelDisplay = (() => {
     const m = currentModel;
+    const customModel = settings.customNvidiaModels?.find((cm: any) => cm.slug === m);
+    if (customModel) return customModel.label;
     if (m === "openai/gpt-oss-120b:free") return "GPT OSS";
     if (m === "google/gemma-4-31b-it:free") return "Gemma 4";
     if (m === "meta-llama/llama-3.3-70b-instruct:free") return "Llama 3.3";
@@ -89,11 +119,23 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         className="w-56 max-h-60 overflow-y-auto z-[110] bg-popover text-popover-foreground shadow-md p-1"
       >
         {(() => {
-          const baseModels = models ?? (fetchedModels.length > 0 ? fetchedModels : preset.models);
+          const baseModels = models ?? getAvailableModels(currentProviderId, settings);
+
+          if (baseModels.length === 0) {
+            return (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground select-none">
+                No free models available.
+              </div>
+            );
+          }
+
           const modelsToDisplay = [currentModel, ...baseModels.filter(m => m !== currentModel)];
           return modelsToDisplay.filter(m => m !== "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free").filter((v, i, a) => a.indexOf(v) === i).map((m) => {
             let label = m;
-            if (m === "openai/gpt-oss-120b:free") label = "GPT OSS";
+            const customModel = settings.customNvidiaModels?.find((cm: any) => cm.slug === m);
+            if (customModel) {
+              label = customModel.label;
+            } else if (m === "openai/gpt-oss-120b:free") label = "GPT OSS";
             else if (m === "google/gemma-4-31b-it:free") label = "Gemma 4";
             else if (m === "meta-llama/llama-3.3-70b-instruct:free") label = "Llama 3.3";
             else if (m === "z-ai/glm-4.5-air:free") label = "GLM 4.5 Air";

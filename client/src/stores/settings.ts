@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Settings, ProviderId, Skill } from "@/types";
+import type { Settings, ProviderId, Skill, CustomConnector } from "@/types";
 import { getPreset } from "@/lib/providers/presets";
 
 interface SettingsStore extends Settings {
@@ -16,6 +16,13 @@ interface SettingsStore extends Settings {
   addSkill: (skill: Omit<Skill, "id" | "createdAt">) => void;
   updateSkill: (id: string, updates: Partial<Skill>) => void;
   deleteSkill: (id: string) => void;
+  addCustomNvidiaModel: (model: { slug: string; label: string }) => void;
+  deleteCustomNvidiaModel: (slug: string) => void;
+  setShowOnlyFreeModels: (enabled: boolean) => void;
+  setFetchedModels: (providerId: string, models: string[]) => void;
+  addCustomConnector: (connector: Omit<CustomConnector, "id">) => void;
+  updateCustomConnector: (id: string, updates: Partial<CustomConnector>) => void;
+  deleteCustomConnector: (id: string) => void;
 }
 
 const defaultSettings: Settings & { mcpEnvironment: "production" | "development", apiKeys: Record<string, string> } = {
@@ -32,6 +39,10 @@ const defaultSettings: Settings & { mcpEnvironment: "production" | "development"
   customInstructions: "",
   exaSearchEnabled: false,
   skills: [],
+  customNvidiaModels: [],
+  showOnlyFreeModels: false,
+  fetchedModels: {},
+  customConnectors: [],
 };
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -88,6 +99,34 @@ export const useSettingsStore = create<SettingsStore>()(
       })),
       deleteSkill: (id) => set((state) => ({
         skills: state.skills.filter((s) => s.id !== id)
+      })),
+      addCustomNvidiaModel: (model) => set((state) => {
+        const filtered = (state.customNvidiaModels || []).filter(m => m.slug !== model.slug);
+        return {
+          customNvidiaModels: [...filtered, model]
+        };
+      }),
+      deleteCustomNvidiaModel: (slug) => set((state) => ({
+        customNvidiaModels: (state.customNvidiaModels || []).filter((m) => m.slug !== slug)
+      })),
+      setShowOnlyFreeModels: (enabled) => set({ showOnlyFreeModels: enabled }),
+      setFetchedModels: (providerId, models) => set((state) => ({
+        fetchedModels: {
+          ...(state.fetchedModels || {}),
+          [providerId]: models
+        }
+      })),
+      addCustomConnector: (connectorData) => set((state) => ({
+        customConnectors: [...(state.customConnectors || []), {
+          ...connectorData,
+          id: crypto.randomUUID()
+        }]
+      })),
+      updateCustomConnector: (id, updates) => set((state) => ({
+        customConnectors: (state.customConnectors || []).map((c) => c.id === id ? { ...c, ...updates } : c)
+      })),
+      deleteCustomConnector: (id) => set((state) => ({
+        customConnectors: (state.customConnectors || []).filter((c) => c.id !== id)
       })),
     }),
     {

@@ -4,6 +4,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Loader } from "lucide-react";
+import { OAuthCallback } from "@/components/OAuthCallback";
 
 function IframeListener() {
   const navigate = useNavigate();
@@ -179,6 +180,7 @@ export default function App() {
         <Route path="/share/:id" element={<ChatLayout />} />
         <Route path="/settings" element={<ChatLayout />} />
         <Route path="/settings/:tab" element={<ChatLayout />} />
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
       </Routes>
     </BrowserRouter>
   );

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settings";
 import { parseFileContent, generatePdfPreview } from "@/lib/file-parser";
 import { uploadFileToSupabase } from "@/lib/supabase";
+import { getModelCounterpart, getAvailableModels } from "@/lib/providers/presets";
 import { Loader, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
@@ -44,6 +45,34 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settings = useSettingsStore();
+  const currentProviderId = settings.aiProvider.providerId;
+  const currentModel = settings.aiProvider.model;
+
+  const currentSizeLevel = (() => {
+    const m = currentModel.toLowerCase();
+    if (m.includes("8b") || m.includes("small") || m.includes("nemo")) return "low";
+    if (m.includes("70b") || m.includes("medium")) return "medium";
+    if (m.includes("340b") || m.includes("405b") || m.includes("large") || m.includes("max")) return "high";
+    return "high";
+  })();
+
+  const availableModels = getAvailableModels(currentProviderId, settings);
+  const lowModel = getModelCounterpart(currentModel, "low").slug;
+  const mediumModel = getModelCounterpart(currentModel, "medium").slug;
+  const highModel = getModelCounterpart(currentModel, "high").slug;
+
+  const hasLow = lowModel !== currentModel && availableModels.includes(lowModel);
+  const hasMedium = mediumModel !== currentModel && availableModels.includes(mediumModel);
+  const hasHigh = highModel !== currentModel && availableModels.includes(highModel);
+
+  const hasVariants = hasLow || hasMedium || hasHigh;
+
+  const activeLevels = [
+    { level: 'low', exist: hasLow || currentSizeLevel === 'low', slug: lowModel },
+    { level: 'medium', exist: hasMedium || currentSizeLevel === 'medium', slug: mediumModel },
+    { level: 'high', exist: hasHigh || currentSizeLevel === 'high', slug: highModel }
+  ].filter(item => item.exist);
+
   const [isParsing, setIsParsing] = useState(false);
   const activeConversationId = useChatStore(s => s.activeConversationId) || 'new';
   const rateLimitResetTime = useChatStore(s => s.rateLimitResetTime);
@@ -373,6 +402,44 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
             <div className="flex items-center gap-1.5">
               <ModelSelector placement="top" />
+
+              {currentProviderId === "nvidia" && hasVariants && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground capitalize cursor-pointer"
+                    >
+                      {currentSizeLevel}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-32 bg-popover text-popover-foreground shadow-md p-1 z-[110]" sideOffset={8}>
+                    {activeLevels.map(({ level, slug }) => {
+                      const active = currentSizeLevel === level;
+                      return (
+                        <DropdownMenuItem
+                          key={level}
+                          onSelect={() => {
+                            if (slug) {
+                              settings.setAIProvider({
+                                ...settings.aiProvider,
+                                model: slug
+                              });
+                            }
+                          }}
+                          className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium cursor-pointer capitalize ${active ? 'bg-secondary text-foreground' : 'text-muted-foreground'}`}
+                        >
+                          <span>{level}</span>
+                          {active && (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-foreground"><path d="M20 6 9 17l-5-5" /></svg>
+                          )}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               {/* Send / Stop button */}
               {isSending ? (

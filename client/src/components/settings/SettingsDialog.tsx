@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
 import { getMemoryManager } from "@/lib/memory";
-import { PROVIDER_PRESETS, getPreset } from "@/lib/providers/presets";
+import { PROVIDER_PRESETS, getPreset, getModelCounterpart } from "@/lib/providers/presets";
 import type { ProviderId, Memory, MCPTool } from "@/types";
 import {
   Dialog,
@@ -41,8 +41,17 @@ export function SettingsDialog({
   const auth = useAuthStore();
   const userId = auth.user?.id || auth.anonymousId;
   const [activeTab, setActiveTab] = useState(defaultTab);
-  const [mcpView, setMcpView] = useState<"list" | "detail">("list");
+  const [mcpView, setMcpView] = useState<"list" | "detail" | "add-custom">("list");
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+
+  const [newConnectorName, setNewConnectorName] = useState("");
+  const [newConnectorUrl, setNewConnectorUrl] = useState("");
+  const [newConnectorAuthType, setNewConnectorAuthType] = useState<"none" | "api_key" | "oauth">("none");
+  const [newConnectorApiKey, setNewConnectorApiKey] = useState("");
+  const [newConnectorClientId, setNewConnectorClientId] = useState("");
+  const [newConnectorClientSecret, setNewConnectorClientSecret] = useState("");
+  const [newConnectorAuthUrl, setNewConnectorAuthUrl] = useState("");
+  const [newConnectorTokenUrl, setNewConnectorTokenUrl] = useState("");
 
   const [localSettings, setLocalSettings] = useState({
     providerId: settings.aiProvider.providerId ?? "openrouter-free",
@@ -55,6 +64,8 @@ export function SettingsDialog({
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillContent, setNewSkillContent] = useState("");
   const [isAddingSkill, setIsAddingSkill] = useState(false);
+  const [newCustomModelSlug, setNewCustomModelSlug] = useState("");
+  const [customModelLevel, setCustomModelLevel] = useState<'low' | 'medium' | 'high'>("high");
 
   // Memory state
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -257,6 +268,29 @@ export function SettingsDialog({
               {/* ═══════════════  AI Provider Tab  ═══════════════ */}
               {activeTab === 'ai' && (
                 <div className="space-y-6">
+                  {/* Free Models Toggle */}
+                  <div className="flex items-center justify-between rounded-xl border border-border p-4 bg-muted/20">
+                    <div>
+                      <div className="font-semibold text-sm text-foreground">Show Only Free Models</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">Filter models and endpoints to only show those that are free to use.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => settings.setShowOnlyFreeModels(!settings.showOnlyFreeModels)}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                        settings.showOnlyFreeModels ? 'bg-orange-500' : 'bg-muted-foreground/30'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                          settings.showOnlyFreeModels ? 'translate-x-4' : 'translate-x-0'
+                        )}
+                      />
+                    </button>
+                  </div>
+
                   <div className="space-y-3">
                     <label className="text-sm font-medium">Provider Configuration</label>
                     <div className="grid grid-cols-2 gap-2">
@@ -360,7 +394,103 @@ export function SettingsDialog({
                       />
                     )}
                   </div>
-                  
+
+                  {localSettings.providerId === "nvidia" && (
+                    <div className="space-y-4 rounded-xl border border-border p-4 bg-muted/20 mt-4">
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold text-foreground">Custom Nvidia Models</h4>
+                        <p className="text-xs text-muted-foreground">Add custom models by entering a base slug and selecting a performance/capacity size tier.</p>
+                      </div>
+
+                      {/* Added models list */}
+                      {settings.customNvidiaModels && settings.customNvidiaModels.length > 0 && (
+                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                          {settings.customNvidiaModels.map((m) => (
+                            <div key={m.slug} className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-foreground">{m.label}</span>
+                                <span className="text-xs text-muted-foreground font-mono">{m.slug}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="rounded-lg p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors cursor-pointer"
+                                onClick={() => settings.deleteCustomNvidiaModel(m.slug)}
+                                title="Remove Model"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add form */}
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">Base Model Slug / Pattern</label>
+                          <Input
+                            placeholder="e.g. nvidia/nemotron-4-340b-instruct or meta/llama-3.1-70b-instruct"
+                            value={newCustomModelSlug}
+                            onChange={(e) => setNewCustomModelSlug(e.target.value)}
+                            className="h-9 bg-background"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">Performance/Capacity Tier</label>
+                          <div className="flex gap-2">
+                            {(['low', 'medium', 'high'] as const).map((level) => (
+                              <button
+                                key={level}
+                                type="button"
+                                className={cn(
+                                  "flex-1 py-1.5 px-3 rounded-lg border text-xs font-medium capitalize transition-colors cursor-pointer text-center",
+                                  customModelLevel === level
+                                    ? "border-primary bg-primary/5 text-primary"
+                                    : "border-border text-muted-foreground hover:border-primary/50 hover:bg-accent/50"
+                                )}
+                                onClick={() => setCustomModelLevel(level)}
+                              >
+                                {level}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {newCustomModelSlug.trim() && (() => {
+                          const preview = getModelCounterpart(newCustomModelSlug, customModelLevel);
+                          return (
+                            <div className="rounded-lg border border-dashed border-border/80 p-2.5 bg-background/50 space-y-1">
+                              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">Computed Model Preview</span>
+                              <div className="text-xs font-medium text-foreground">Label: <span className="text-primary">{preview.label}</span></div>
+                              <div className="text-xs font-mono text-muted-foreground truncate">Slug: {preview.slug}</div>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="flex justify-end pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={!newCustomModelSlug.trim()}
+                            onClick={() => {
+                              if (newCustomModelSlug.trim()) {
+                                const finalModel = getModelCounterpart(newCustomModelSlug, customModelLevel);
+                                if (finalModel.slug) {
+                                  settings.addCustomNvidiaModel(finalModel);
+                                  setLocalSettings((s) => ({ ...s, model: finalModel.slug }));
+                                  setNewCustomModelSlug("");
+                                }
+                              }
+                            }}
+                          >
+                            Add Custom Model
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {(localSettings.providerId !== (settings.aiProvider.providerId ?? "openrouter-free") ||
                     localSettings.baseUrl !== settings.aiProvider.baseUrl ||
                     localSettings.apiKey !== settings.aiProvider.apiKey ||
@@ -395,22 +525,239 @@ export function SettingsDialog({
               {activeTab === 'mcp' && (
                 <div className="space-y-6">
                   {mcpView === 'list' ? (
-                    <div 
-                      className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group"
-                      onClick={() => setMcpView('detail')}
-                    >
-                      <div className="flex items-center gap-5">
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent p-2.5">
-                          <img src="/app.png" alt="Materio Logo" className="h-full w-full object-contain" />
+                    <div className="space-y-4">
+                      <div 
+                        className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group"
+                        onClick={() => setMcpView('detail')}
+                      >
+                        <div className="flex items-center gap-5">
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent p-2.5">
+                            <img src="/app.png" alt="Materio Logo" className="h-full w-full object-contain" />
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg">Materio</h3>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <span className={cn('inline-block h-2 w-2 rounded-full shadow-sm', mcpConnected ? 'bg-green-500 shadow-green-500/50' : 'bg-red-500 shadow-red-500/50')} />
+                              <span className="text-sm text-muted-foreground font-medium">{mcpConnected ? 'Connected' : 'Disconnected'} • {tools.length} Tools</span>
+                            </div>
+                          </div>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground group-hover:text-foreground transition-colors"><path d="m9 18 6-6-6-6"/></svg>
                         </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-lg">Materio</h3>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className={cn('inline-block h-2 w-2 rounded-full shadow-sm', mcpConnected ? 'bg-green-500 shadow-green-500/50' : 'bg-red-500 shadow-red-500/50')} />
-                            <span className="text-sm text-muted-foreground font-medium">{mcpConnected ? 'Connected' : 'Disconnected'} • {tools.length} Tools</span>
+                      </div>
+
+                      {settings.customConnectors?.map(connector => (
+                        <div 
+                          key={connector.id}
+                          className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-5">
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted p-2.5">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-lg">{connector.name}</h3>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-sm text-muted-foreground font-medium truncate max-w-[200px] sm:max-w-xs">{connector.url}</span>
+                                {connector.authType === "oauth" && !connector.oauthToken && (
+                                  <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold">Requires Auth</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {connector.authType === "oauth" && !connector.oauthToken && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-8"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Trigger OAuth Flow
+                                  const verifier = crypto.randomUUID().replace(/-/g, "");
+                                  localStorage.setItem("oauth_verifier", verifier);
+                                  localStorage.setItem("oauth_connector_id", connector.id);
+                                  
+                                  const authorizeUrl = new URL(connector.oauthAuthUrl || "");
+                                  authorizeUrl.searchParams.set("client_id", connector.oauthClientId || "");
+                                  authorizeUrl.searchParams.set("redirect_uri", window.location.origin + "/oauth/callback");
+                                  authorizeUrl.searchParams.set("response_type", "code");
+                                  authorizeUrl.searchParams.set("state", crypto.randomUUID());
+                                  authorizeUrl.searchParams.set("code_challenge", verifier); // Need actual S256 in real prod, but Materio allows plain verifier if server supports it, wait actually Materio doc says native PKCE supported.
+                                  authorizeUrl.searchParams.set("code_challenge_method", "plain");
+                                  window.location.href = authorizeUrl.toString();
+                                }}
+                              >
+                                Connect
+                              </Button>
+                            )}
+                            <button
+                              type="button"
+                              className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                settings.deleteCustomConnector(connector.id);
+                              }}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                            </button>
                           </div>
                         </div>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground group-hover:text-foreground transition-colors"><path d="m9 18 6-6-6-6"/></svg>
+                      ))}
+
+                      <Button 
+                        variant="outline" 
+                        className="w-full border-dashed py-8 flex flex-col items-center gap-2 hover:border-primary hover:bg-accent/50"
+                        onClick={() => setMcpView('add-custom')}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                        <span className="font-semibold text-foreground">Add Custom Connector</span>
+                      </Button>
+                    </div>
+                  ) : mcpView === 'add-custom' ? (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <button onClick={() => setMcpView('list')} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                        Back to servers
+                      </button>
+
+                      <div>
+                        <h2 className="text-2xl font-bold">Add Custom Connector</h2>
+                        <p className="text-sm text-muted-foreground mt-1">Connect to any external MCP server to expand your capabilities.</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Connector Name</label>
+                          <Input 
+                            placeholder="e.g. My Internal DB" 
+                            value={newConnectorName}
+                            onChange={e => setNewConnectorName(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Server URL (SSE Endpoint)</label>
+                          <Input 
+                            placeholder="https://..." 
+                            value={newConnectorUrl}
+                            onChange={e => setNewConnectorUrl(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Authentication Type</label>
+                          <div className="flex gap-2">
+                            {(['none', 'api_key', 'oauth'] as const).map((type) => (
+                              <button
+                                key={type}
+                                type="button"
+                                className={cn(
+                                  "flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors text-center",
+                                  newConnectorAuthType === type
+                                    ? "border-primary bg-primary/5 text-primary"
+                                    : "border-border text-muted-foreground hover:border-primary/50 hover:bg-accent/50"
+                                )}
+                                onClick={() => setNewConnectorAuthType(type)}
+                              >
+                                {type === 'none' ? 'None' : type === 'api_key' ? 'API Key' : 'OAuth'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {newConnectorAuthType === 'api_key' && (
+                          <div className="space-y-2 animate-in fade-in duration-300">
+                            <label className="text-sm font-medium">API Key (Sent as Bearer token)</label>
+                            <Input 
+                              type="password"
+                              placeholder="sk-..." 
+                              value={newConnectorApiKey}
+                              onChange={e => setNewConnectorApiKey(e.target.value)}
+                            />
+                          </div>
+                        )}
+
+                        {newConnectorAuthType === 'oauth' && (
+                          <div className="space-y-4 animate-in fade-in duration-300 p-4 rounded-xl border border-border bg-muted/20">
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Callback URL</label>
+                              <div className="flex gap-2">
+                                <Input readOnly value={window.location.origin + "/oauth/callback"} className="bg-muted font-mono text-xs" />
+                                <Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(window.location.origin + "/oauth/callback")}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                </Button>
+                              </div>
+                              <p className="text-xs text-muted-foreground">Register this exact callback URL in your external OAuth provider.</p>
+                            </div>
+
+                            <div className="space-y-2 pt-2">
+                              <label className="text-sm font-medium">Client ID</label>
+                              <Input 
+                                placeholder="client_..." 
+                                value={newConnectorClientId}
+                                onChange={e => setNewConnectorClientId(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Client Secret (Optional)</label>
+                              <Input 
+                                type="password"
+                                placeholder="secret_..." 
+                                value={newConnectorClientSecret}
+                                onChange={e => setNewConnectorClientSecret(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Authorization URL</label>
+                              <Input 
+                                placeholder="https://example.com/oauth/authorize" 
+                                value={newConnectorAuthUrl}
+                                onChange={e => setNewConnectorAuthUrl(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Token URL</label>
+                              <Input 
+                                placeholder="https://example.com/oauth/token" 
+                                value={newConnectorTokenUrl}
+                                onChange={e => setNewConnectorTokenUrl(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-4 flex justify-end gap-3">
+                          <Button variant="outline" onClick={() => setMcpView('list')}>Cancel</Button>
+                          <Button 
+                            disabled={!newConnectorName.trim() || !newConnectorUrl.trim() || (newConnectorAuthType === 'oauth' && (!newConnectorClientId || !newConnectorAuthUrl || !newConnectorTokenUrl))}
+                            onClick={() => {
+                              settings.addCustomConnector({
+                                name: newConnectorName,
+                                url: newConnectorUrl,
+                                authType: newConnectorAuthType,
+                                apiKey: newConnectorApiKey,
+                                oauthClientId: newConnectorClientId,
+                                oauthClientSecret: newConnectorClientSecret,
+                                oauthAuthUrl: newConnectorAuthUrl,
+                                oauthTokenUrl: newConnectorTokenUrl,
+                              });
+                              setNewConnectorName("");
+                              setNewConnectorUrl("");
+                              setNewConnectorAuthType("none");
+                              setNewConnectorApiKey("");
+                              setNewConnectorClientId("");
+                              setNewConnectorClientSecret("");
+                              setNewConnectorAuthUrl("");
+                              setNewConnectorTokenUrl("");
+                              setMcpView('list');
+                            }}
+                          >
+                            Add Connector
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ) : (

@@ -146,7 +146,10 @@ export function ChatLayout() {
           : "https://mcp.getmaterio.app/mcp";
 
         // Re-connecting forces disconnect first under the hood if already connected
-        await mcpClient.connect(mcpUrl);
+        await mcpClient.connectAll({
+          mainServerUrl: mcpUrl,
+          customConnectors: settings.customConnectors || []
+        });
         const serverTools = await mcpClient.listTools();
         if (active) {
           setTools(serverTools);
@@ -159,7 +162,7 @@ export function ChatLayout() {
     };
     connect();
     return () => { active = false; };
-  }, [settings.mcpEnvironment]);
+  }, [settings.mcpEnvironment, settings.customConnectors]);
 
   const handleRetry = async (msgId: string, modelOverride: string) => {
     if (!activeConversationId || isSending) return;

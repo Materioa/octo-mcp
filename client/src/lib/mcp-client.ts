@@ -1,35 +1,90 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { MCPTool } from "@/types";
+import type { MCPTool, CustomConnector } from "@/types";
+
+export interface ConnectOptions {
+  mainServerUrl: string;
+  customConnectors: CustomConnector[];
+}
 
 class MCPClientManager {
-  private client: Client | null = null;
-  private serverUrl: string = "";
+  private clients: Map<string, Client> = new Map();
   private connecting: Promise<void> | null = null;
+  // Map of toolName -> serverId for routing
+  private toolRouting: Map<string, string> = new Map();
 
-  async connect(serverUrl: string): Promise<void> {
-    if (this.client && this.serverUrl === serverUrl) return;
+  async connectAll(options: ConnectOptions): Promise<void> {
     if (this.connecting) return this.connecting;
 
     this.connecting = (async () => {
       try {
         this.disconnect();
-        this.serverUrl = serverUrl;
+        this.toolRouting.clear();
 
-        const client = new Client(
-          { name: "mcp-chat-client", version: "1.0.0" },
-          { capabilities: {} }
-        );
+        const connectPromises: Promise<void>[] = [];
 
-        const transport = new StreamableHTTPClientTransport(
-          new URL(serverUrl, window.location.origin)
-        );
+        // Connect Main Server
+        const connectMain = async () => {
+          try {
+            const client = new Client(
+              { name: "mcp-chat-client", version: "1.0.0" },
+              { capabilities: {} }
+            );
+            const transport = new StreamableHTTPClientTransport(
+              new URL(options.mainServerUrl, window.location.origin),
+              { headers: { "X-Materio-Client": "true" } }
+            );
+            await client.connect(transport);
+            this.clients.set("main", client);
+            // Pre-fetch tools to populate routing
+            const toolsRes = await client.listTools();
+            for (const t of toolsRes.tools ?? []) {
+              this.toolRouting.set(t.name, "main");
+            }
+          } catch (err) {
+            console.error("Failed to connect to main MCP server:", err);
+          }
+        };
+        connectPromises.push(connectMain());
 
-        await client.connect(transport);
-        this.client = client;
-      } catch (err) {
-        this.client = null;
-        throw err;
+        // Connect Custom Connectors
+        for (const connector of options.customConnectors) {
+          const connectCustom = async () => {
+            try {
+              const headers: Record<string, string> = {};
+              if (connector.authType === "api_key" && connector.apiKey) {
+                headers["Authorization"] = `Bearer ${connector.apiKey}`;
+              } else if (connector.authType === "oauth" && connector.oauthToken) {
+                headers["Authorization"] = `Bearer ${connector.oauthToken}`;
+              }
+
+              const client = new Client(
+                { name: "mcp-chat-client", version: "1.0.0" },
+                { capabilities: {} }
+              );
+              const transport = new StreamableHTTPClientTransport(
+                new URL(connector.url, window.location.origin),
+                { headers }
+              );
+              await client.connect(transport);
+              this.clients.set(connector.id, client);
+
+              // Pre-fetch tools
+              const toolsRes = await client.listTools();
+              for (const t of toolsRes.tools ?? []) {
+                // Main server takes precedence if collision occurs
+                if (!this.toolRouting.has(t.name)) {
+                  this.toolRouting.set(t.name, connector.id);
+                }
+              }
+            } catch (err) {
+              console.error(`Failed to connect to custom MCP server ${connector.name}:`, err);
+            }
+          };
+          connectPromises.push(connectCustom());
+        }
+
+        await Promise.allSettled(connectPromises);
       } finally {
         this.connecting = null;
       }
@@ -39,34 +94,56 @@ class MCPClientManager {
   }
 
   disconnect(): void {
-    if (this.client) {
+    for (const [_, client] of this.clients.entries()) {
       try {
-        this.client.close();
+        client.close();
       } catch {}
-      this.client = null;
     }
+    this.clients.clear();
+    this.toolRouting.clear();
   }
 
   isConnected(): boolean {
-    return this.client !== null;
+    return this.clients.size > 0;
   }
 
   async listTools(): Promise<MCPTool[]> {
-    if (!this.client) throw new Error("Not connected to MCP server");
-    const result = await this.client.listTools();
-    return (result.tools ?? []).map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
-    }));
+    if (this.clients.size === 0) throw new Error("Not connected to any MCP server");
+    
+    const allTools: MCPTool[] = [];
+    const seenNames = new Set<string>();
+
+    for (const [id, client] of this.clients.entries()) {
+      try {
+        const result = await client.listTools();
+        for (const t of result.tools ?? []) {
+          if (!seenNames.has(t.name)) {
+            seenNames.add(t.name);
+            this.toolRouting.set(t.name, id);
+            allTools.push({
+              name: t.name,
+              description: t.description ?? "",
+              inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
+            });
+          }
+        }
+      } catch (err) {
+        console.error(`Error listing tools for client ${id}:`, err);
+      }
+    }
+    return allTools;
   }
 
-  async callTool(
-    name: string,
-    args: Record<string, unknown>
-  ): Promise<string> {
-    if (!this.client) throw new Error("Not connected to MCP server");
-    const result = await this.client.callTool({ name, arguments: args });
+  async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+    if (this.clients.size === 0) throw new Error("Not connected to any MCP server");
+    
+    const targetId = this.toolRouting.get(name);
+    if (!targetId) throw new Error(`Tool ${name} not found on any connected server`);
+
+    const client = this.clients.get(targetId);
+    if (!client) throw new Error(`Server ${targetId} for tool ${name} is disconnected`);
+
+    const result = await client.callTool({ name, arguments: args });
     if (result.content && Array.isArray(result.content)) {
       return result.content
         .map((c: any) => {
@@ -80,15 +157,31 @@ class MCPClientManager {
   }
 
   async listResources(): Promise<any[]> {
-    if (!this.client) throw new Error("Not connected to MCP server");
-    const result = await this.client.listResources();
-    return result.resources ?? [];
+    const allResources: any[] = [];
+    for (const [id, client] of this.clients.entries()) {
+      try {
+        const result = await client.listResources();
+        allResources.push(...(result.resources ?? []));
+      } catch (err) {
+        console.error(`Error listing resources for client ${id}:`, err);
+      }
+    }
+    return allResources;
   }
 
   async readResource(uri: string): Promise<string> {
-    if (!this.client) throw new Error("Not connected to MCP server");
-    const result = await this.client.readResource({ uri });
-    return result.contents.map((c: any) => c.text ?? "").join("\n");
+    // We try sequentially
+    for (const [_, client] of this.clients.entries()) {
+      try {
+        const result = await client.readResource({ uri });
+        if (result.contents && result.contents.length > 0) {
+          return result.contents.map((c: any) => c.text ?? "").join("\n");
+        }
+      } catch (err) {
+        // Ignore and try next client
+      }
+    }
+    throw new Error(`Resource ${uri} could not be read from any connected server`);
   }
 }
 

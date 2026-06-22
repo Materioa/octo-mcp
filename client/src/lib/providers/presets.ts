@@ -157,3 +157,69 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 export function getPreset(id: string): ProviderPreset {
   return PROVIDER_PRESETS.find((p) => p.id === id) ?? PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1]!;
 }
+
+export function getModelCounterpart(slug: string, level: 'low' | 'medium' | 'high'): { slug: string; label: string } {
+  const s = slug.trim();
+  if (!s) return { slug: "", label: "" };
+
+  const isLlama = /llama/i.test(s);
+  const isNemotron = /nemotron/i.test(s);
+  const isMistral = /mistral/i.test(s);
+
+  let size = "";
+  if (level === 'high') {
+    size = isLlama ? "405b" : (isNemotron ? "340b" : "large");
+  } else if (level === 'medium') {
+    size = isMistral ? "medium" : "70b";
+  } else {
+    size = isMistral ? "small" : "8b";
+  }
+
+  const sizeRegex = /\b(\d+b|large|medium|small)\b/i;
+  let newSlug = s;
+  if (sizeRegex.test(s)) {
+    newSlug = s.replace(sizeRegex, size);
+  } else {
+    if (s.includes("-instruct")) {
+      newSlug = s.replace("-instruct", `-${size}-instruct`);
+    } else {
+      newSlug = `${s}-${size}`;
+    }
+  }
+
+  const withoutOrg = newSlug.includes("/") ? newSlug.split("/").pop()! : newSlug;
+  const label = withoutOrg
+    .replace(/-instruct$/i, "")
+    .split("-")
+    .map((word) => {
+      if (/^\d+b$/i.test(word)) {
+        return word.toUpperCase();
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+
+  return { slug: newSlug, label };
+}
+
+export function getAvailableModels(providerId: string, settings: any): string[] {
+  const preset = getPreset(providerId);
+  const customModels = providerId === "nvidia" ? (settings.customNvidiaModels?.map((m: any) => m.slug) ?? []) : [];
+  const fetched = settings.fetchedModels?.[providerId];
+  
+  let baseModels = fetched && fetched.length > 0
+    ? Array.from(new Set([...fetched, ...customModels]))
+    : Array.from(new Set([...preset.models, ...customModels]));
+
+  if (settings.showOnlyFreeModels) {
+    if (providerId === "openrouter" || providerId === "openrouter-free") {
+      baseModels = baseModels.filter(m => m.endsWith(":free"));
+    } else if (providerId === "nvidia") {
+      // All NVIDIA NIM developer endpoints are free
+      return baseModels;
+    } else {
+      return [];
+    }
+  }
+  return baseModels;
+}

@@ -467,6 +467,10 @@ CRITICAL WORKSHEET WORKFLOW: If the user asks to create or generate a worksheet,
 DIAGRAMS: If the user asks you to draw a diagram (like a DFA, FSM, flowchart, mindmap, circuit, or plot), you MUST use the \`GenerateDiagramFromRequest\` tool first to get the correct format and syntax instructions before outputting any code block. Do NOT guess the syntax.
 CIRCUITS: When asked to generate electronic circuit diagrams or schematics in React, you MUST use the "react-circuit-schematics" or "tscircuit" (@tscircuit/core) libraries which are natively supported. Do NOT generate raw custom SVGs for circuits.
 CODE GENERATION: The chat interface natively sandboxes and renders React, HTML, JS, Markdown, and diagrams inline. DO NOT output boilerplate instructions like "npm install", "how to use", or "paste this in your App.tsx". Provide ONLY the code block and a very brief 1-2 sentence description.
+CRITICAL ANTI-HALLUCINATION RULES:
+- ONLY invoke tools that are explicitly provided in your tool schema. NEVER invent or hallucinate tool names.
+- If the user's request is ambiguous or you are unsure which tool to use, DO NOT guess. Ask the user for clarification.
+- If no tool is appropriate for the request, simply respond with text.
 Current personality: ${settings.personality}${memoryContext}`;
 
     let finalSystemPrompt = systemPrompt;
