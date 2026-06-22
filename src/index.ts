@@ -192,7 +192,7 @@ export const app = express();
     res.header("Access-Control-Allow-Origin", "*");
     res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url"
+      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url, X-Materio-Client"
     );
     res.header("Access-Control-Expose-Headers", "mcp-session-id");
     res.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
