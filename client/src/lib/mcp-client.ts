@@ -32,7 +32,7 @@ class MCPClientManager {
             );
             const transport = new StreamableHTTPClientTransport(
               new URL(options.mainServerUrl, window.location.origin),
-              { headers: { "X-Materio-Client": "true" } }
+              { requestInit: { headers: { "X-Materio-Client": "true" } } }
             );
             await client.connect(transport);
             this.clients.set("main", client);
@@ -64,7 +64,7 @@ class MCPClientManager {
               );
               const transport = new StreamableHTTPClientTransport(
                 new URL(connector.url, window.location.origin),
-                { headers }
+                { requestInit: { headers } }
               );
               await client.connect(transport);
               this.clients.set(connector.id, client);
