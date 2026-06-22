@@ -54,6 +54,8 @@ interface ChatStore {
   sharedContext: string | null;
   setSharedContext: (context: string | null) => void;
   renameConversation: (id: string, newTitle: string) => Promise<void>;
+  setPinnedMcpId: (id: string | undefined) => Promise<void>;
+  draftPinnedMcpId?: string | undefined;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -70,6 +72,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   _abortController: null as AbortController | null,
   generatingConversationIds: [],
   resolveUserInput: null,
+  draftPinnedMcpId: undefined,
   
   submitUserInput: (toolCallId, result) => {
     const { resolveUserInput } = get();
@@ -102,6 +105,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const now = Date.now();
     const { user, anonymousId } = useAuthStore.getState();
     const userName = user?.displayName || user?.fullName || user?.firstName || user?.name || user?.username || (user?.email ? user.email.split('@')[0] : undefined) || undefined;
+    const { draftPinnedMcpId } = get();
 
     const conversation: Conversation = {
       id,
@@ -114,6 +118,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       authorName: userName,
       userId: user?.id,
       anonymousId: !user ? anonymousId : undefined,
+      pinnedMcpId: draftPinnedMcpId,
     };
     
     // Optimistic UI update
@@ -121,6 +126,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       conversations: [conversation, ...s.conversations],
       activeConversationId: id,
       messages: [],
+      draftPinnedMcpId: undefined,
     }));
 
     // Background DB save (do not await to keep UI instant)
@@ -132,7 +138,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setActiveConversation: async (id) => {
-    set({ activeConversationId: id, isLoading: true });
+    set({ activeConversationId: id, isLoading: true, draftPinnedMcpId: undefined });
     let conversations = get().conversations;
     let conv = conversations.find(c => c.id === id || c.shareId === id);
     if (!conv) {
@@ -212,8 +218,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  setPinnedMcpId: async (id: string | undefined) => {
+    const { activeConversationId, conversations } = get();
+    if (!activeConversationId) {
+      set({ draftPinnedMcpId: id });
+      return;
+    }
+    const conv = conversations.find(c => c.id === activeConversationId);
+    if (!conv) return;
+
+    const updatedConv = { ...conv, pinnedMcpId: id };
+    set(s => ({
+      conversations: s.conversations.map(c => c.id === activeConversationId ? updatedConv : c)
+    }));
+
+    if (!updatedConv.isTemporary) {
+      await saveConversation(updatedConv).catch(console.error);
+    }
+  },
+
   clearActiveConversation: () => {
-    set({ activeConversationId: null, messages: [], allMessages: [] });
+    set({ activeConversationId: null, messages: [], allMessages: [], draftPinnedMcpId: undefined });
     document.title = "Thinklet";
   },
 
@@ -535,6 +560,10 @@ RULES FOR THE TITLE:
     if (mcpClient.isConnected()) {
       try {
         activeTools = await mcpClient.listTools();
+        const conv = get().conversations.find(c => c.id === conversationId);
+        if (conv?.pinnedMcpId) {
+          activeTools = activeTools.filter(t => t.serverId === conv.pinnedMcpId);
+        }
       } catch (err) {}
     }
 

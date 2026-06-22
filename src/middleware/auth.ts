@@ -40,6 +40,10 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
       },
     });
 
+    if (response.status === 401 || response.status === 403) {
+      return res.status(401).json({ error: "Unauthorized: Session expired" });
+    }
+
     if (response.ok) {
       const payload: any = await response.json();
       const userData = payload.user ?? payload.profile ?? payload.data ?? payload;

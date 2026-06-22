@@ -85,6 +85,27 @@ export default function App() {
     }
   }, [theme]);
 
+  const token = useAuthStore((s) => s.token);
+  useEffect(() => {
+    if (token) {
+      useSettingsStore.getState().syncCustomConnectors(token);
+
+      // Verify if token is still valid on startup/mount
+      fetch("https://getmaterio.app/api/v2/profile", {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      .then(res => {
+        if (res.status === 401 || res.status === 403) {
+          useAuthStore.getState().logout();
+          useAuthStore.getState().setLoginOpen(true);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to verify token on startup", err);
+      });
+    }
+  }, [token]);
+
   useEffect(() => {
     if (initialHandoffCode && !hasExchanged.current) {
       hasExchanged.current = true;

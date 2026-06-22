@@ -115,6 +115,10 @@ class MCPClientManager {
     return this.clients.size > 0;
   }
 
+  getToolServerId(name: string): string | undefined {
+    return this.toolRouting.get(name);
+  }
+
   async listTools(): Promise<MCPTool[]> {
     if (this.clients.size === 0) throw new Error("Not connected to any MCP server");
     
@@ -132,6 +136,7 @@ class MCPClientManager {
               name: t.name,
               description: t.description ?? "",
               inputSchema: (t.inputSchema ?? {}) as Record<string, unknown>,
+              serverId: id,
             });
           }
         }
@@ -140,6 +145,38 @@ class MCPClientManager {
       }
     }
     return allTools;
+  }
+
+  async listPrompts(): Promise<any[]> {
+    const allPrompts: any[] = [];
+    for (const [id, client] of this.clients.entries()) {
+      try {
+        const result = await client.listPrompts();
+        for (const p of result.prompts ?? []) {
+          allPrompts.push({
+            name: p.name,
+            description: p.description ?? "",
+            arguments: p.arguments ?? [],
+            serverId: id,
+          });
+        }
+      } catch (err) {
+        // ignore if not supported
+      }
+    }
+    return allPrompts;
+  }
+
+  async getPrompt(name: string, args?: Record<string, string>): Promise<any> {
+    for (const [id, client] of this.clients.entries()) {
+      try {
+        const promptsRes = await client.listPrompts();
+        if (promptsRes.prompts?.some((p: any) => p.name === name)) {
+          return await client.getPrompt({ name, arguments: args });
+        }
+      } catch {}
+    }
+    throw new Error(`Prompt ${name} not found on any connected server`);
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {

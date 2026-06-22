@@ -5,6 +5,18 @@ const isLocal = typeof window !== "undefined" && (window.location.hostname === "
 const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
 const API_BASE = (import.meta.env.VITE_API_URL || defaultApiUrl) + "/api/db";
 
+async function authedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, init);
+  if (res.status === 401) {
+    const auth = useAuthStore.getState();
+    if (auth.token) {
+      auth.logout();
+      auth.setLoginOpen(true);
+    }
+  }
+  return res;
+}
+
 function getHeaders() {
   const { token, anonymousId } = useAuthStore.getState();
   const headers: Record<string, string> = {
@@ -23,7 +35,7 @@ function getHeaders() {
 
 export async function getConversations(): Promise<Conversation[]> {
   try {
-    const res = await fetch(`${API_BASE}/conversations`, { headers: getHeaders() });
+    const res = await authedFetch(`${API_BASE}/conversations`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Failed to fetch conversations");
     return await res.json();
   } catch (err) {
@@ -34,7 +46,7 @@ export async function getConversations(): Promise<Conversation[]> {
 
 export async function getConversation(id: string): Promise<Conversation | null> {
   try {
-    const res = await fetch(`${API_BASE}/conversations/${id}`, { headers: getHeaders() });
+    const res = await authedFetch(`${API_BASE}/conversations/${id}`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Failed to fetch conversation");
     return await res.json();
   } catch (err) {
@@ -45,7 +57,7 @@ export async function getConversation(id: string): Promise<Conversation | null> 
 
 export async function getMessages(conversationId: string): Promise<Message[]> {
   try {
-    const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, { headers: getHeaders() });
+    const res = await authedFetch(`${API_BASE}/conversations/${conversationId}/messages`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Failed to fetch messages");
     return await res.json();
   } catch (err) {
@@ -58,7 +70,7 @@ export async function saveMessage(
   conversationId: string,
   message: Message
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/messages`, {
+  const res = await authedFetch(`${API_BASE}/messages`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({ ...message, conversationId }),
@@ -71,7 +83,7 @@ export async function saveMessage(
 
 export async function saveConversation(conversation: Conversation): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/conversations`, {
+    const res = await authedFetch(`${API_BASE}/conversations`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(conversation),
@@ -84,7 +96,7 @@ export async function saveConversation(conversation: Conversation): Promise<void
 
 export async function deleteConversation(id: string): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/conversations/${id}`, {
+    const res = await authedFetch(`${API_BASE}/conversations/${id}`, {
       method: "DELETE",
       headers: getHeaders(),
     });
@@ -96,7 +108,7 @@ export async function deleteConversation(id: string): Promise<void> {
 
 export async function deleteMessage(id: string): Promise<void> {
   try {
-    const res = await fetch(`${API_BASE}/messages/${id}`, {
+    const res = await authedFetch(`${API_BASE}/messages/${id}`, {
       method: "DELETE",
       headers: getHeaders(),
     });

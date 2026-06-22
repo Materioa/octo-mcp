@@ -48,7 +48,7 @@ import {
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
 import { lookupExternalSources } from "./services/external-lookup.js";
 import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
-import { connectDB, Conversation, Message } from "./db.js";
+import { connectDB, Conversation, Message, CustomConnector } from "./db.js";
 import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
@@ -987,6 +987,110 @@ export const app = express();
     }
   });
 
+  app.get("/share/:id", async (req: express.Request, res: express.Response) => {
+    try {
+      await connectDB();
+      const id = req.params.id;
+      const conv = await Conversation.findOne({
+        $or: [{ id }, { shareId: id }]
+      }).lean();
+
+      if (!conv) {
+        return res.status(404).send("Conversation not found");
+      }
+
+      if (conv.visibility !== "public") {
+        return res.status(403).send("This conversation is private");
+      }
+
+      const messages = await Message.find({ conversationId: conv.id }).sort({ timestamp: 1 }).lean();
+
+      // Render semantic HTML
+      const escapedTitle = (conv.title || "Shared Chat").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${escapedTitle}</title>
+  <meta name="description" content="Shared conversation: ${escapedTitle}">
+  <meta name="robots" content="index, follow">
+  <meta name="googlebot" content="index, follow">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #0d0d0d;
+      color: #e0e0e0;
+    }
+    h1 {
+      color: #ffffff;
+      border-bottom: 1px solid #222;
+      padding-bottom: 0.8rem;
+      font-size: 2rem;
+    }
+    .message {
+      margin-bottom: 1.5rem;
+      padding: 1.2rem;
+      border-radius: 12px;
+      border: 1px solid #222;
+    }
+    .user {
+      background: #161616;
+      border-left: 4px solid #ff6b00;
+    }
+    .assistant {
+      background: #121212;
+      border-left: 4px solid #00a3ff;
+    }
+    .sender {
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .user .sender {
+      color: #ff6b00;
+    }
+    .assistant .sender {
+      color: #00a3ff;
+    }
+    .content {
+      white-space: pre-wrap;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>${escapedTitle}</h1>
+  <div class="messages">
+    ${messages.map(m => {
+      const escapedContent = (m.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const roleName = m.role === 'user' ? 'User' : 'Assistant';
+      return `
+      <div class="message ${m.role}">
+        <div class="sender">${roleName}</div>
+        <div class="content">${escapedContent}</div>
+      </div>
+      `;
+    }).join('')}
+  </div>
+</body>
+</html>`;
+
+      res.setHeader("Content-Type", "text/html");
+      res.status(200).send(html);
+    } catch (err: any) {
+      console.error("Failed to render share page for bot:", err);
+      res.status(500).send("Internal server error");
+    }
+  });
+
   app.get("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
     try {
       const searchParam = req.params.id as string;
@@ -1104,6 +1208,57 @@ export const app = express();
         return res.status(404).json({ error: "Message not found or unauthorized" });
       }
       
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Custom Connectors Routes ──
+  app.get("/api/db/custom-connectors", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const connectors = await CustomConnector.find({ userId: req.user.id }).sort({ createdAt: 1 }).lean();
+      res.json(connectors);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/custom-connectors", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const conn = req.body;
+      
+      // Upsert by userId + id
+      const updated = await CustomConnector.findOneAndUpdate(
+        { id: conn.id, userId: req.user.id },
+        { ...conn, userId: req.user.id },
+        { upsert: true, new: true, returnDocument: 'after' }
+      ).lean();
+      
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/db/custom-connectors/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const deleted = await CustomConnector.findOneAndDelete({
+        id: req.params.id,
+        userId: req.user.id
+      });
+      if (!deleted) {
+        return res.status(404).json({ error: "Connector not found" });
+      }
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

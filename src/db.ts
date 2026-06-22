@@ -56,6 +56,7 @@ const ConversationSchema = new mongoose.Schema({
   updatedAt: { type: Number, default: Date.now },
   messageCount: { type: Number, default: 0 },
   visibility: { type: String, enum: ["private", "public"], default: "private" },
+  pinnedMcpId: { type: String },
 });
 
 const MessageSchema = new mongoose.Schema({
@@ -78,3 +79,26 @@ const MessageSchema = new mongoose.Schema({
 
 export const Conversation = mongoose.model("Conversation", ConversationSchema);
 export const Message = mongoose.model("Message", MessageSchema);
+
+const CustomConnectorSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  userId: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  url: { type: String, required: true },
+  authType: { type: String, required: true, enum: ["none", "api_key", "oauth"] },
+  apiKey: { type: String },
+  oauthClientId: { type: String },
+  oauthClientSecret: { type: String },
+  oauthAuthUrl: { type: String },
+  oauthTokenUrl: { type: String },
+  oauthToken: { type: String },
+  icon: { type: String }, // Base64 data URL for uploaded app icon
+  description: { type: String },
+  createdAt: { type: Number, default: Date.now },
+});
+
+// Compound index so a user cannot have duplicate connector IDs
+CustomConnectorSchema.index({ userId: 1, id: 1 }, { unique: true });
+
+export const CustomConnector = mongoose.model("CustomConnector", CustomConnectorSchema);
+

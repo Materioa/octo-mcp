@@ -34,7 +34,12 @@ export const useAuthStore = create<AuthState>()(
       loginOpen: false,
       setLoginOpen: (open) => set({ loginOpen: open }),
       setAuth: (token, user) => set({ token, user }),
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        set({ token: null, user: null });
+        import("./settings").then((settingsStore) => {
+          settingsStore.useSettingsStore.setState({ customConnectors: [] });
+        });
+      },
     }),
     {
       name: "materio-auth-storage",

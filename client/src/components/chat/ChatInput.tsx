@@ -26,6 +26,7 @@ interface ChatInputProps {
   isSending?: boolean;
   initialValue?: string;
   isIncognito?: boolean;
+  mcpConnected?: boolean;
 }
 
 interface Attachment {
@@ -37,7 +38,7 @@ interface Attachment {
   status: 'idle' | 'uploading' | 'error';
 }
 
-export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, isIncognito }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, isIncognito, mcpConnected }: ChatInputProps) {
   const [value, setValue] = useState(initialValue || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isComposing, setIsComposing] = useState(false);
@@ -45,6 +46,135 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settings = useSettingsStore();
+
+  // Mentions / Slash Commands autocomplete state
+  const [allPrompts, setAllPrompts] = useState<any[]>([]);
+  const [suggestionType, setSuggestionType] = useState<"mcp" | "prompt" | null>(null);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  const activeConversation = useChatStore(s => 
+    s.conversations.find(c => c.id === s.activeConversationId)
+  );
+  const pinnedMcpId = activeConversation?.pinnedMcpId;
+  const draftPinnedMcpId = useChatStore(s => s.draftPinnedMcpId);
+  const effectivePinnedMcpId = pinnedMcpId || draftPinnedMcpId;
+
+  const pinnedMcp = (() => {
+    if (!effectivePinnedMcpId) return null;
+    if (effectivePinnedMcpId === "main") return { id: "main", name: "Materio", icon: "/app.png" };
+    const conn = settings.customConnectors?.find(c => c.id === effectivePinnedMcpId);
+    if (conn) return { id: conn.id, name: conn.name, icon: conn.icon };
+    return null;
+  })();
+
+  const handleUnpinMcp = () => {
+    useChatStore.getState().setPinnedMcpId(undefined);
+  };
+
+  // Fetch prompts when component mounts, when customConnectors change, or when connection status changes
+  useEffect(() => {
+    let active = true;
+    import("@/lib/mcp-client").then(({ mcpClient }) => {
+      if (mcpClient.isConnected() || mcpConnected) {
+        const fetchPrompts = async () => {
+          try {
+            const prompts = await mcpClient.listPrompts();
+            if (active) {
+              setAllPrompts(prompts);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        };
+        fetchPrompts();
+        const t = setTimeout(fetchPrompts, 1000);
+        return () => clearTimeout(t);
+      }
+    });
+    return () => { active = false; };
+  }, [settings.customConnectors, mcpConnected]);
+
+  // Monitor value and cursor to update suggestions
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    const text = value;
+    const caretPos = textareaRef.current.selectionStart || 0;
+    const textBeforeCaret = text.slice(0, caretPos);
+
+    // 1. Check for @ mention
+    const atMatch = textBeforeCaret.match(/@(\w*)$/);
+    if (atMatch) {
+      const q = (atMatch[1] || "").toLowerCase();
+      // Exclude Materio from the suggestions list (first party MCP)
+      const servers = (settings.customConnectors || []).map(c => ({ id: c.id, name: c.name, icon: c.icon }));
+      const filtered = servers.filter(s => s.name.toLowerCase().includes(q));
+      setSuggestionType("mcp");
+      setSuggestions(filtered);
+      setHighlightedIndex(0);
+      return;
+    }
+
+    // 2. Check for / command anywhere in the input (skills list)
+    const slashMatch = textBeforeCaret.match(/\/(\w*)$/);
+    if (slashMatch && settings.skills && settings.skills.length > 0) {
+      const q = (slashMatch[1] || "").toLowerCase();
+      const filtered = settings.skills.filter(s => s.name.toLowerCase().includes(q));
+      if (filtered.length > 0) {
+        setSuggestionType("prompt");
+        setSuggestions(filtered);
+        setHighlightedIndex(0);
+        return;
+      }
+    }
+
+    setSuggestionType(null);
+    setSuggestions([]);
+  }, [value, settings.customConnectors, allPrompts]);
+
+  const handleSelectSuggestion = (item: any) => {
+    if (!textareaRef.current) return;
+    const text = value;
+    const caretPos = textareaRef.current.selectionStart || 0;
+    const textBeforeCaret = text.slice(0, caretPos);
+    const textAfterCaret = text.slice(caretPos);
+
+    if (suggestionType === "mcp") {
+      const atIndex = textBeforeCaret.lastIndexOf("@");
+      if (atIndex !== -1) {
+        // Pin the selected MCP server
+        useChatStore.getState().setPinnedMcpId(item.id);
+        
+        // Remove the @query part
+        const newText = textBeforeCaret.slice(0, atIndex) + textAfterCaret;
+        setValue(newText);
+        
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(atIndex, atIndex);
+          }
+        }, 50);
+      }
+    } else if (suggestionType === "prompt") {
+      const slashIndex = textBeforeCaret.lastIndexOf("/");
+      if (slashIndex !== -1) {
+        const skillText = `<skill name="${item.name}">\n${item.content}\n</skill>\n`;
+        const newText = textBeforeCaret.slice(0, slashIndex) + skillText + textAfterCaret;
+        setValue(newText);
+        const newCaretPos = slashIndex + skillText.length;
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(newCaretPos, newCaretPos);
+          }
+        }, 50);
+      }
+    }
+    
+    setSuggestionType(null);
+    setSuggestions([]);
+  };
   const currentProviderId = settings.aiProvider.providerId;
   const currentModel = settings.aiProvider.model;
 
@@ -156,7 +286,31 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     }
   }, [value, disabled, attachments, onSend]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (suggestionType && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightedIndex(prev => (prev + 1) % suggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightedIndex(prev => (prev - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        handleSelectSuggestion(suggestions[highlightedIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSuggestionType(null);
+        setSuggestions([]);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey && !isComposing) {
       // Allow enter to be newline on mobile devices
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -259,14 +413,61 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   }, [value]);
 
   return (
-    <div className="bg-transparent px-4 pb-4 pt-2">
+    <div className="bg-transparent px-2 sm:px-4 pb-4 pt-2">
       <div className="mx-auto max-w-3xl w-full flex flex-col">
         {rateLimitResetTime && (
           <div className="bg-[#a3a3a3] dark:bg-[#4a4a4a] text-black dark:text-white/80 text-[13px] px-5 py-2.5 rounded-t-xl border border-b-0 border-input font-medium flex items-center">
             You're out of messages for today, come back tomorrow at {rateLimitResetTime}.
           </div>
         )}
-        <div className={cn("border border-input bg-input-bg shadow-sm", rateLimitResetTime ? "rounded-b-xl" : "rounded-2xl", isIncognito && "border-dotted border-[2px]")}>
+        <div className={cn("border border-input bg-input-bg shadow-sm relative", rateLimitResetTime ? "rounded-b-xl" : "rounded-2xl", isIncognito && "border-dotted border-[2px]")}>
+          {/* Autocomplete Suggestions Menu */}
+          {suggestionType && suggestions.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 max-h-56 overflow-y-auto bg-popover text-popover-foreground border border-border rounded-xl shadow-xl z-[110] p-1 flex flex-col gap-0.5">
+              {suggestions.map((item, idx) => {
+                const highlighted = idx === highlightedIndex;
+                return (
+                  <button
+                    key={item.id || item.name}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelectSuggestion(item);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors font-medium",
+                      highlighted 
+                        ? "bg-accent text-accent-foreground" 
+                        : "hover:bg-accent/40 text-foreground"
+                    )}
+                  >
+                    {suggestionType === "mcp" ? (
+                      <>
+                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted overflow-hidden">
+                          {item.icon ? (
+                            <img src={item.icon} alt={item.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                          )}
+                        </div>
+                        <span className="flex-1 truncate">{item.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-primary font-bold">/{item.name}</span>
+                        {item.description && (
+                          <span className="text-muted-foreground text-xs truncate flex-1 ml-2">
+                            {item.description}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Thumbnails Row */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-4 pt-4 pb-1">
@@ -321,7 +522,8 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
           {/* Bottom action row */}
           <div className="flex items-center justify-between px-3 pb-3">
             {/* Left: attach / plus */}
-            <DropdownMenu>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -389,8 +591,76 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
                     </DropdownMenuSub>
                   </>
                 )}
+
+                {allPrompts.length > 0 && (() => {
+                  const promptsByServer = allPrompts.reduce<Record<string, any[]>>((acc, p) => {
+                    const sid = (p as any).serverId || "main";
+                    if (!acc[sid]) acc[sid] = [];
+                    acc[sid].push(p);
+                    return acc;
+                  }, {});
+
+                  return (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                          Connectors
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="z-[110] max-h-[300px] overflow-y-auto">
+                          {Object.entries(promptsByServer).map(([sid, prompts]: [string, any[]]) => {
+                            const connectorName = sid === "main" ? "Materio" : (settings.customConnectors?.find(c => c.id === sid)?.name || `Connector (${sid.slice(0, 4)})`);
+                            return (
+                              <DropdownMenuSub key={sid}>
+                                <DropdownMenuSubTrigger>
+                                  <span>{connectorName}</span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuSubContent className="z-[120] max-h-[300px] overflow-y-auto">
+                                  {prompts.map((p: any) => (
+                                    <DropdownMenuItem
+                                      key={p.name}
+                                      onClick={() => {
+                                        setValue(prev => prev + (prev.trim() ? ' ' : '') + `/${p.name} `);
+                                        setTimeout(() => textareaRef.current?.focus(), 50);
+                                      }}
+                                    >
+                                      {p.name}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuSubContent>
+                              </DropdownMenuSub>
+                            );
+                          })}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    </>
+                  );
+                })()}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Pinned MCP Pill */}
+            {pinnedMcp && (
+              <div className="flex items-center gap-1.5 bg-accent/70 hover:bg-accent text-foreground text-xs font-semibold px-2.5 py-1 rounded-full border border-border shadow-sm animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm overflow-hidden bg-muted">
+                  {pinnedMcp.icon ? (
+                    <img src={pinnedMcp.icon} alt={pinnedMcp.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                  )}
+                </div>
+                <span>{pinnedMcp.name}</span>
+                <button 
+                  type="button" 
+                  onClick={handleUnpinMcp}
+                  className="hover:bg-destructive/20 rounded-full p-0.5 text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
 
             <input
               type="file"

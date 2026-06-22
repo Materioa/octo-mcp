@@ -3,6 +3,9 @@ import { persist } from "zustand/middleware";
 import type { Settings, ProviderId, Skill, CustomConnector } from "@/types";
 import { getPreset } from "@/lib/providers/presets";
 
+const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const API_URL = import.meta.env.VITE_API_URL || (isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app");
+
 interface SettingsStore extends Settings {
   mcpEnvironment: "production" | "development";
   apiKeys: Record<string, string>;
@@ -23,6 +26,7 @@ interface SettingsStore extends Settings {
   addCustomConnector: (connector: Omit<CustomConnector, "id">) => void;
   updateCustomConnector: (id: string, updates: Partial<CustomConnector>) => void;
   deleteCustomConnector: (id: string) => void;
+  syncCustomConnectors: (token: string) => Promise<void>;
 }
 
 const defaultSettings: Settings & { mcpEnvironment: "production" | "development", apiKeys: Record<string, string> } = {
@@ -116,18 +120,153 @@ export const useSettingsStore = create<SettingsStore>()(
           [providerId]: models
         }
       })),
-      addCustomConnector: (connectorData) => set((state) => ({
-        customConnectors: [...(state.customConnectors || []), {
+      addCustomConnector: (connectorData) => {
+        const id = crypto.randomUUID();
+        const newConnector = {
           ...connectorData,
-          id: crypto.randomUUID()
-        }]
-      })),
-      updateCustomConnector: (id, updates) => set((state) => ({
-        customConnectors: (state.customConnectors || []).map((c) => c.id === id ? { ...c, ...updates } : c)
-      })),
-      deleteCustomConnector: (id) => set((state) => ({
-        customConnectors: (state.customConnectors || []).filter((c) => c.id !== id)
-      })),
+          id
+        };
+        set((state) => ({
+          customConnectors: [...(state.customConnectors || []), newConnector]
+        }));
+        
+        // Sync to DB in background if user logged in
+        import("./auth").then((authModule) => {
+          const token = authModule.useAuthStore.getState().token;
+          if (token) {
+            fetch(`${API_URL}/api/db/custom-connectors`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify(newConnector)
+            })
+            .then(res => {
+              if (res.status === 401) {
+                authModule.useAuthStore.getState().logout();
+                authModule.useAuthStore.getState().setLoginOpen(true);
+              }
+            })
+            .catch((err) => console.error("Error adding connector to db:", err));
+          }
+        });
+      },
+      updateCustomConnector: (id, updates) => {
+        set((state) => {
+          const updatedList = (state.customConnectors || []).map((c) => {
+            if (c.id === id) {
+              const updated = { ...c, ...updates };
+              
+              // Sync to DB in background if user logged in
+              import("./auth").then((authModule) => {
+                const token = authModule.useAuthStore.getState().token;
+                if (token) {
+                  fetch(`${API_URL}/api/db/custom-connectors`, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify(updated)
+                  })
+                  .then(res => {
+                    if (res.status === 401) {
+                      authModule.useAuthStore.getState().logout();
+                      authModule.useAuthStore.getState().setLoginOpen(true);
+                    }
+                  })
+                  .catch((err) => console.error("Error updating connector in db:", err));
+                }
+              });
+              return updated;
+            }
+            return c;
+          });
+          return { customConnectors: updatedList };
+        });
+      },
+      deleteCustomConnector: (id) => {
+        set((state) => ({
+          customConnectors: (state.customConnectors || []).filter((c) => c.id !== id)
+        }));
+        
+        // Sync to DB in background if user logged in
+        import("./auth").then((authModule) => {
+          const token = authModule.useAuthStore.getState().token;
+          if (token) {
+            fetch(`${API_URL}/api/db/custom-connectors/${id}`, {
+              method: "DELETE",
+              headers: {
+                "Authorization": `Bearer ${token}`
+              }
+            })
+            .then(res => {
+              if (res.status === 401) {
+                authModule.useAuthStore.getState().logout();
+                authModule.useAuthStore.getState().setLoginOpen(true);
+              }
+            })
+            .catch((err) => console.error("Error deleting connector from db:", err));
+          }
+        });
+      },
+      syncCustomConnectors: async (token) => {
+        try {
+          const res = await fetch(`${API_URL}/api/db/custom-connectors`, {
+            headers: {
+              "Authorization": `Bearer ${token}`
+            }
+          });
+          if (res.status === 401) {
+            const authModule = await import("./auth");
+            authModule.useAuthStore.getState().logout();
+            authModule.useAuthStore.getState().setLoginOpen(true);
+            return;
+          }
+          if (res.ok) {
+            const serverConnectors: CustomConnector[] = await res.json();
+            
+            set((state) => {
+              const localConnectors = state.customConnectors || [];
+              const merged = [...serverConnectors];
+              
+              // If there are local connectors that are not on the server, upload them
+              const localOnly = localConnectors.filter(
+                (lc) => !serverConnectors.some((sc) => sc.id === lc.id)
+              );
+              
+              if (localOnly.length > 0) {
+                localOnly.forEach(async (lc) => {
+                  try {
+                    const postRes = await fetch(`${API_URL}/api/db/custom-connectors`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                      },
+                      body: JSON.stringify(lc)
+                    });
+                    if (postRes.status === 401) {
+                      const authModule = await import("./auth");
+                      authModule.useAuthStore.getState().logout();
+                      authModule.useAuthStore.getState().setLoginOpen(true);
+                    }
+                  } catch (e) {
+                    console.error("Failed to upload local-only connector:", e);
+                  }
+                });
+                
+                merged.push(...localOnly);
+              }
+              
+              return { customConnectors: merged };
+            });
+          }
+        } catch (err) {
+          console.error("Failed to sync custom connectors:", err);
+        }
+      },
     }),
     {
       name: "mcp-chat-settings",

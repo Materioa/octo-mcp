@@ -171,6 +171,43 @@ export function ChatLayout() {
 
   const handleSend = useCallback(
     async (content: string, attachments?: any[]) => {
+      let finalContent = content;
+      if (content.startsWith("/")) {
+        const spaceIndex = content.indexOf(" ");
+        const cmd = spaceIndex === -1 ? content.slice(1) : content.slice(1, spaceIndex);
+        const argText = spaceIndex === -1 ? "" : content.slice(spaceIndex + 1);
+
+        try {
+          const prompts = await mcpClient.listPrompts();
+          const match = prompts.find(p => p.name === cmd);
+          if (match) {
+            const promptArgs: Record<string, string> = {};
+            if (match.arguments && match.arguments.length > 0) {
+              const primaryArg = match.arguments.find((a: any) => 
+                ["code", "text", "content", "query", "input"].includes(a.name.toLowerCase())
+              ) || match.arguments[0];
+              if (primaryArg) {
+                promptArgs[primaryArg.name] = argText;
+              }
+            }
+            const promptRes = await mcpClient.getPrompt(cmd, promptArgs);
+            if (promptRes.messages && promptRes.messages.length > 0) {
+              finalContent = promptRes.messages.map((m: any) => {
+                if (typeof m.content === "string") return m.content;
+                if (m.content && typeof m.content === "object") {
+                  if (m.content.type === "text") return m.content.text;
+                  if (m.content.text) return m.content.text;
+                  return JSON.stringify(m.content);
+                }
+                return "";
+              }).filter(Boolean).join("\n");
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load prompt contents", e);
+        }
+      }
+
       let convId = activeConversationId;
       if (!convId) {
         const isIncognito = searchParams.get("incognito") === "true";
@@ -195,7 +232,7 @@ export function ChatLayout() {
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
-        content,
+        content: finalContent,
         attachments,
         timestamp: Date.now(),
         parentId,
@@ -495,7 +532,7 @@ export function ChatLayout() {
                   <ChatMessages onRetry={handleRetry} />
                 </>
               )}
-              <div className="mx-auto w-full max-w-3xl pb-2 md:px-0 print:hidden">
+              <div className="mx-auto w-full max-w-3xl pb-2 px-2 sm:px-0 print:hidden">
                 {isSharedView ? (
                   <div className="px-4 pb-4 pt-2">
                     <button
@@ -511,12 +548,13 @@ export function ChatLayout() {
                     onStop={() => useChatStore.getState().abortStream()}
                     disabled={isSending}
                     isSending={isSending}
+                    mcpConnected={connected}
                   />
                 )}
               </div>
             </>
           ) : (
-            <div className="flex flex-1 flex-col px-4 md:items-center md:justify-center">
+            <div className="flex flex-1 flex-col px-2 sm:px-4 md:items-center md:justify-center">
               <div className="flex-1 flex flex-col items-center justify-center md:flex-none">
                 <div className="mb-8 text-center">
                   <h1 className="text-3xl font-semibold tracking-tight text-foreground/90">
@@ -531,6 +569,7 @@ export function ChatLayout() {
                   disabled={isSending}
                   isSending={isSending}
                   initialValue={initialQuery}
+                  mcpConnected={connected}
                 />
                 {isIncognito && (
                   <div className="mt-6 text-center text-xs text-muted-foreground">

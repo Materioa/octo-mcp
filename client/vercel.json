@@ -11,6 +11,17 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/share/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(googlebot|bingbot|yandex|baiduspider|duckduckbot|twitterbot|facebookexternalhit|linkedinbot|whatsapp|slackbot|discordbot|applebot|gptbot|chatgpt-user|anthropic-ai|claude-web|cohere-ai|bytespider|google-extended|perplex|yeti|bot|crawler|spider).*"
+        }
+      ],
+      "destination": "https://mcp.getmaterio.app/share/:id"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

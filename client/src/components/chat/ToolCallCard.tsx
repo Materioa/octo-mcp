@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { ToolCall } from "@/types";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settings";
+import { mcpClient } from "@/lib/mcp-client";
 
 interface ToolCallGroupProps {
   toolCalls: ToolCall[];
@@ -8,11 +10,31 @@ interface ToolCallGroupProps {
 
 export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
   const [open, setOpen] = useState(false);
+  const settings = useSettingsStore();
 
   if (!toolCalls || toolCalls.length === 0) return null;
 
   const isMultiple = toolCalls.length > 1;
   const isRunning = toolCalls.some(tc => tc.status === "running");
+
+  const firstTool = toolCalls[0];
+  const serverId = firstTool ? mcpClient.getToolServerId(firstTool.name) : undefined;
+  
+  let iconElement = null;
+  if (serverId === "main") {
+    iconElement = <img src="/app.png" alt="Materio" className="w-3.5 h-3.5 object-contain" />;
+  } else if (serverId) {
+    const conn = settings.customConnectors?.find(c => c.id === serverId);
+    if (conn?.icon) {
+      iconElement = <img src={conn.icon} alt={conn.name} className="w-3.5 h-3.5 rounded-sm object-cover" />;
+    }
+  }
+
+  if (!iconElement) {
+    iconElement = (
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn(isRunning && "animate-pulse text-brand")}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    );
+  }
 
   return (
     <div className="w-full max-w-2xl tool-call-block">
@@ -21,7 +43,7 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
         onClick={() => setOpen(!open)}
       >
         <div className="flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn(isRunning && "animate-pulse text-brand")}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          {iconElement}
         </div>
         
         <div className="flex-1 font-medium">

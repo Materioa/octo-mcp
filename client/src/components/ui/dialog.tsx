@@ -8,9 +8,10 @@ interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
+  fullScreen?: boolean;
 }
 
-function Dialog({ open, onOpenChange, children }: DialogProps) {
+function Dialog({ open, onOpenChange, children, fullScreen }: DialogProps) {
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -31,7 +32,10 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
         className="fixed inset-0 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in-0"
         onClick={() => onOpenChange(false)}
       />
-      <div className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
+      <div className={cn(
+        "fixed inset-0 flex justify-center pointer-events-none",
+        fullScreen ? "items-end sm:items-center justify-center p-0 sm:p-4 max-sm:items-stretch max-sm:p-0" : "items-end sm:items-center justify-center p-0 sm:p-4"
+      )}>
         {children}
       </div>
     </div>,
@@ -41,14 +45,16 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
 
 const DialogContent = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { onClose?: () => void }
->(({ className, children, onClose, ...props }, ref) => (
+  React.HTMLAttributes<HTMLDivElement> & { onClose?: () => void; fullScreen?: boolean }
+>((({ className, children, onClose, fullScreen, ...props }, ref) => (
   <div
     ref={ref}
     className={cn(
-      "relative z-50 flex w-full max-w-lg flex-col border bg-background p-6 shadow-2xl pointer-events-auto",
-      "max-h-[90vh] sm:max-h-[min(85vh,700px)]",
-      "rounded-t-[28px] sm:rounded-2xl border-b-0 sm:border-b max-sm:pb-10 max-sm:px-5 squircle-mask squircle-t-[28px] sm:squircle-2xl",
+      "relative z-50 flex w-full flex-col border bg-background p-6 shadow-2xl pointer-events-auto",
+      "max-w-lg max-h-[90vh] sm:max-h-[min(85vh,700px)] rounded-t-[28px] sm:rounded-2xl border-b-0 sm:border-b squircle-mask squircle-t-[28px] sm:squircle-2xl",
+      fullScreen 
+        ? "max-sm:h-[100dvh] max-sm:max-h-none max-sm:rounded-none max-sm:border-0 max-sm:pb-0 max-sm:px-0 max-sm:squircle-mask-none max-sm:rounded-t-none max-sm:squircle-t-none" 
+        : "max-sm:pb-10 max-sm:px-5",
       "animate-in slide-in-from-bottom-[100%] sm:zoom-in-95 sm:fade-in-0 duration-300 ease-out",
       className
     )}
@@ -81,7 +87,7 @@ const DialogContent = React.forwardRef<
       </Button>
     )}
   </div>
-));
+)));
 DialogContent.displayName = "DialogContent";
 
 function DialogHeader({

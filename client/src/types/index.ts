@@ -40,6 +40,7 @@ export interface Conversation {
   authorName?: string;
   userId?: string;
   anonymousId?: string;
+  pinnedMcpId?: string;
 }
 
 export interface Memory {
@@ -96,6 +97,8 @@ export interface CustomConnector {
   oauthAuthUrl?: string;
   oauthTokenUrl?: string;
   oauthToken?: string;
+  icon?: string; // base64 string
+  description?: string;
 }
 
 export interface Settings {
@@ -115,4 +118,5 @@ export interface MCPTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  serverId?: string;
 }

@@ -52,6 +52,9 @@ export function SettingsDialog({
   const [newConnectorClientSecret, setNewConnectorClientSecret] = useState("");
   const [newConnectorAuthUrl, setNewConnectorAuthUrl] = useState("");
   const [newConnectorTokenUrl, setNewConnectorTokenUrl] = useState("");
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
+  const [newConnectorDescription, setNewConnectorDescription] = useState("");
+  const [newConnectorIcon, setNewConnectorIcon] = useState<string | null>(null);
 
   const [localSettings, setLocalSettings] = useState({
     providerId: settings.aiProvider.providerId ?? "openrouter-free",
@@ -167,10 +170,11 @@ export function SettingsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} fullScreen>
       <DialogContent 
         onClose={() => onOpenChange(false)} 
-        className="max-w-4xl !p-0 overflow-hidden h-[100dvh] max-h-[100dvh] sm:max-h-[85vh] w-full max-w-none !rounded-none sm:!rounded-xl sm:h-[80vh] sm:min-h-[600px] sm:max-w-4xl bg-card border-0 sm:border-border flex flex-col"
+        fullScreen
+        className="!p-0 overflow-hidden h-[100dvh] max-h-[100dvh] sm:max-h-[85vh] w-full max-w-none !rounded-none sm:!rounded-xl sm:h-[80vh] sm:min-h-[600px] sm:max-w-4xl bg-card border-0 sm:border-border flex flex-col"
       >
         <div className="flex flex-1 w-full relative overflow-hidden">
           {/* Sidebar */}
@@ -528,7 +532,10 @@ export function SettingsDialog({
                     <div className="space-y-4">
                       <div 
                         className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group"
-                        onClick={() => setMcpView('detail')}
+                        onClick={() => {
+                          setSelectedConnectorId('main');
+                          setMcpView('detail');
+                        }}
                       >
                         <div className="flex items-center gap-5">
                           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-accent p-2.5">
@@ -538,71 +545,77 @@ export function SettingsDialog({
                             <h3 className="font-semibold text-lg">Materio</h3>
                             <div className="flex items-center gap-2 mt-1.5">
                               <span className={cn('inline-block h-2 w-2 rounded-full shadow-sm', mcpConnected ? 'bg-green-500 shadow-green-500/50' : 'bg-red-500 shadow-red-500/50')} />
-                              <span className="text-sm text-muted-foreground font-medium">{mcpConnected ? 'Connected' : 'Disconnected'} • {tools.length} Tools</span>
+                              <span className="text-sm text-muted-foreground font-medium">{mcpConnected ? 'Connected' : 'Disconnected'} • {tools.filter(t => t.serverId === 'main' || !t.serverId).length} Tools</span>
                             </div>
                           </div>
                           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground group-hover:text-foreground transition-colors"><path d="m9 18 6-6-6-6"/></svg>
                         </div>
                       </div>
 
-                      {settings.customConnectors?.map(connector => (
-                        <div 
-                          key={connector.id}
-                          className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group flex items-center justify-between"
-                        >
-                          <div className="flex items-center gap-5">
-                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted p-2.5">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
-                            </div>
-                            <div>
-                              <h3 className="font-semibold text-lg">{connector.name}</h3>
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <span className="text-sm text-muted-foreground font-medium truncate max-w-[200px] sm:max-w-xs">{connector.url}</span>
-                                {connector.authType === "oauth" && !connector.oauthToken && (
-                                  <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold">Requires Auth</span>
+                      {settings.customConnectors?.map(connector => {
+                        const connTools = tools.filter(t => t.serverId === connector.id);
+                        return (
+                          <div 
+                            key={connector.id}
+                            className="cursor-pointer rounded-xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all group flex items-center justify-between"
+                            onClick={() => {
+                              setSelectedConnectorId(connector.id);
+                              setMcpView('detail');
+                            }}
+                          >
+                            <div className="flex items-center gap-5">
+                              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-muted overflow-hidden">
+                                {connector.icon ? (
+                                  <img src={connector.icon} alt={connector.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
                                 )}
                               </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-semibold text-lg">{connector.name}</h3>
+                                  {connector.authType === "oauth" && !connector.oauthToken && (
+                                    <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold">Requires Auth</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className="text-sm text-muted-foreground font-medium truncate max-w-[200px] sm:max-w-xs">{connector.url}</span>
+                                  {connTools.length > 0 && (
+                                    <span className="text-xs text-muted-foreground font-medium">• {connTools.length} Tools</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {connector.authType === "oauth" && !connector.oauthToken && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="h-8"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Trigger OAuth Flow
+                                    const verifier = crypto.randomUUID().replace(/-/g, "");
+                                    localStorage.setItem("oauth_verifier", verifier);
+                                    localStorage.setItem("oauth_connector_id", connector.id);
+                                    
+                                    const authorizeUrl = new URL(connector.oauthAuthUrl || "");
+                                    authorizeUrl.searchParams.set("client_id", connector.oauthClientId || "");
+                                    authorizeUrl.searchParams.set("redirect_uri", window.location.origin + "/oauth/callback");
+                                    authorizeUrl.searchParams.set("response_type", "code");
+                                    authorizeUrl.searchParams.set("state", crypto.randomUUID());
+                                    authorizeUrl.searchParams.set("code_challenge", verifier);
+                                    authorizeUrl.searchParams.set("code_challenge_method", "plain");
+                                    window.location.href = authorizeUrl.toString();
+                                  }}
+                                >
+                                  Connect
+                                </Button>
+                              )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            {connector.authType === "oauth" && !connector.oauthToken && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                className="h-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  // Trigger OAuth Flow
-                                  const verifier = crypto.randomUUID().replace(/-/g, "");
-                                  localStorage.setItem("oauth_verifier", verifier);
-                                  localStorage.setItem("oauth_connector_id", connector.id);
-                                  
-                                  const authorizeUrl = new URL(connector.oauthAuthUrl || "");
-                                  authorizeUrl.searchParams.set("client_id", connector.oauthClientId || "");
-                                  authorizeUrl.searchParams.set("redirect_uri", window.location.origin + "/oauth/callback");
-                                  authorizeUrl.searchParams.set("response_type", "code");
-                                  authorizeUrl.searchParams.set("state", crypto.randomUUID());
-                                  authorizeUrl.searchParams.set("code_challenge", verifier); // Need actual S256 in real prod, but Materio allows plain verifier if server supports it, wait actually Materio doc says native PKCE supported.
-                                  authorizeUrl.searchParams.set("code_challenge_method", "plain");
-                                  window.location.href = authorizeUrl.toString();
-                                }}
-                              >
-                                Connect
-                              </Button>
-                            )}
-                            <button
-                              type="button"
-                              className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                settings.deleteCustomConnector(connector.id);
-                              }}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       <Button 
                         variant="outline" 
@@ -642,6 +655,70 @@ export function SettingsDialog({
                             value={newConnectorUrl}
                             onChange={e => setNewConnectorUrl(e.target.value)}
                           />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Description (Optional)</label>
+                          <Textarea 
+                            placeholder="What does this MCP server do?" 
+                            value={newConnectorDescription}
+                            onChange={e => setNewConnectorDescription(e.target.value)}
+                            rows={3}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">App Icon (Optional)</label>
+                          <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-muted/20">
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-background border border-border overflow-hidden">
+                              {newConnectorIcon ? (
+                                <img src={newConnectorIcon} alt="Preview" className="h-full w-full object-cover" />
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <input 
+                                type="file" 
+                                id="connector-icon-upload" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    if (file.size > 500 * 1024) {
+                                      alert("Icon file size must be less than 500KB.");
+                                      return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                      setNewConnectorIcon(event.target?.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                              <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => document.getElementById("connector-icon-upload")?.click()}
+                              >
+                                Upload Image
+                              </Button>
+                              {newConnectorIcon && (
+                                <Button 
+                                  type="button" 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="text-red-500 hover:text-red-600 p-0 h-auto justify-start hover:bg-transparent"
+                                  onClick={() => setNewConnectorIcon(null)}
+                                >
+                                  Remove Icon
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -730,13 +807,19 @@ export function SettingsDialog({
                         )}
 
                         <div className="pt-4 flex justify-end gap-3">
-                          <Button variant="outline" onClick={() => setMcpView('list')}>Cancel</Button>
+                          <Button variant="outline" onClick={() => {
+                            setNewConnectorIcon(null);
+                            setNewConnectorDescription("");
+                            setMcpView('list');
+                          }}>Cancel</Button>
                           <Button 
                             disabled={!newConnectorName.trim() || !newConnectorUrl.trim() || (newConnectorAuthType === 'oauth' && (!newConnectorClientId || !newConnectorAuthUrl || !newConnectorTokenUrl))}
                             onClick={() => {
                               settings.addCustomConnector({
                                 name: newConnectorName,
                                 url: newConnectorUrl,
+                                description: newConnectorDescription,
+                                icon: newConnectorIcon || undefined,
                                 authType: newConnectorAuthType,
                                 apiKey: newConnectorApiKey,
                                 oauthClientId: newConnectorClientId,
@@ -746,6 +829,8 @@ export function SettingsDialog({
                               });
                               setNewConnectorName("");
                               setNewConnectorUrl("");
+                              setNewConnectorDescription("");
+                              setNewConnectorIcon(null);
                               setNewConnectorAuthType("none");
                               setNewConnectorApiKey("");
                               setNewConnectorClientId("");
@@ -762,59 +847,195 @@ export function SettingsDialog({
                     </div>
                   ) : (
                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                      <button onClick={() => setMcpView('list')} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                      <button 
+                        onClick={() => {
+                          setMcpView('list');
+                          setSelectedConnectorId(null);
+                        }} 
+                        className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                         Back to servers
                       </button>
                       
-                      <div className="flex items-center gap-5 pb-2">
-                        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-accent p-3 shadow-sm">
-                          <img src="/app.png" alt="Materio Logo" className="h-full w-full object-contain" />
-                        </div>
-                        <div>
-                          <h2 className="text-2xl font-bold">Materio</h2>
-                          <p className="text-sm text-muted-foreground mt-1">API endpoints converted to MCP tools from openapi.json</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h3 className="text-base font-semibold">Available Tools ({tools.length})</h3>
-                        <div className="w-full rounded-xl border border-border p-3 bg-muted/30">
-                          <div className="flex flex-wrap gap-2 max-h-[160px] overflow-y-auto">
-                            {tools.map(t => (
-                              <div key={t.name} className="rounded-lg bg-background border border-border px-3 py-1.5 text-sm font-medium text-foreground shadow-sm" title={t.description}>
-                                {t.name}
-                              </div>
-                            ))}
-                            {tools.length === 0 && (
-                              <span className="text-sm text-muted-foreground py-2 px-1">
-                                {mcpConnected ? 'No tools exported by server.' : 'Connect to server to view tools.'}
-                              </span>
-                            )}
+                      {selectedConnectorId === 'main' ? (
+                        <>
+                          <div className="flex items-center gap-5 pb-2">
+                            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-accent p-3 shadow-sm">
+                              <img src="/app.png" alt="Materio Logo" className="h-full w-full object-contain" />
+                            </div>
+                            <div>
+                              <h2 className="text-2xl font-bold">Materio</h2>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                API for accessing Materio's engineering course materials library.
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </div>
 
-                      <div className="mt-6 rounded-xl bg-card border border-border overflow-hidden">
-                        <div className="flex justify-between items-center p-4 border-b border-border/50">
-                          <span className="text-sm font-medium text-muted-foreground">Author</span>
-                          <span className="text-sm font-semibold text-foreground">Materio</span>
-                        </div>
-                        <div className="flex justify-between items-center p-4 border-b border-border/50">
-                          <span className="text-sm font-medium text-muted-foreground">URL</span>
-                          <a href={import.meta.env.VITE_MCP_DISPLAY_URL || import.meta.env.VITE_MCP_SERVER_URL || 'https://mcp.getmaterio.app/mcp'} target="_blank" rel="noreferrer" className="text-sm hover:underline text-foreground">
-                            {(import.meta.env.VITE_MCP_DISPLAY_URL || import.meta.env.VITE_MCP_SERVER_URL || 'https://mcp.getmaterio.app/mcp').replace(/^https?:\/\//, '')}
-                          </a>
-                        </div>
-                        <div className="flex justify-between items-center p-4 border-b border-border/50">
-                          <span className="text-sm font-medium text-muted-foreground">Privacy Policy</span>
-                          <a href="https://getmaterio.app/privacy" target="_blank" rel="noreferrer" className="text-sm hover:underline text-foreground">getmaterio.app/privacy</a>
-                        </div>
-                        <div className="flex justify-between items-center p-4">
-                          <span className="text-sm font-medium text-muted-foreground">Version</span>
-                          <span className="text-sm text-foreground">1.0.0</span>
-                        </div>
-                      </div>
+                          <div className="space-y-4">
+                            <h3 className="text-base font-semibold">Available Tools ({tools.filter(t => t.serverId === 'main' || !t.serverId).length})</h3>
+                            <div className="w-full rounded-xl border border-border p-3 bg-muted/30">
+                              <div className="flex flex-wrap gap-2 max-h-[160px] overflow-y-auto">
+                                {tools.filter(t => t.serverId === 'main' || !t.serverId).map(t => (
+                                  <div key={t.name} className="rounded-lg bg-background border border-border px-3 py-1.5 text-sm font-medium text-foreground shadow-sm" title={t.description}>
+                                    {t.name}
+                                  </div>
+                                ))}
+                                {tools.filter(t => t.serverId === 'main' || !t.serverId).length === 0 && (
+                                  <span className="text-sm text-muted-foreground py-2 px-1">
+                                    {mcpConnected ? 'No tools exported by server.' : 'Connect to server to view tools.'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-6 rounded-xl bg-card border border-border overflow-hidden">
+                            <div className="flex justify-between items-center p-4 border-b border-border/50">
+                              <span className="text-sm font-medium text-muted-foreground">Author</span>
+                              <span className="text-sm font-semibold text-foreground">Materio</span>
+                            </div>
+                            <div className="flex justify-between items-center p-4 border-b border-border/50">
+                              <span className="text-sm font-medium text-muted-foreground">URL</span>
+                              <a href={import.meta.env.VITE_MCP_DISPLAY_URL || import.meta.env.VITE_MCP_SERVER_URL || 'https://mcp.getmaterio.app/mcp'} target="_blank" rel="noreferrer" className="text-sm hover:underline text-foreground">
+                                {(import.meta.env.VITE_MCP_DISPLAY_URL || import.meta.env.VITE_MCP_SERVER_URL || 'https://mcp.getmaterio.app/mcp').replace(/^https?:\/\//, '')}
+                              </a>
+                            </div>
+                            <div className="flex justify-between items-center p-4 border-b border-border/50">
+                              <span className="text-sm font-medium text-muted-foreground">Privacy Policy</span>
+                              <a href="https://getmaterio.app/privacy" target="_blank" rel="noreferrer" className="text-sm hover:underline text-foreground">getmaterio.app/privacy</a>
+                            </div>
+                            <div className="flex justify-between items-center p-4">
+                              <span className="text-sm font-medium text-muted-foreground">Version</span>
+                              <span className="text-sm text-foreground">1.0.0</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        (() => {
+                          const conn = settings.customConnectors?.find(c => c.id === selectedConnectorId);
+                          const connTools = tools.filter(t => t.serverId === selectedConnectorId);
+                          if (!conn) return <div>Connector not found.</div>;
+                          return (
+                            <>
+                              <div className="flex items-start justify-between gap-4 pb-2">
+                                <div className="flex items-center gap-5 min-w-0">
+                                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-muted overflow-hidden shadow-sm">
+                                    {conn.icon ? (
+                                      <img src={conn.icon} alt={conn.name} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h2 className="text-2xl font-bold truncate">{conn.name}</h2>
+                                      {conn.authType === "oauth" && !conn.oauthToken && (
+                                        <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold">Requires Auth</span>
+                                      )}
+                                    </div>
+                                    {conn.description && (
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {conn.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <Button 
+                                  variant="outline" 
+                                  className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/30 shrink-0"
+                                  onClick={() => {
+                                    settings.deleteCustomConnector(conn.id);
+                                    setMcpView('list');
+                                    setSelectedConnectorId(null);
+                                  }}
+                                >
+                                  Uninstall
+                                </Button>
+                              </div>
+
+                              <div className="space-y-4 mt-6">
+                                <h3 className="text-base font-semibold">Available Tools ({connTools.length})</h3>
+                                <div className="w-full rounded-xl border border-border p-3 bg-muted/30">
+                                  <div className="flex flex-wrap gap-2 max-h-[160px] overflow-y-auto">
+                                    {connTools.map(t => (
+                                      <div key={t.name} className="rounded-lg bg-background border border-border px-3 py-1.5 text-sm font-medium text-foreground shadow-sm" title={t.description}>
+                                        {t.name}
+                                      </div>
+                                    ))}
+                                    {connTools.length === 0 && (
+                                      <span className="text-sm text-muted-foreground py-2 px-1">
+                                        {mcpConnected ? 'No tools exported by server.' : 'Connect to server to view tools.'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {conn.authType === 'oauth' && (
+                                <div className="mt-6 rounded-xl bg-card border border-border p-4">
+                                  <h3 className="text-sm font-semibold text-foreground mb-3">Associated Account</h3>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className={cn(
+                                        "h-2 w-2 rounded-full",
+                                        conn.oauthToken ? "bg-green-500 shadow-sm shadow-green-500/50" : "bg-yellow-500 shadow-sm shadow-yellow-500/50"
+                                      )} />
+                                      <span className="text-sm text-foreground">
+                                        {conn.oauthToken ? "Connected Account" : "Requires Authentication"}
+                                      </span>
+                                    </div>
+                                    {conn.oauthToken ? (
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/30"
+                                        onClick={() => {
+                                          settings.updateCustomConnector(conn.id, {
+                                            oauthToken: undefined
+                                          });
+                                        }}
+                                      >
+                                        Log Out
+                                      </Button>
+                                    ) : (
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => {
+                                          const verifier = crypto.randomUUID().replace(/-/g, "");
+                                          localStorage.setItem("oauth_verifier", verifier);
+                                          localStorage.setItem("oauth_connector_id", conn.id);
+                                          
+                                          const authorizeUrl = new URL(conn.oauthAuthUrl || "");
+                                          authorizeUrl.searchParams.set("client_id", conn.oauthClientId || "");
+                                          authorizeUrl.searchParams.set("redirect_uri", window.location.origin + "/oauth/callback");
+                                          authorizeUrl.searchParams.set("response_type", "code");
+                                          authorizeUrl.searchParams.set("state", crypto.randomUUID());
+                                          authorizeUrl.searchParams.set("code_challenge", verifier);
+                                          authorizeUrl.searchParams.set("code_challenge_method", "plain");
+                                          window.location.href = authorizeUrl.toString();
+                                        }}
+                                      >
+                                        Connect
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="mt-6 rounded-xl bg-card border border-border overflow-hidden">
+                                <div className="flex justify-between items-center p-4">
+                                  <span className="text-sm font-medium text-muted-foreground">URL</span>
+                                  <a href={conn.url} target="_blank" rel="noreferrer" className="text-sm hover:underline text-foreground">
+                                    {conn.url.replace(/^https?:\/\//, '')}
+                                  </a>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()
+                      )}
                     </div>
                   )}
                 </div>
