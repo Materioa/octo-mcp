@@ -2,6 +2,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { MCPTool, CustomConnector } from "@/types";
 
+const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
+const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
+
 export interface ConnectOptions {
   mainServerUrl: string;
   customConnectors: CustomConnector[];
@@ -58,11 +62,13 @@ class MCPClientManager {
                 headers["Authorization"] = `Bearer ${connector.oauthToken}`;
               }
 
+
+
               const client = new Client(
                 { name: "mcp-chat-client", version: "1.0.0" },
                 { capabilities: {} }
               );
-              const proxyUrl = new URL("/api/mcp-proxy", window.location.origin);
+              const proxyUrl = new URL("/api/mcp-proxy", API_URL);
               proxyUrl.searchParams.set("target", connector.url);
               const transport = new StreamableHTTPClientTransport(
                 proxyUrl,

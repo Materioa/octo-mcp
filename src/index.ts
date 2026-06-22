@@ -213,7 +213,7 @@ export const app = express();
   //  per request to avoid the reconnect race condition.
   //  Each request gets its own server+transport pair.
   // ════════════════════════════════════════════════════
-  app.post("/mcp", async (req, res) => {
+  app.all("/mcp", async (req, res) => {
     try {
       const isInternalClient = req.headers["x-materio-client"] === "true";
       // Stateless: new server + transport per request
