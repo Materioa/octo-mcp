@@ -77,18 +77,21 @@ export default function App() {
   }, [initialTheme]);
 
   useEffect(() => {
-    if (theme === "system") {
-      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.classList.toggle("dark", isDark);
-    } else {
-      document.documentElement.classList.toggle("dark", theme === "dark");
-    }
+    const isDark = theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : theme === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    document.documentElement.classList.toggle("light", !isDark);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', isDark ? '#1f1f1e' : '#fdfdfc');
   }, [theme]);
 
   const token = useAuthStore((s) => s.token);
   useEffect(() => {
     if (token) {
       useSettingsStore.getState().syncCustomConnectors(token);
+      useSettingsStore.getState().syncSkills(token);
+      useSettingsStore.getState().syncApiKeys(token);
 
       // Verify if token is still valid on startup/mount
       fetch("https://getmaterio.app/api/v2/profile", {

@@ -461,7 +461,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               <>
                 {(() => {
                   const askUserInputCalls = message.toolCalls!.filter((tc) => tc.name === "ask_user_input_v0");
-                  const otherToolCalls = message.toolCalls!.filter((tc) => tc.name !== "ask_user_input_v0");
+                  const otherToolCalls = message.toolCalls!.filter((tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory");
                   
                   return (
                     <ErrorBoundary>
@@ -619,8 +619,13 @@ export const MessageBubble = React.memo(function MessageBubble({
                       </svg>
                     </button>
                     {showTooltip && (
-                      <div className="absolute bottom-full right-0 mb-2 z-50 bg-popover text-popover-foreground border border-border px-2.5 py-1.5 rounded-lg shadow-md whitespace-nowrap text-[11px] font-medium animate-in fade-in-0 zoom-in-95 duration-100">
-                        Model: {formatModelName(message.modelUsed, settings.customNvidiaModels)}
+                      <div className="absolute bottom-full right-0 mb-2 z-50 bg-popover text-popover-foreground border border-border px-2.5 py-1.5 rounded-lg shadow-md whitespace-nowrap text-[11px] font-medium animate-in fade-in-0 zoom-in-95 duration-100 flex flex-col gap-0.5 items-end">
+                        <span>Model: {formatModelName(message.modelUsed, settings.customNvidiaModels)}</span>
+                        {message.autoSwitchReason && (
+                          <span className="text-yellow-500/90 text-[10px] max-w-[200px] whitespace-normal text-right leading-tight">
+                            {message.autoSwitchReason}
+                          </span>
+                        )}
                         <div className="absolute top-full right-[7px] -translate-y-[5px] w-2 h-2 bg-popover border-r border-b border-border rotate-45" />
                       </div>
                     )}

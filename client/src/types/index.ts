@@ -24,6 +24,7 @@ export interface Message {
   isStreaming?: boolean;
   rating?: "like" | "dislike" | null;
   modelUsed?: string;
+  autoSwitchReason?: string;
   parentId?: string;
   error?: string;
 }
@@ -79,11 +80,20 @@ export interface AIProviderConfig {
   model: string;
 }
 
+export interface SkillFile {
+  path: string;
+  content: string;
+}
+
 export interface Skill {
   id: string;
   name: string;
+  description?: string;
   content: string;
+  files?: SkillFile[];
+  trigger?: "slash" | "auto" | "both";
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface CustomConnector {

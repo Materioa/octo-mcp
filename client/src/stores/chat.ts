@@ -15,6 +15,9 @@ import { useAlertStore } from "./alert";
 import { OpenAICompatProvider } from "@/lib/providers/openai-compat";
 import type { AIMessage, AIToolCall } from "@/lib/ai-provider";
 import { mcpClient } from "@/lib/mcp-client";
+import baseSystemPrompt from "@/lib/system-prompt.md?raw";
+import { BUILTIN_SKILLS, detectRelevantBuiltinSkills } from "@/lib/skills";
+import { autoDetectAndSaveMemory } from "@/lib/auto-memory";
 
 interface ChatStore {
   conversations: Conversation[];
@@ -43,7 +46,7 @@ interface ChatStore {
   setAbortController: (ctrl: AbortController | null) => void;
   _abortController: AbortController | null;
   generatingConversationIds: string[];
-  generateResponse: (conversationId: string, modelOverride?: string) => Promise<void>;
+  generateResponse: (conversationId: string, modelOverride?: string, autoSwitchReason?: string) => Promise<void>;
   switchBranch: (messageId: string) => void;
   branchMessage: (messageId: string, newContent: string) => Promise<void>;
   retryMessage: (messageId: string, modelOverride?: string) => Promise<void>;
@@ -341,6 +344,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
 
+    // 2.5 Auto-detect memorable content in user messages and silently save
+    if (message.role === "user" && conv && !conv.isTemporary) {
+      try {
+        const auth = useAuthStore.getState();
+        const uid = auth.user?.id || auth.anonymousId;
+        autoDetectAndSaveMemory(message.content, uid, false);
+      } catch {}
+    }
+
     // 3. Save to DB and rollback if fails (e.g. rate limit)
     try {
       if (updatedConv && !updatedConv.isTemporary) {
@@ -397,7 +409,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
   setAbortController: (ctrl) => set({ _abortController: ctrl } as any),
 
-  generateResponse: async (conversationId, modelOverride) => {
+  generateResponse: async (conversationId, modelOverride, autoSwitchReason) => {
     const { messages, generatingConversationIds, isSending, updateMessage } = get();
     if (isSending || generatingConversationIds.includes(conversationId)) return;
 
@@ -415,15 +427,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     let finalModelOverride = modelOverride;
 
     const userMsg = messages.filter(m => m.role === "user").pop();
-    if (userMsg && !modelOverride) {
+    
+    const hasImage = messages.some(m => 
+      m.attachments?.some(a => ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(a.extension?.toLowerCase() || ''))
+    );
+
+    let finalAutoSwitchReason = autoSwitchReason;
+
+    // No matter what provider, if there is an image, force openrouter-free "best" model
+    if (hasImage) {
+      if (finalModelOverride !== "openrouter/free") {
+        finalAutoSwitchReason = "Auto-routed to best model for image support.";
+      }
+      finalModelOverride = "openrouter/free";
+      providerConfig = {
+        providerId: "openrouter-free",
+        baseUrl: "https://openrouter.ai/api/v1",
+        apiKey: "",
+        model: "openrouter/free"
+      };
+    } else if (providerConfig.providerId === "openrouter-free" && userMsg && !modelOverride) {
       const intentRegex = /\b(create|generate|visualize|code|build|make|draw|write a script|web artifact|dashboard|component|app|website|react|html|css|js|diagram)\b/i;
       if (intentRegex.test(userMsg.content)) {
          finalModelOverride = "qwen/qwen3-coder:free";
-         providerConfig = {
-           ...providerConfig,
-           baseUrl: "https://openrouter.ai/api/v1",
-           apiKey: settings.apiKeys["openrouter-free"] || settings.apiKeys["openrouter"] || ""
-         };
       }
     }
 
@@ -437,7 +463,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isSending: true, 
       generatingConversationIds: [...generatingConversationIds, conversationId] 
     });
-    get().setAbortController(provider["abortController"] as any);
+    get().setAbortController({ abort: () => (provider as any).abort() } as any);
 
     const parentId = messages[messages.length - 1]?.id || "root";
 
@@ -451,6 +477,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       timestamp: Date.now(),
       isStreaming: true,
       modelUsed: finalModelOverride || providerConfig.model,
+      autoSwitchReason: finalAutoSwitchReason,
       parentId,
     };
     
@@ -476,7 +503,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const memories = await mem.listMemories(50);
         if (memories.length > 0) {
           memoryContext =
-            "\n\nRelevant user memories and preferences:\n" +
+            "\n\n## Stored User Memories\nThese facts were previously saved about this user. Use them to personalize your responses. Do NOT re-save facts that already exist here.\n" +
             memories.map((m) => `- ${m.content}`).join("\n");
         }
       }
@@ -484,19 +511,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       console.error("Memory error:", err);
     }
 
-    // Filter messages up to the end of the current branch
-    const systemPrompt = `You are a helpful AI assistant with access to MCP tools. Be concise and helpful. Use tools when appropriate to help the user.
-IMPORTANT RULE: Your PRIMARY tool to reference anything from the Materio course library MUST be \`SnapSearch\` (also known as vectorless search). Prioritize using SnapSearch before falling back to other search tools for course content.
-CRITICAL LIBRARY NAVIGATION: If you do not know the exact chapter or topic name, you MUST use \`ResourceLibrary\` first to list the materials for a subject. Do NOT guess chapter names in SnapSearch.
-CRITICAL WORKSHEET WORKFLOW: If the user asks to create or generate a worksheet, question bank, or sample paper, you MUST use the \`CreateWorksheetPaper\` tool AFTER gathering the required course content.
-DIAGRAMS: If the user asks you to draw a diagram (like a DFA, FSM, flowchart, mindmap, circuit, or plot), you MUST use the \`GenerateDiagramFromRequest\` tool first to get the correct format and syntax instructions before outputting any code block. Do NOT guess the syntax.
-CIRCUITS: When asked to generate electronic circuit diagrams or schematics in React, you MUST use the "react-circuit-schematics" or "tscircuit" (@tscircuit/core) libraries which are natively supported. Do NOT generate raw custom SVGs for circuits.
-CODE GENERATION: The chat interface natively sandboxes and renders React, HTML, JS, Markdown, and diagrams inline. DO NOT output boilerplate instructions like "npm install", "how to use", or "paste this in your App.tsx". Provide ONLY the code block and a very brief 1-2 sentence description.
-CRITICAL ANTI-HALLUCINATION RULES:
-- ONLY invoke tools that are explicitly provided in your tool schema. NEVER invent or hallucinate tool names.
-- If the user's request is ambiguous or you are unsure which tool to use, DO NOT guess. Ask the user for clarification.
-- If no tool is appropriate for the request, simply respond with text.
-Current personality: ${settings.personality}${memoryContext}`;
+    // ── Build system prompt from .md file + dynamic context ─────────────────
+    //
+    // The base prompt lives in src/lib/system-prompt.md — edit that file to
+    // change the AI's core behaviour. Dynamic sections (skills, memory,
+    // personality) are appended below.
+
+    // Collect active user skills (trigger: 'auto' | 'both') that match the query
+    const userSkills = settings.skills ?? [];
+    const autoSkills = userSkills.filter(s =>
+      !s.trigger || s.trigger === "auto" || s.trigger === "both"
+    );
+    const builtinMatches = userMsg
+      ? detectRelevantBuiltinSkills(userMsg.content)
+      : [];
+
+    // Build skill injection block
+    const skillBlocks: string[] = [];
+    for (const s of builtinMatches) {
+      skillBlocks.push(`<skill name="${s.name}">\n${s.content}\n</skill>`);
+    }
+    for (const s of autoSkills) {
+      if (userMsg && s.description) {
+        const haystack = `${s.name} ${s.description}`.toLowerCase();
+        const words = userMsg.content.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length > 3);
+        if (!words.some(w => haystack.includes(w))) continue;
+      }
+      skillBlocks.push(`<skill name="${s.name}">\n${s.content}\n</skill>`);
+    }
+
+    const skillContext = skillBlocks.length > 0
+      ? `\n\n## Active Skills\n${skillBlocks.join("\n\n")}`
+      : "";
+
+    const systemPrompt = `${baseSystemPrompt}\nCurrent personality: ${settings.personality}${skillContext}${memoryContext}`;
 
     let finalSystemPrompt = systemPrompt;
     
@@ -566,6 +614,25 @@ RULES FOR THE TITLE:
         }
       } catch (err) {}
     }
+
+    // Always inject client-side skill_builder tool
+    activeTools = [
+      ...activeTools,
+      {
+        name: "skill_builder",
+        description: "Save a new skill to the user's Skills library. Use this when the user asks you to create, write, or save a skill for later reuse. The skill will appear in their Settings > Skills panel and can be auto-loaded in future chats.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Skill identifier in kebab-case (e.g. 'react-expert')" },
+            description: { type: "string", description: "One-sentence description of what this skill does and when it triggers (used for auto-detection)" },
+            content: { type: "string", description: "Full SKILL.md content including YAML frontmatter (---\\nname: ...\\ndescription: ...\\n---\\n# ...)" },
+            trigger: { type: "string", enum: ["slash", "auto", "both"], description: "How the skill is activated: slash=manual /command, auto=keyword match, both=either" },
+          },
+          required: ["name", "content"],
+        },
+      },
+    ];
 
     const runTurn = async (): Promise<void> => {
       const pendingToolCalls: AIToolCall[] = [];
@@ -661,17 +728,19 @@ RULES FOR THE TITLE:
             hasError = true;
             const errMsg = err.message || "";
             if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
-              if (!modelOverride && settings.aiProvider.model !== "openrouter/free" && (settings.aiProvider.baseUrl || "").toLowerCase().includes("openrouter")) {
-                useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
-                // Remove the failed placeholder message and retry
+              if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
+                // Remove the failed placeholder message and retry silently
                 get().deleteMessage(aiMessageId);
                 setTimeout(() => {
-                  get().generateResponse(conversationId, "openrouter/free");
+                  get().generateResponse(conversationId, "openrouter/free", "Provider was capped or unavailable. Auto-switched to best alternative.");
                 }, 500);
               } else {
                 useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
                 get().deleteMessage(aiMessageId);
               }
+            } else if (errMsg.includes("400") || errMsg.includes("Bad Request")) {
+              useAlertStore.getState().addAlert("The model rejected the request. This often happens if you uploaded an image to a model that doesn't support vision. Try switching to a vision model (like GPT-4o or Claude 3.5).", "error");
+              get().deleteMessage(aiMessageId);
             } else {
               useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
               get().deleteMessage(aiMessageId);
@@ -763,6 +832,21 @@ RULES FOR THE TITLE:
                 result = await new Promise<string>((resolve) => {
                   set({ resolveUserInput: (data) => resolve(JSON.stringify(data)) });
                 });
+              } else if (tc.function.name === "skill_builder") {
+                // Client-side tool: saves a skill directly to user settings
+                try {
+                  const { name, description, content, trigger } = finalArgs as any;
+                  if (!name || !content) throw new Error("skill_builder requires 'name' and 'content' fields");
+                  useSettingsStore.getState().addSkill({
+                    name: String(name),
+                    description: description ? String(description) : undefined,
+                    content: String(content),
+                    trigger: (trigger as any) || "both",
+                  });
+                  result = JSON.stringify({ success: true, message: `Skill "${name}" has been saved to your Skills library.` });
+                } catch (e: any) {
+                  result = JSON.stringify({ success: false, error: e.message });
+                }
               } else {
                 result = await mcpClient.callTool(tc.function.name, finalArgs);
               }
@@ -796,20 +880,22 @@ RULES FOR THE TITLE:
           fullResponse += "\n\n";
           await runTurn();
         }
-      } catch (err: any) {
+       } catch (err: any) {
          hasError = true;
          const errMsg = err.message || "";
          if (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("rate limit") || errMsg.includes("404")) {
-           if (!modelOverride && settings.aiProvider.model !== "openrouter/free" && (settings.aiProvider.baseUrl || "").toLowerCase().includes("openrouter")) {
-             useAlertStore.getState().addAlert("Provider overloaded or unavailable. Retrying with a fallback model...", "warning");
+           if (!modelOverride && settings.aiProvider.model !== "openrouter/free") {
              get().deleteMessage(aiMessageId);
              setTimeout(() => {
-               get().generateResponse(conversationId, "openrouter/free");
+               get().generateResponse(conversationId, "openrouter/free", "Provider was capped or unavailable. Auto-switched to best alternative.");
              }, 500);
            } else {
              useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
              get().deleteMessage(aiMessageId);
            }
+         } else if (errMsg.includes("400") || errMsg.includes("Bad Request")) {
+           useAlertStore.getState().addAlert("The model rejected the request. This often happens if you uploaded an image to a model that doesn't support vision. Try switching to a vision model (like GPT-4o or Claude 3.5).", "error");
+           get().deleteMessage(aiMessageId);
          } else {
            useAlertStore.getState().addAlert("We couldn't connect to the AI Provider. Please check your network connection and try again.", "error");
            get().deleteMessage(aiMessageId);
@@ -824,15 +910,20 @@ RULES FOR THE TITLE:
     finalContent = finalContent.replace(/<chat_title>.*?<\/chat_title>\s*/gs, "");
     
     if (!hasError) {
-      // Only overwrite and save if there wasn't an error. If there was an error, the message was already deleted.
-      const currentMessage = get().messages.find(m => m.id === aiMessageId);
-      if (currentMessage) {
-        if (get().activeConversationId === conversationId) {
-          updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
-        } else {
-          const conv = get().conversations.find(c => c.id === conversationId);
-          if (conv && !conv.isTemporary) {
-            saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+      if (!finalContent.trim() && toolCallMap.size === 0) {
+        useAlertStore.getState().addAlert("The AI model returned an empty response. It might be overloaded or unable to process the prompt.", "error");
+        get().deleteMessage(aiMessageId);
+      } else {
+        // Only overwrite and save if there wasn't an error. If there was an error, the message was already deleted.
+        const currentMessage = get().messages.find(m => m.id === aiMessageId);
+        if (currentMessage) {
+          if (get().activeConversationId === conversationId) {
+            updateMessage(aiMessageId, { isStreaming: false, content: finalContent });
+          } else {
+            const conv = get().conversations.find(c => c.id === conversationId);
+            if (conv && !conv.isTemporary) {
+              saveMessage(conversationId, { ...newMsg, content: finalContent, isStreaming: false, toolCalls: Array.from(toolCallMap.values()) }).catch(console.error);
+            }
           }
         }
       }

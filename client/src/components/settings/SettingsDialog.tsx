@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { WandSparkles } from "lucide-react";
 import { ModelSelector } from "@/components/ui/ModelSelector";
+import { SkillsTab } from "@/components/settings/SkillsTab";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -87,11 +88,17 @@ export function SettingsDialog({
         apiKey: settings.aiProvider.apiKey,
         model: settings.aiProvider.model,
       });
-      setActiveTab(defaultTab);
-      setMcpView("list");
-      setMobileView(defaultMobileView);
     }
-  }, [open, settings, defaultTab, defaultMobileView]);
+  }, [open, settings.aiProvider.providerId, settings.aiProvider.baseUrl, settings.aiProvider.apiKey, settings.aiProvider.model]);
+
+  // Sync tab with props when parent explicitly requests a change
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab]);
+
+  useEffect(() => {
+    setMobileView(defaultMobileView);
+  }, [defaultMobileView]);
 
   // Load memories when Memory tab is active
   const loadMemories = useCallback(async () => {
@@ -157,16 +164,20 @@ export function SettingsDialog({
 
   const handleProviderSwitch = (id: ProviderId) => {
     const preset = getPreset(id);
-    setLocalSettings((s) => {
-      const savedKey = settings.apiKeys[id];
-      return {
-        ...s,
-        providerId: id,
-        baseUrl: preset.baseUrl,
-        model: preset.defaultModel,
-        apiKey: savedKey || (s.providerId === id ? s.apiKey : ""),
-      };
-    });
+    const savedKey = settings.apiKeys[id] || (settings.aiProvider.providerId === id ? settings.aiProvider.apiKey : "");
+    const newConfig = {
+      providerId: id,
+      baseUrl: preset.baseUrl,
+      model: preset.defaultModel,
+      apiKey: savedKey,
+    };
+    setLocalSettings(newConfig);
+    settings.setAIProvider(newConfig as any);
+  };
+
+  const handleModelChange = (m: string) => {
+    setLocalSettings((s) => ({ ...s, model: m }));
+    settings.setAIProvider({ providerId: localSettings.providerId as ProviderId, baseUrl: localSettings.baseUrl, apiKey: localSettings.apiKey, model: m });
   };
 
   return (
@@ -247,6 +258,11 @@ export function SettingsDialog({
               Skills
             </button>
           </div>
+          <div className="mt-auto px-4 pb-2 pt-6">
+            <div className="text-[10px] text-muted-foreground/50 font-medium text-center sm:text-left">
+              v1.2.4 (Beta) • Build 23062026-1719150
+            </div>
+          </div>
         </div>
 
         {/* Main Content Area */}
@@ -262,13 +278,22 @@ export function SettingsDialog({
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </button>
-            <h3 className="text-xl font-semibold capitalize tracking-tight">
+            <h3 className="text-xl font-semibold capitalize tracking-tight flex-1">
               {activeTab === 'ai' ? 'AI Provider' : activeTab === 'mcp' ? 'Connectors' : activeTab === 'memory' ? 'Memory' : activeTab === 'skills' ? 'Skills' : 'Personalization'}
             </h3>
+            {activeTab === 'mcp' && mcpView === 'list' && (
+              <button
+                onClick={() => setMcpView('add-custom')}
+                className="p-2 mr-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                title="Add Connector"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              </button>
+            )}
           </div>
 
           <ScrollArea className="flex-1 px-8 py-6">
-            <div className="max-w-2xl">
+            <div className="max-w-2xl px-1 py-1">
               {/* ═══════════════  AI Provider Tab  ═══════════════ */}
               {activeTab === 'ai' && (
                 <div className="space-y-6">
@@ -283,7 +308,7 @@ export function SettingsDialog({
                       onClick={() => settings.setShowOnlyFreeModels(!settings.showOnlyFreeModels)}
                       className={cn(
                         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                        settings.showOnlyFreeModels ? 'bg-orange-500' : 'bg-muted-foreground/30'
+                        settings.showOnlyFreeModels ? 'bg-brand' : 'bg-muted-foreground/30'
                       )}
                     >
                       <span
@@ -353,7 +378,7 @@ export function SettingsDialog({
                       <>
                         <ModelSelector
                           value={localSettings.model}
-                          onChange={(m) => setLocalSettings((s) => ({ ...s, model: m }))}
+                          onChange={handleModelChange}
                           providerId={localSettings.providerId}
                           models={geminiModels.map(m => m.name)}
                         />
@@ -372,7 +397,7 @@ export function SettingsDialog({
                       <>
                         <ModelSelector
                           value={localSettings.model}
-                          onChange={(m) => setLocalSettings((s) => ({ ...s, model: m }))}
+                          onChange={handleModelChange}
                           providerId={localSettings.providerId}
                         />
                         {!isFreeBuiltIn && !currentPreset.models.includes(localSettings.model) && (
@@ -617,20 +642,13 @@ export function SettingsDialog({
                         );
                       })}
 
-                      <Button 
-                        variant="outline" 
-                        className="w-full border-dashed py-8 flex flex-col items-center gap-2 hover:border-primary hover:bg-accent/50"
-                        onClick={() => setMcpView('add-custom')}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                        <span className="font-semibold text-foreground">Add Custom Connector</span>
-                      </Button>
+
                     </div>
                   ) : mcpView === 'add-custom' ? (
                     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                       <button onClick={() => setMcpView('list')} className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                        Back to servers
+                        Back
                       </button>
 
                       <div>
@@ -855,7 +873,7 @@ export function SettingsDialog({
                         className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                        Back to servers
+                        Back
                       </button>
                       
                       {selectedConnectorId === 'main' ? (
@@ -918,40 +936,38 @@ export function SettingsDialog({
                           if (!conn) return <div>Connector not found.</div>;
                           return (
                             <>
-                              <div className="flex items-start justify-between gap-4 pb-2">
-                                <div className="flex items-center gap-5 min-w-0">
-                                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-muted overflow-hidden shadow-sm">
+                              <div className="space-y-3 pb-2">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted overflow-hidden shadow-sm">
                                     {conn.icon ? (
                                       <img src={conn.icon} alt={conn.name} className="h-full w-full object-cover" />
                                     ) : (
-                                      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
                                     )}
                                   </div>
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h2 className="text-2xl font-bold truncate">{conn.name}</h2>
-                                      {conn.authType === "oauth" && !conn.oauthToken && (
-                                        <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold">Requires Auth</span>
-                                      )}
-                                    </div>
-                                    {conn.description && (
-                                      <p className="text-sm text-muted-foreground mt-1">
-                                        {conn.description}
-                                      </p>
+                                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                                    <h2 className="text-xl sm:text-2xl font-bold truncate">{conn.name}</h2>
+                                    {conn.authType === "oauth" && !conn.oauthToken && (
+                                      <span className="text-xs bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded-full font-semibold shrink-0">Requires Auth</span>
                                     )}
                                   </div>
+                                  <button
+                                    className="p-2 rounded-lg text-red-500 hover:text-red-600 hover:bg-red-500/10 transition-colors shrink-0"
+                                    title="Uninstall"
+                                    onClick={() => {
+                                      settings.deleteCustomConnector(conn.id);
+                                      setMcpView('list');
+                                      setSelectedConnectorId(null);
+                                    }}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                  </button>
                                 </div>
-                                <Button 
-                                  variant="outline" 
-                                  className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/30 shrink-0"
-                                  onClick={() => {
-                                    settings.deleteCustomConnector(conn.id);
-                                    setMcpView('list');
-                                    setSelectedConnectorId(null);
-                                  }}
-                                >
-                                  Uninstall
-                                </Button>
+                                {conn.description && (
+                                  <p className="text-sm text-muted-foreground leading-relaxed">
+                                    {conn.description}
+                                  </p>
+                                )}
                               </div>
 
                               <div className="space-y-4 mt-6">
@@ -1198,66 +1214,7 @@ export function SettingsDialog({
 
               {/* ═══════════════  Skills Tab  ═══════════════ */}
               {activeTab === 'skills' && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <h4 className="text-sm font-medium">Your Skills</h4>
-                      <p className="text-xs text-muted-foreground">Manage custom skills that provide specialized context to the AI.</p>
-                    </div>
-                    <Button onClick={() => setIsAddingSkill(!isAddingSkill)} variant="outline" size="sm">
-                      {isAddingSkill ? "Cancel" : "Add Skill"}
-                    </Button>
-                  </div>
-
-                  {isAddingSkill && (
-                    <div className="space-y-3 rounded-xl border border-border p-4 bg-muted/10 animate-in fade-in slide-in-from-top-2">
-                      <Input 
-                        placeholder="Skill Name (e.g. Next.js Expert)" 
-                        value={newSkillName} 
-                        onChange={(e) => setNewSkillName(e.target.value)} 
-                        className="bg-background"
-                      />
-                      <Textarea 
-                        placeholder="Paste SKILL.md content here..." 
-                        value={newSkillContent} 
-                        onChange={(e) => setNewSkillContent(e.target.value)} 
-                        className="min-h-[200px] font-mono text-xs bg-background" 
-                      />
-                      <Button 
-                        disabled={!newSkillName.trim() || !newSkillContent.trim()}
-                        onClick={() => { 
-                          settings.addSkill({name: newSkillName.trim(), content: newSkillContent.trim()}); 
-                          setNewSkillName("");
-                          setNewSkillContent("");
-                          setIsAddingSkill(false); 
-                        }}
-                      >
-                        Save Skill
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {settings.skills.length === 0 && !isAddingSkill && (
-                      <div className="py-10 text-center rounded-xl border border-dashed border-border bg-muted/10">
-                        <p className="text-sm text-muted-foreground">No skills added yet.</p>
-                      </div>
-                    )}
-                    {settings.skills.map(skill => (
-                      <div key={skill.id} className="group relative rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors shadow-sm">
-                        <h5 className="font-medium text-sm text-foreground">{skill.name}</h5>
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{skill.content}</p>
-                        <button
-                          className="absolute right-3 top-3 hidden rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block transition-colors"
-                          onClick={() => settings.deleteSkill(skill.id)}
-                          title="Delete skill"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <SkillsTab settings={settings} />
               )}
             </div>
           </ScrollArea>

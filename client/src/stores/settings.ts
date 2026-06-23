@@ -27,6 +27,8 @@ interface SettingsStore extends Settings {
   updateCustomConnector: (id: string, updates: Partial<CustomConnector>) => void;
   deleteCustomConnector: (id: string) => void;
   syncCustomConnectors: (token: string) => Promise<void>;
+  syncSkills: (token: string) => Promise<void>;
+  syncApiKeys: (token: string) => Promise<void>;
 }
 
 const defaultSettings: Settings & { mcpEnvironment: "production" | "development", apiKeys: Record<string, string> } = {
@@ -60,6 +62,18 @@ export const useSettingsStore = create<SettingsStore>()(
           const newApiKeys = { ...s.apiKeys };
           if (config.apiKey !== undefined) {
             newApiKeys[newAiProvider.providerId] = config.apiKey;
+            
+            // Sync to DB
+            import("./auth").then((authModule) => {
+              const token = authModule.useAuthStore.getState().token;
+              if (token && config.apiKey) {
+                fetch(`${API_URL}/api/db/api-keys`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                  body: JSON.stringify({ providerId: newAiProvider.providerId, apiKey: config.apiKey })
+                }).catch(console.error);
+              }
+            });
           }
           return { aiProvider: newAiProvider, apiKeys: newApiKeys };
         }),
@@ -78,32 +92,80 @@ export const useSettingsStore = create<SettingsStore>()(
         });
       },
       setTheme: (theme) => {
+        const updateMeta = (isDark: boolean) => {
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', isDark ? '#1f1f1e' : '#fdfdfc');
+        };
         if (theme === "system") {
           const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           document.documentElement.classList.toggle("dark", isDark);
           document.documentElement.classList.toggle("light", !isDark);
+          updateMeta(isDark);
         } else {
           document.documentElement.classList.toggle("dark", theme === "dark");
           document.documentElement.classList.toggle("light", theme === "light");
+          updateMeta(theme === "dark");
         }
         set({ theme });
       },
       setPersonality: (personality) => set({ personality }),
       setCustomInstructions: (instructions) => set({ customInstructions: instructions }),
       setExaSearchEnabled: (enabled) => set({ exaSearchEnabled: enabled }),
-      addSkill: (skillData) => set((state) => ({
-        skills: [...state.skills, { 
+      addSkill: (skillData) => {
+        const id = crypto.randomUUID();
+        const newSkill = { 
           ...skillData, 
-          id: crypto.randomUUID(), 
-          createdAt: Date.now() 
-        }]
-      })),
-      updateSkill: (id, updates) => set((state) => ({
-        skills: state.skills.map((s) => s.id === id ? { ...s, ...updates } : s)
-      })),
-      deleteSkill: (id) => set((state) => ({
-        skills: state.skills.filter((s) => s.id !== id)
-      })),
+          id, 
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        set((state) => ({ skills: [...state.skills, newSkill] }));
+        
+        import("./auth").then((authModule) => {
+          const token = authModule.useAuthStore.getState().token;
+          if (token) {
+            fetch(`${API_URL}/api/db/skills`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+              body: JSON.stringify(newSkill)
+            }).catch(console.error);
+          }
+        });
+      },
+      updateSkill: (id, updates) => {
+        set((state) => {
+          const updatedSkills = state.skills.map((s) => {
+            if (s.id === id) {
+              const updated = { ...s, ...updates, updatedAt: Date.now() };
+              import("./auth").then((authModule) => {
+                const token = authModule.useAuthStore.getState().token;
+                if (token) {
+                  fetch(`${API_URL}/api/db/skills`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                    body: JSON.stringify(updated)
+                  }).catch(console.error);
+                }
+              });
+              return updated;
+            }
+            return s;
+          });
+          return { skills: updatedSkills };
+        });
+      },
+      deleteSkill: (id) => {
+        set((state) => ({ skills: state.skills.filter((s) => s.id !== id) }));
+        import("./auth").then((authModule) => {
+          const token = authModule.useAuthStore.getState().token;
+          if (token) {
+            fetch(`${API_URL}/api/db/skills/${id}`, {
+              method: "DELETE",
+              headers: { "Authorization": `Bearer ${token}` }
+            }).catch(console.error);
+          }
+        });
+      },
       addCustomNvidiaModel: (model) => set((state) => {
         const filtered = (state.customNvidiaModels || []).filter(m => m.slug !== model.slug);
         return {
@@ -266,6 +328,57 @@ export const useSettingsStore = create<SettingsStore>()(
         } catch (err) {
           console.error("Failed to sync custom connectors:", err);
         }
+      },
+      syncSkills: async (token) => {
+        try {
+          const res = await fetch(`${API_URL}/api/db/skills`, { headers: { "Authorization": `Bearer ${token}` } });
+          if (res.ok) {
+            const serverSkills: Skill[] = await res.json();
+            set((state) => {
+              const localSkills = state.skills || [];
+              const merged = [...serverSkills];
+              const localOnly = localSkills.filter(ls => !serverSkills.some(ss => ss.id === ls.id));
+              if (localOnly.length > 0) {
+                localOnly.forEach(async (ls) => {
+                  fetch(`${API_URL}/api/db/skills`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                    body: JSON.stringify(ls)
+                  }).catch(console.error);
+                });
+                merged.push(...localOnly);
+              }
+              return { skills: merged };
+            });
+          }
+        } catch (err) { console.error("Failed to sync skills", err); }
+      },
+      syncApiKeys: async (token) => {
+        try {
+          const res = await fetch(`${API_URL}/api/db/api-keys`, { headers: { "Authorization": `Bearer ${token}` } });
+          if (res.ok) {
+            const serverKeys = await res.json();
+            set((state) => {
+              const merged = { ...state.apiKeys };
+              serverKeys.forEach((sk: any) => {
+                if (sk.providerId && sk.apiKey) merged[sk.providerId] = sk.apiKey;
+              });
+              
+              // Upload any local keys missing from server
+              Object.entries(merged).forEach(([providerId, apiKey]) => {
+                if (!serverKeys.some((sk: any) => sk.providerId === providerId)) {
+                  fetch(`${API_URL}/api/db/api-keys`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+                    body: JSON.stringify({ providerId, apiKey })
+                  }).catch(console.error);
+                }
+              });
+              
+              return { apiKeys: merged };
+            });
+          }
+        } catch (err) { console.error("Failed to sync API keys", err); }
       },
     }),
     {

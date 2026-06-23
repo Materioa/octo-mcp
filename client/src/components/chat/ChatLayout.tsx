@@ -133,7 +133,9 @@ export function ChatLayout() {
     }
   }, [sidebarOpen]);
 
-  const settings = useSettingsStore();
+  const mcpEnvironment = useSettingsStore(s => s.mcpEnvironment);
+  const customConnectors = useSettingsStore(s => s.customConnectors);
+  const settings = useSettingsStore(); // keep for other usages
 
   // Connect to MCP server
   useEffect(() => {
@@ -162,7 +164,7 @@ export function ChatLayout() {
     };
     connect();
     return () => { active = false; };
-  }, [settings.mcpEnvironment, settings.customConnectors]);
+  }, [mcpEnvironment, customConnectors]);
 
   const handleRetry = async (msgId: string, modelOverride: string) => {
     if (!activeConversationId || isSending) return;
@@ -340,8 +342,8 @@ export function ChatLayout() {
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           onOpenSettings={(tab, view) => {
-            setSettingsTab(tab || "ai");
-            setSettingsMobileView(view || (tab ? "detail" : "list"));
+            if (tab) setSettingsTab(tab);
+            if (view) setSettingsMobileView(view);
             setSettingsOpen(true);
           }}
         />
@@ -556,7 +558,7 @@ export function ChatLayout() {
           ) : (
             <div className="flex flex-1 flex-col px-2 sm:px-4 md:items-center md:justify-center">
               <div className="flex-1 flex flex-col items-center justify-center md:flex-none">
-                <div className="mb-8 text-center">
+                <div className="mb-8 text-center select-none">
                   <h1 className="text-3xl font-semibold tracking-tight text-foreground/90">
                     {greeting}
                   </h1>

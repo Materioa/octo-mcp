@@ -64,7 +64,7 @@ export class MemoryManager {
       });
       return (result.results ?? []).map((r: any, i: number) => ({
         id: r.id ?? `mem-${i}`,
-        content: r.summary ?? r.content ?? r.text ?? r.title ?? "",
+        content: r.content ?? r.text ?? r.title ?? r.summary ?? "",
         metadata: r.metadata,
         createdAt: Date.now(),
       }));
@@ -84,7 +84,7 @@ export class MemoryManager {
       });
       return (result.memories ?? result.documents ?? []).map((d: any) => ({
         id: d.id,
-        content: d.summary ?? d.content ?? d.text ?? d.title ?? "",
+        content: d.content ?? d.text ?? d.title ?? d.summary ?? "",
         metadata: d.metadata,
         createdAt: d.createdAt ? new Date(d.createdAt).getTime() : Date.now(),
       }));

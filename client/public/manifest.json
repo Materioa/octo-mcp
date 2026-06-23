@@ -1,0 +1,21 @@
+{
+  "name": "Thinklet",
+  "short_name": "Thinklet",
+  "description": "AI-powered chat with MCP tools",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1f1f1e",
+  "theme_color": "#1f1f1e",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ const SUPERMEMORY_API = "https://api.supermemory.ai/v3";
 export const memoryTool = {
   name: "save_to_memory",
   description: `Save important information about the user, their preferences, or the conversation to long-term memory.
-Use this ONLY for significant facts or explicitly requested saves (e.g. "remember that I use Windows", or "save this snippet").`,
+You MUST use this tool AUTONOMOUSLY whenever you notice any fact, preference, or piece of information about the user (e.g., "User likes pizza", "User is on Windows", "User works at Acme Corp"). Don't wait for the user to ask you to save it. If the user shares a personal preference, a habit, or a detail about themselves, SAVE IT.`,
   inputSchema: {
     content: z.string().describe("The content to save to memory."),
     containerTag: z.string().optional().describe("Internal tag for the user. Injected by the client automatically."),

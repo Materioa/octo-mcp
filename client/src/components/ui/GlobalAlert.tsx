@@ -8,7 +8,7 @@ export function GlobalAlert() {
   if (alerts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-md w-full">
+    <div className="fixed top-4 left-4 right-4 md:left-auto z-[100] flex flex-col gap-2 md:max-w-md md:w-full">
       {alerts.map((alert) => (
         <div
           key={alert.id}

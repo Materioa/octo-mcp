@@ -74,6 +74,7 @@ const MessageSchema = new mongoose.Schema({
   result: { type: String },
   rating: { type: String, enum: ["like", "dislike", null], default: null },
   modelUsed: { type: String },
+  autoSwitchReason: { type: String },
   parentId: { type: String, index: true },
 });
 
@@ -102,3 +103,27 @@ CustomConnectorSchema.index({ userId: 1, id: 1 }, { unique: true });
 
 export const CustomConnector = mongoose.model("CustomConnector", CustomConnectorSchema);
 
+const SkillSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  userId: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  description: { type: String },
+  content: { type: String, required: true },
+  files: { type: mongoose.Schema.Types.Mixed, default: [] }, // Array of { path, content }
+  trigger: { type: String, enum: ["slash", "auto", "both"], default: "both" },
+  createdAt: { type: Number, default: Date.now },
+  updatedAt: { type: Number, default: Date.now },
+});
+
+SkillSchema.index({ userId: 1, id: 1 }, { unique: true });
+export const Skill = mongoose.model("Skill", SkillSchema);
+
+const ApiKeySchema = new mongoose.Schema({
+  userId: { type: String, required: true, index: true },
+  providerId: { type: String, required: true },
+  apiKey: { type: String, required: true },
+  updatedAt: { type: Number, default: Date.now },
+});
+
+ApiKeySchema.index({ userId: 1, providerId: 1 }, { unique: true });
+export const ApiKey = mongoose.model("ApiKey", ApiKeySchema);

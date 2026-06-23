@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSettingsStore } from "@/stores/settings";
+import { BUILTIN_SKILLS } from "@/lib/skills";
 import { parseFileContent, generatePdfPreview } from "@/lib/file-parser";
 import { uploadFileToSupabase } from "@/lib/supabase";
 import { getModelCounterpart, getAvailableModels } from "@/lib/providers/presets";
@@ -42,6 +43,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   const [value, setValue] = useState(initialValue || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isComposing, setIsComposing] = useState(false);
+  const [pendingSkills, setPendingSkills] = useState<{id: string; name: string; content: string}[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -117,14 +119,17 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
     // 2. Check for / command anywhere in the input (skills list)
     const slashMatch = textBeforeCaret.match(/\/(\w*)$/);
-    if (slashMatch && settings.skills && settings.skills.length > 0) {
-      const q = (slashMatch[1] || "").toLowerCase();
-      const filtered = settings.skills.filter(s => s.name.toLowerCase().includes(q));
-      if (filtered.length > 0) {
-        setSuggestionType("prompt");
-        setSuggestions(filtered);
-        setHighlightedIndex(0);
-        return;
+    if (slashMatch) {
+      const allSkills = [...BUILTIN_SKILLS, ...(settings.skills || [])];
+      if (allSkills.length > 0) {
+        const q = (slashMatch[1] || "").toLowerCase();
+        const filtered = allSkills.filter(s => s.name.toLowerCase().includes(q));
+        if (filtered.length > 0) {
+          setSuggestionType("prompt");
+          setSuggestions(filtered);
+          setHighlightedIndex(0);
+          return;
+        }
       }
     }
 
@@ -159,14 +164,18 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     } else if (suggestionType === "prompt") {
       const slashIndex = textBeforeCaret.lastIndexOf("/");
       if (slashIndex !== -1) {
-        const skillText = `<skill name="${item.name}">\n${item.content}\n</skill>\n`;
-        const newText = textBeforeCaret.slice(0, slashIndex) + skillText + textAfterCaret;
+        // Remove the /command from the input and attach skill as a pill
+        const newText = textBeforeCaret.slice(0, slashIndex) + textAfterCaret;
         setValue(newText);
-        const newCaretPos = slashIndex + skillText.length;
+        // Add to pending skills (deduplicate by id)
+        setPendingSkills(prev => {
+          if (prev.find(s => s.id === item.id)) return prev;
+          return [...prev, { id: item.id, name: item.name, content: item.content }];
+        });
         setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.focus();
-            textareaRef.current.setSelectionRange(newCaretPos, newCaretPos);
+            textareaRef.current.setSelectionRange(slashIndex, slashIndex);
           }
         }, 50);
       }
@@ -252,6 +261,15 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
     if (!trimmed && attachments.length === 0) return;
     if (disabled) return;
 
+    // Build final message content: inject any pending skills as XML blocks
+    let finalContent = trimmed;
+    if (pendingSkills.length > 0) {
+      const skillBlocks = pendingSkills
+        .map(s => `<skill name="${s.name}">\n${s.content}\n</skill>`)
+        .join("\n");
+      finalContent = `${skillBlocks}\n\n${trimmed}`;
+    }
+
     let uploadedAttachments = undefined;
 
     if (attachments.length > 0) {
@@ -277,14 +295,15 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
       }
     }
 
-    onSend(trimmed, uploadedAttachments);
+    onSend(finalContent, uploadedAttachments);
     setValue("");
+    setPendingSkills([]);
     setAttachments([]);
     clearDraftAttachments(activeConversationId);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [value, disabled, attachments, onSend]);
+  }, [value, disabled, attachments, pendingSkills, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (suggestionType && suggestions.length > 0) {
@@ -420,10 +439,10 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             You're out of messages for today, come back tomorrow at {rateLimitResetTime}.
           </div>
         )}
-        <div className={cn("border border-input bg-input-bg shadow-sm relative", rateLimitResetTime ? "rounded-b-xl" : "rounded-2xl", isIncognito && "border-dotted border-[2px]")}>
+        <div className={cn("border border-input bg-input-bg shadow-sm relative", rateLimitResetTime ? "rounded-b-2xl" : "rounded-[24px]", isIncognito && "border-dotted border-[2px]")}>
           {/* Autocomplete Suggestions Menu */}
           {suggestionType && suggestions.length > 0 && (
-            <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 max-h-56 overflow-y-auto bg-popover text-popover-foreground border border-border rounded-xl shadow-xl z-[110] p-1 flex flex-col gap-0.5">
+            <div className="absolute bottom-full left-0 mb-2 w-80 sm:w-96 max-h-56 overflow-y-auto bg-popover text-popover-foreground border border-border rounded-xl shadow-xl z-40 p-1 flex flex-col gap-0.5">
               {suggestions.map((item, idx) => {
                 const highlighted = idx === highlightedIndex;
                 return (
@@ -515,7 +534,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             placeholder="Write a message…"
             disabled={disabled}
             rows={1}
-            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[15px] leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            className={`w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[15px] leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${value.length === 0 ? 'select-none' : 'select-text'}`}
             style={{ minHeight: "44px", maxHeight: "160px" }}
           />
 
@@ -527,7 +546,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className={`flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${isParsing ? 'animate-pulse' : ''}`}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${isParsing ? 'animate-pulse' : ''}`}
                   title="Tools & Attachments"
                   disabled={isParsing}
                 >
@@ -565,12 +584,12 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
                     Web search
                   </div>
-                  <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${settings.exaSearchEnabled ? 'bg-orange-500' : 'bg-muted-foreground/30'}`}>
+                  <div className={`w-8 h-4 rounded-full transition-colors flex items-center px-0.5 ${settings.exaSearchEnabled ? 'bg-brand' : 'bg-muted-foreground/30'}`}>
                     <div className={`w-3 h-3 rounded-full bg-background transition-transform ${settings.exaSearchEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
                   </div>
                 </DropdownMenuItem>
 
-                {settings.skills.length > 0 && (
+                {([...BUILTIN_SKILLS, ...(settings.skills || [])]).length > 0 && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuSub>
@@ -579,12 +598,21 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
                         Load Skill
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent>
-                        {settings.skills.map((skill) => (
+                        {([...BUILTIN_SKILLS, ...(settings.skills || [])]).map((skill) => (
                           <DropdownMenuItem
                             key={skill.id}
-                            onClick={() => setValue(prev => prev + (prev.trim() ? '\n\n' : '') + `<skill name="${skill.name}">\n${skill.content}\n</skill>\n`)}
+                            onClick={() => {
+                              setPendingSkills(prev => {
+                                if (prev.find(s => s.id === skill.id)) return prev;
+                                return [...prev, { id: skill.id, name: skill.name, content: skill.content }];
+                              });
+                              setTimeout(() => textareaRef.current?.focus(), 50);
+                            }}
                           >
-                            {skill.name}
+                            <span className="flex-1">{skill.name}</span>
+                            {pendingSkills.find(s => s.id === skill.id) && (
+                              <span className="ml-2 text-xs text-primary font-semibold">Active</span>
+                            )}
                           </DropdownMenuItem>
                         ))}
                       </DropdownMenuSubContent>
@@ -640,6 +668,19 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* Pending Skill Pills */}
+            {pendingSkills.length > 0 && pendingSkills.map(skill => (
+              <div key={skill.id} className="flex items-center gap-1.5 bg-muted text-foreground text-xs font-medium px-2.5 py-1 rounded-md border border-border shadow-sm animate-in fade-in zoom-in-95 duration-200">
+                <span>{skill.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setPendingSkills(prev => prev.filter(s => s.id !== skill.id))}
+                  className="hover:bg-destructive/10 rounded-sm p-0.5 text-muted-foreground hover:text-destructive transition-colors ml-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
             {/* Pinned MCP Pill */}
             {pinnedMcp && (
               <div className="flex items-center gap-1.5 bg-accent/70 hover:bg-accent text-foreground text-xs font-semibold px-2.5 py-1 rounded-full border border-border shadow-sm animate-in fade-in zoom-in-95 duration-200">
@@ -716,7 +757,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
                 <button
                   type="button"
                   onClick={onStop}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive text-white transition-colors hover:opacity-90"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-destructive text-white transition-colors hover:opacity-90"
                   title="Stop generating"
                 >
                   <svg
@@ -738,7 +779,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
                   type="button"
                   onClick={handleSend}
                   disabled={disabled || !value.trim()}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Send"
                 >
                   <svg

@@ -48,7 +48,7 @@ import {
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
 import { lookupExternalSources } from "./services/external-lookup.js";
 import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
-import { connectDB, Conversation, Message, CustomConnector } from "./db.js";
+import { connectDB, Conversation, Message, CustomConnector, Skill, ApiKey } from "./db.js";
 import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.js";
 
 const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
@@ -170,8 +170,8 @@ async function runStdio(): Promise<void> {
 // ──── Transport: Streamable HTTP (for remote MCP connectors) ────
 export const app = express();
 
-  // ── Parse JSON bodies for MCP JSON-RPC requests ──
-  app.use(express.json());
+  // ── Parse JSON bodies for MCP JSON-RPC requests & chat completions ──
+  app.use(express.json({ limit: "50mb" }));
 
   // ── Lazy DB connect for Vercel serverless (no persistent process) ──
   app.use(async (_req, res, next) => {
@@ -1260,6 +1260,69 @@ export const app = express();
         return res.status(404).json({ error: "Connector not found" });
       }
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Skills Routes ──
+  app.get("/api/db/skills", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const skills = await Skill.find({ userId: req.user.id }).lean();
+      res.json(skills);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/skills", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const skill = req.body;
+      const updated = await Skill.findOneAndUpdate(
+        { id: skill.id, userId: req.user.id },
+        { ...skill, userId: req.user.id },
+        { upsert: true, new: true, returnDocument: 'after' }
+      ).lean();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/db/skills/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const deleted = await Skill.findOneAndDelete({ id: req.params.id, userId: req.user.id });
+      if (!deleted) return res.status(404).json({ error: "Skill not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── API Keys Routes ──
+  app.get("/api/db/api-keys", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const keys = await ApiKey.find({ userId: req.user.id }).lean();
+      res.json(keys);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/db/api-keys", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const { providerId, apiKey } = req.body;
+      const updated = await ApiKey.findOneAndUpdate(
+        { providerId, userId: req.user.id },
+        { providerId, apiKey, userId: req.user.id, updatedAt: Date.now() },
+        { upsert: true, new: true, returnDocument: 'after' }
+      ).lean();
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -111,13 +111,13 @@ const ListSemestersSchema = {} as const;
 const ListSubjectsSchema = {
   semester: z
     .string()
-    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6"'),
+    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6","7"'),
 };
 
 const ListResourcesSchema = {
   semester: z
     .string()
-    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6"'),
+    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6","7"'),
   subject: z
     .string()
     .describe(
