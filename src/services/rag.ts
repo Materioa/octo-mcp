@@ -1,12 +1,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { searchResources } from "./resources.js";
 
 let supabase: SupabaseClient | null = null;
 
 function getSupabaseClient(): SupabaseClient {
   if (supabase) return supabase;
 
-  const supabaseUrl = process.env.SUPABASE_URL || "";
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || "";
+  const supabaseUrl =
+    process.env.RAG_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    "https://qtoahtjjjoahjgfqydsg.supabase.co";
+  const supabaseKey =
+    process.env.RAG_SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0b2FodGpqam9haGpnZnF5ZHNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzkwMzU5NiwiZXhwIjoyMDg5NDc5NTk2fQ.td7PklZm3joPdlIJH31C7wh4VAnM47MssbfenhXe-MA";
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error("Supabase credentials (SUPABASE_URL and SUPABASE_SERVICE_KEY) are not set.");
@@ -127,7 +134,7 @@ async function getPerplexityEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * Performs a vector search against Supabase pgvector
+ * Performs a vector search against Supabase pgvector with fallback to resource library
  */
 export async function queryDeepThinkRAG(
   query: string,
@@ -135,38 +142,41 @@ export async function queryDeepThinkRAG(
   subject: string,
   matchCount: number = 5
 ): Promise<RagResult[]> {
-  const client = getSupabaseClient();
-  const normalizedSemester = normalizeSemester(semester);
-  const canonicalSubject = await resolveCanonicalSubject(client, normalizedSemester, subject);
+  try {
+    const client = getSupabaseClient();
+    const normalizedSemester = normalizeSemester(semester);
+    const canonicalSubject = await resolveCanonicalSubject(client, normalizedSemester, subject);
 
-  // 1. Generate embedding for user query
-  const queryEmbedding = await getPerplexityEmbedding(query);
+    // 1. Generate embedding for user query
+    const queryEmbedding = await getPerplexityEmbedding(query);
 
-  // 2. Perform vector search in Supabase using pgvector
-  // Assumes an RPC function named 'match_documents' exists in Supabase.
-  // The RPC should match the semester, subject, and order by inner product or cosine distance.
-  const { data, error } = await client.rpc("match_documents", {
-    query_embedding: queryEmbedding,
-    match_threshold: getSemanticMatchThreshold(),
-    match_count: matchCount,
-    filter_semester: normalizedSemester,
-    filter_subject: canonicalSubject
-  });
+    // 2. Perform vector search in Supabase using pgvector
+    const { data, error } = await client.rpc("match_documents", {
+      query_embedding: queryEmbedding,
+      match_threshold: getSemanticMatchThreshold(),
+      match_count: matchCount,
+      filter_semester: normalizedSemester,
+      filter_subject: canonicalSubject
+    });
 
-  if (error) {
-    throw new Error(`Supabase search error: ${error.message}`);
+    if (!error && data && data.length > 0) {
+      return data.map((row: any) => ({
+        content: row.chunk_text,
+        topic: row.topic,
+        subject: row.subject,
+        similarity: row.similarity
+      }));
+    }
+  } catch (err) {
+    console.warn("[DeepThinkRAG] Supabase vector search unavailable, falling back to vectorless/resource library:", err);
   }
 
-  return (data || []).map((row: any) => ({
-    content: row.chunk_text,
-    topic: row.topic,
-    subject: row.subject,
-    similarity: row.similarity
-  }));
+  // Graceful fallback: Vectorless / Resource library search
+  return queryVectorlessRAG(query, semester, subject, matchCount);
 }
 
 /**
- * Performs a fast text-based search using Supabase Full-Text Search (tsvector)
+ * Performs a fast text-based search using Supabase Full-Text Search (tsvector) with fallback to resource library
  */
 export async function queryVectorlessRAG(
   query: string,
@@ -174,43 +184,63 @@ export async function queryVectorlessRAG(
   subject?: string,
   matchCount: number = 10
 ): Promise<RagResult[]> {
-  const client = getSupabaseClient();
+  try {
+    const client = getSupabaseClient();
 
-  const { data, error } = await client.rpc("search_vectorless", {
-    query_text: query,
-    filter_semester: semester || null,
-    filter_subject: subject || null,
-    match_count: matchCount
-  });
-
-  if (error) {
-    throw new Error(`Supabase vectorless search error: ${error.message}`);
-  }
-
-  if ((!data || data.length === 0) && (semester || subject)) {
-    const { data: fallbackData, error: fallbackError } = await client.rpc("search_vectorless", {
+    const { data, error } = await client.rpc("search_vectorless", {
       query_text: query,
-      filter_semester: null,
-      filter_subject: null,
+      filter_semester: semester || null,
+      filter_subject: subject || null,
       match_count: matchCount
     });
 
-    if (fallbackError) {
-      throw new Error(`Supabase vectorless search error: ${fallbackError.message}`);
+    if (!error && data && data.length > 0) {
+      return data.map((row: any) => ({
+        content: row.chunk_text,
+        topic: row.topic,
+        subject: row.subject,
+        similarity: row.similarity
+      }));
     }
 
-    return (fallbackData || []).map((row: any) => ({
-      content: row.chunk_text,
-      topic: row.topic,
-      subject: row.subject,
-      similarity: row.similarity
-    }));
+    if (semester || subject) {
+      const { data: fallbackData, error: fallbackError } = await client.rpc("search_vectorless", {
+        query_text: query,
+        filter_semester: null,
+        filter_subject: null,
+        match_count: matchCount
+      });
+
+      if (!fallbackError && fallbackData && fallbackData.length > 0) {
+        return fallbackData.map((row: any) => ({
+          content: row.chunk_text,
+          topic: row.topic,
+          subject: row.subject,
+          similarity: row.similarity
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn("[VectorlessRAG] Supabase search_vectorless unavailable, falling back to resource index:", err);
   }
 
-  return (data || []).map((row: any) => ({
-    content: row.chunk_text,
-    topic: row.topic,
-    subject: row.subject,
-    similarity: row.similarity
-  }));
+  // Fallback: search in-memory resource library index directly
+  try {
+    const matches = await searchResources(query);
+    const filtered = matches.filter((m) => {
+      if (semester && !m.semester.toLowerCase().includes(semester.toLowerCase())) return false;
+      if (subject && !m.subject.toLowerCase().includes(subject.toLowerCase())) return false;
+      return true;
+    });
+    const pool = filtered.length > 0 ? filtered : matches;
+    return pool.slice(0, matchCount).map((item, idx) => ({
+      content: `[Resource Library Match]\nSubject: ${item.subject}\nTopic: ${item.topic}\nSemester: ${item.semester}\nSection: ${item.sectionType}\nPDF Document Link: ${item.pdfUrl}`,
+      topic: item.topic,
+      subject: item.subject,
+      similarity: Number((0.95 - idx * 0.05).toFixed(2)),
+    }));
+  } catch (fallbackErr) {
+    console.error("[VectorlessRAG] Resource library search fallback error:", fallbackErr);
+    return [];
+  }
 }

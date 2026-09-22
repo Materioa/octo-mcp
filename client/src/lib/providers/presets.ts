@@ -145,6 +145,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "pplx-...",
   },
   {
+    id: "chatgpt",
+    name: "Login with ChatGPT",
+    baseUrl: "/api/chatgpt",
+    defaultModel: "gpt-4o",
+    models: ["gpt-4o", "gpt-4o-mini", "o1-mini", "o3-mini", "gpt-4-turbo"],
+    keyPlaceholder: "No API key needed - log in below",
+  },
+  {
     id: "custom",
     name: "Custom Provider",
     baseUrl: "",
@@ -214,8 +222,8 @@ export function getAvailableModels(providerId: string, settings: any): string[] 
   if (settings.showOnlyFreeModels) {
     if (providerId === "openrouter" || providerId === "openrouter-free") {
       baseModels = baseModels.filter(m => m.endsWith(":free"));
-    } else if (providerId === "nvidia") {
-      // All NVIDIA NIM developer endpoints are free
+    } else if (providerId === "nvidia" || providerId === "chatgpt") {
+      // All NVIDIA NIM developer endpoints and ChatGPT models are free to use in Thinklet
       return baseModels;
     } else {
       return [];

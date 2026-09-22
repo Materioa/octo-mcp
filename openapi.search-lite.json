@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.0",
+  "openapi": "3.0.2",
   "info": {
     "title": "Materio MCP Search Lite",
     "description": "Slim OpenAPI spec for search clients. Tools: snap-search (primary), search (metadata fallback), share-link (masked PDF URLs).",
@@ -22,24 +22,28 @@
             "name": "query",
             "in": "query",
             "required": true,
+            "description": "Search keywords or query string. MANDATORY: You MUST run this tool to retrieve real context before answering ANY course/content query. DO NOT self-answer from weights.",
             "schema": { "type": "string", "minLength": 1 }
           },
           {
             "name": "semester",
             "in": "query",
             "required": false,
+            "description": "Optional semester number (e.g. '7') to limit results and improve precision.",
             "schema": { "type": "string" }
           },
           {
             "name": "subject",
             "in": "query",
             "required": false,
+            "description": "Optional subject name (e.g. 'Information and Network Security') to filter results. Highly recommended to use the exact subject name from CourseDirectory.",
             "schema": { "type": "string" }
           },
           {
             "name": "page",
             "in": "query",
             "required": false,
+            "description": "Result page number. Start at 1, increment to fetch more results if needed.",
             "schema": { "type": "integer", "minimum": 1 }
           },
           {
@@ -47,13 +51,14 @@
             "in": "query",
             "required": false,
             "schema": { "type": "integer", "minimum": 1, "maximum": 20 },
-            "description": "Preferred <= 5; max 20."
+            "description": "Number of chunk results to return per page. Prefer <= 5; max 20."
           },
           {
             "name": "max_words",
             "in": "query",
             "required": false,
-            "schema": { "type": "integer", "minimum": 100, "maximum": 500 }
+            "schema": { "type": "integer", "minimum": 100, "maximum": 500 },
+            "description": "Maximum total words to return across the page of chunk content."
           }
         ],
         "responses": {
@@ -130,6 +135,58 @@
                       }
                     },
                     "count": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share-link": {
+      "get": {
+        "operationId": "ShareLinkGenerator",
+        "summary": "Generate secure masked share link",
+        "description": "MANDATORY for any user-facing link response. Creates a masked Materio share link from either a direct URL or from semester, subject, and topic. Return only shareLink to users.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "description": "Direct raw internal PDF URL. DO NOT guess or hallucinate. If not known, supply semester, subject, and topic instead.",
+            "schema": { "type": "string", "format": "uri" }
+          },
+          {
+            "name": "semester",
+            "in": "query",
+            "required": false,
+            "description": "Semester number (e.g. '7'). Must match the document's semester.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "description": "Subject name (e.g. 'Information and Network Security'). Must match the document's subject.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "description": "Topic / file name (e.g. 'practical 2 lab manual'). Must match the topic/chapter name exactly.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated share link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shareLink": { "type": "string", "format": "uri" }
                   }
                 }
               }

@@ -8,6 +8,9 @@ export const CDN_BASE = "https://cdn.getmaterio.app";
 /** API proxy base for pointer / tiny files */
 export const API_BASE = "https://getmaterio.app";
 
+/** Insightroom base URL */
+export const INSIGHTROOM_API_BASE = "https://room.getmaterio.app";
+
 /** Resource library index URL */
 export const RESOURCE_LIB_URL = `${CDN_BASE}/databases/beta/resource.lib.json`;
 

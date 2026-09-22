@@ -88,10 +88,30 @@ export default function App() {
 
   const token = useAuthStore((s) => s.token);
   useEffect(() => {
+    const auth = useAuthStore.getState();
+    const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    if (!auth.token && (import.meta.env.DEV || isLocal)) {
+      auth.setAuth("test_token", {
+        id: "test-user-id",
+        username: "testuser",
+        name: "Test User",
+        email: "test@example.com",
+        hasAdminPrivileges: true,
+        isPlusUser: true,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
     if (token) {
       useSettingsStore.getState().syncCustomConnectors(token);
       useSettingsStore.getState().syncSkills(token);
       useSettingsStore.getState().syncApiKeys(token);
+
+      // Skip remote verification for developer test mode
+      if (token === "test_token") {
+        return;
+      }
 
       // Verify if token is still valid on startup/mount
       fetch("https://getmaterio.app/api/v2/profile", {

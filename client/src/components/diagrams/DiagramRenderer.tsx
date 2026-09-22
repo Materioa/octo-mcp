@@ -3,6 +3,7 @@ import { GraphvizDiagram } from "./GraphvizDiagram";
 import { MarkmapDiagram } from "./MarkmapDiagram";
 import { CodeSandbox } from "@/components/sandbox/CodeSandbox";
 import { WebArtifactSandbox } from "@/components/sandbox/WebArtifactSandbox";
+import { EraserDiagram } from "./EraserDiagram";
 
 interface DiagramRendererProps {
   code: string;
@@ -23,6 +24,22 @@ export function DiagramRenderer({ code, language, isStreaming }: DiagramRenderer
         </pre>
       </div>
     );
+  }
+
+  // Detect Eraser diagram JSON
+  const isEraserLanguage = ["eraser", "eraser-diagram", "eraser-json"].includes(language);
+  let isEraserJson = false;
+  if (language === "json" || !language || isEraserLanguage) {
+    try {
+      const parsed = JSON.parse(code.trim());
+      if (parsed && Array.isArray(parsed.entities) && Array.isArray(parsed.connections)) {
+        isEraserJson = true;
+      }
+    } catch {}
+  }
+
+  if (isEraserLanguage || isEraserJson) {
+    return <EraserDiagram code={code} />;
   }
 
   switch (language) {

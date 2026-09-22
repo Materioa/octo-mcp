@@ -1,19 +1,14 @@
 #!/usr/bin/env bun
 // ─────────────────────────────────────────────────────
-//  Materio MCP Server — Main Entry Point
-//
-//  MCP uses JSON-RPC 2.0 over Streamable HTTP.
-//  The SDK's StreamableHTTPServerTransport expects
-//  express-compatible req/res objects, so we use
-//  express (which Bun runs natively).
+//  Materio MCP Server — Standalone Server Entry Point
+//  Provides tools for course materials, search, RAG,
+//  document generation, diagrams, and external lookup.
 //
 //  Transports:
 //    • stdio   — for Claude Desktop local
 //    • http    — Streamable HTTP JSON-RPC for
-//                Perplexity & Claude remote connectors
-//
-//  Additionally, REST endpoints are exposed under
-//  /api/* for ChatGPT Custom GPT Actions.
+//                Perplexity, Claude & remote connectors
+//    • worker  — Cloudflare Worker via src/worker.ts
 // ─────────────────────────────────────────────────────
 
 import dotenv from "dotenv";
@@ -21,21 +16,22 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import sharp from "sharp";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import path from "path";
 
-// Load env files: root .env + client/.env (contains VITE_OPENROUTER_API_KEY)
-const __srcDir = path.dirname(fileURLToPath(import.meta.url));
+let __srcDir = process.cwd();
+try {
+  if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
+    __srcDir = path.dirname(fileURLToPath(import.meta.url));
+  }
+} catch {}
 dotenv.config({ path: path.join(__srcDir, "../.env") });
-dotenv.config({ path: path.join(__srcDir, "../client/.env") });
-import { executeJsTool, handleExecuteJs } from "./tools/execute-js.js";
+
+import { createMcpServer } from "./server.js";
+export { createMcpServer };
 import { generateDocumentTool, handleGenerateDocument } from "./tools/generate-document.js";
-import { memoryTool, handleSaveMemory } from "./tools/memory.js";
 import { registerMaterioTools } from "./tools/materio.js";
-import { registerExaSearch } from "./tools/exa-search.js";
-import { registerUserInputTools } from "./tools/user-input.js";
 import {
   listSemesters,
   listSubjects,
@@ -45,34 +41,37 @@ import {
   getFullIndex,
   generateMaskedUrl,
 } from "./services/resources.js";
+import { findResources } from "./services/finder.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "./services/rag.js";
 import { lookupExternalSources } from "./services/external-lookup.js";
-import { AuthError, authorizeMaterioAccess } from "./services/materio-auth.js";
-import { connectDB, Conversation, Message, CustomConnector, Skill, ApiKey } from "./db.js";
-import { requireAuth, type AuthenticatedRequest } from "./middleware/auth.js";
+import {
+  resolveUserFromHeaders,
+  checkToolAccess,
+  getOAuthAuthorizationServerMetadata,
+  getOAuthProtectedResourceMetadata,
+  handleAuthorizeRedirect,
+  handleTokenProxy,
+  handleRegisterProxy,
+} from "./services/materio-auth.js";
 
-const APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
-const OPENAPI_SPEC_PATH = fileURLToPath(new URL("../openapi.json", import.meta.url));
-const OPENAPI_LITE_SPEC_PATH = fileURLToPath(
-  new URL("../openapi.search-lite.json", import.meta.url)
-);
+let APP_ICON_PATH = path.join(__srcDir, "app.png");
+let OPENAPI_SPEC_PATH = path.join(__srcDir, "../openapi.json");
+let OPENAPI_LITE_SPEC_PATH = path.join(__srcDir, "../openapi.search-lite.json");
+try {
+  if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
+    APP_ICON_PATH = fileURLToPath(new URL("./app.png", import.meta.url));
+    OPENAPI_SPEC_PATH = fileURLToPath(new URL("../openapi.json", import.meta.url));
+    OPENAPI_LITE_SPEC_PATH = fileURLToPath(
+      new URL("../openapi.search-lite.json", import.meta.url)
+    );
+  }
+} catch {}
 const FAVICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 180, 192, 256, 512];
 const faviconCache = new Map<number, Buffer>();
 const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart|mindmap|markmap|tree)(?:\b|$)/i;
 
 function isDiagramIntent(query: string): boolean {
   return DIAGRAM_INTENT_PATTERN.test(query);
-}
-
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
-function truncateToWordLimit(text: string, wordLimit: number): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= wordLimit) return text.trim();
-  return `${words.slice(0, wordLimit).join(" ")} ...`;
 }
 
 function getRequestedFaviconSize(req: express.Request): number {
@@ -98,26 +97,19 @@ function applyIconHeaders(res: express.Response): void {
 }
 
 async function readTextFile(filePath: string): Promise<string> {
-  if (typeof Bun !== "undefined") {
-    return Bun.file(filePath).text();
+  if (typeof (globalThis as any).Bun !== "undefined") {
+    return (globalThis as any).Bun.file(filePath).text();
   }
 
   return readFile(filePath, "utf8");
 }
 
-async function renderFavicon(size: number): Promise<Buffer> {
-  const cached = faviconCache.get(size);
+async function renderFavicon(_size: number): Promise<Buffer> {
+  const cached = faviconCache.get(_size);
   if (cached) return cached;
 
-  const buffer = await sharp(APP_ICON_PATH)
-    .resize(size, size, {
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    })
-    .png()
-    .toBuffer();
-
-  faviconCache.set(size, buffer);
+  const buffer = await readFile(APP_ICON_PATH);
+  faviconCache.set(_size, buffer);
   return buffer;
 }
 
@@ -137,27 +129,6 @@ async function sendFavicon(req: express.Request, res: express.Response): Promise
   }
 }
 
-// ──── Helper: create a fresh, tool-registered MCP server instance ────
-function createMcpServer(isInternalClient: boolean = false): McpServer {
-  const server = new McpServer({
-    name: "materio-mcp-server",
-    version: "1.0.0",
-  });
-  
-  // Public tools
-  registerMaterioTools(server);
-  server.tool(generateDocumentTool.name, generateDocumentTool.description, generateDocumentTool.inputSchema, handleGenerateDocument);
-
-  // Internal tools (exclusive to Materio client)
-  if (isInternalClient) {
-    registerExaSearch(server);
-    registerUserInputTools(server);
-    server.tool(executeJsTool.name, executeJsTool.description, executeJsTool.inputSchema, handleExecuteJs);
-    server.tool(memoryTool.name, memoryTool.description, memoryTool.inputSchema, handleSaveMemory);
-  }
-
-  return server;
-}
 
 // ──── Transport: stdio (for Claude Desktop) ────
 async function runStdio(): Promise<void> {
@@ -167,229 +138,429 @@ async function runStdio(): Promise<void> {
   console.error("✅ Materio MCP server running via stdio (JSON-RPC over stdin/stdout)");
 }
 
-// ──── Transport: Streamable HTTP (for remote MCP connectors) ────
+// ──── Transport: Streamable HTTP & Express App ────
 export const app = express();
 
-  // ── Parse JSON bodies for MCP JSON-RPC requests & chat completions ──
-  app.use(express.json({ limit: "50mb" }));
+// Parse JSON bodies
+app.use(express.json({ limit: "50mb" }));
 
-  // ── Lazy DB connect for Vercel serverless (no persistent process) ──
-  app.use(async (_req, res, next) => {
-    try {
-      await connectDB();
-    } catch (err) {
-      // Non-DB routes (health, MCP, openapi) should still work even if DB fails
-      console.error("DB connect error (will retry next request):", err);
-    }
-    next();
-  });
+// CORS for all origins
+app.use((_req, res, next) => {
+  if (_req.method === "GET" || _req.method === "HEAD") {
+    applyIconHeaders(res);
+  }
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url, X-Materio-Client, X-Materio-Token, X-OAuth-Token, X-Test-User, last-event-id"
+  );
+  res.header("Access-Control-Expose-Headers", "mcp-session-id");
+  res.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
+  if (_req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 
-  // ── CORS for all origins (needed by remote connectors) ──
-  app.use((_req, res, next) => {
-    if (_req.method === "GET" || _req.method === "HEAD") {
-      applyIconHeaders(res);
-    }
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, mcp-session-id, mcp-protocol-version, X-OAuth-Client-Id, X-OAuth-Client-Secret, X-Anonymous-Id, X-Target-Url, X-Materio-Client, last-event-id"
-    );
-    res.header("Access-Control-Expose-Headers", "mcp-session-id");
-    res.header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
-    if (_req.method === "OPTIONS") {
-      res.sendStatus(204);
-      return;
-    }
-    next();
-  });
+// ════════════════════════════════════════════════════
+//  OAuth 2.0 / RFC 8414 & RFC 9728 Discovery & Proxies
+// ════════════════════════════════════════════════════
+app.get(
+  ["/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", "/oauth-metadata"],
+  (req, res) => {
+    const host = req.get("host") || "localhost:3001";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const origin = `${protocol}://${host}`;
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.json(getOAuthAuthorizationServerMetadata(origin));
+  }
+);
 
-  // ════════════════════════════════════════════════════
-  //  MCP JSON-RPC endpoint — POST /mcp
-  //  This is the core MCP protocol endpoint.
-  //  Perplexity and Claude connect here via
-  //  Streamable HTTP transport (JSON-RPC 2.0).
-  //
-  //  IMPORTANT: We create a new McpServer instance
-  //  per request to avoid the reconnect race condition.
-  //  Each request gets its own server+transport pair.
-  // ════════════════════════════════════════════════════
-  app.all("/mcp", async (req, res) => {
-    try {
-      const isInternalClient = req.headers["x-materio-client"] === "true";
-      // Stateless: new server + transport per request
-      const server = createMcpServer(isInternalClient);
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-        enableJsonResponse: true,
+app.get("/.well-known/oauth-protected-resource", (req, res) => {
+  const host = req.get("host") || "localhost:3001";
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const origin = `${protocol}://${host}`;
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json(getOAuthProtectedResourceMetadata(origin));
+});
+
+app.get("/authorize", (req, res) => {
+  const host = req.get("host") || "localhost:3001";
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
+  const response = handleAuthorizeRedirect(fullUrl);
+  res.redirect(response.headers.get("Location") || "https://auth.getmaterio.app/authorize");
+});
+
+app.all("/token", async (req, res) => {
+  try {
+    const host = req.get("host") || "localhost:3001";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
+    const webReq = new Request(fullUrl.toString(), {
+      method: req.method,
+      headers: req.headers as any,
+      body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+    });
+    const webRes = await handleTokenProxy(webReq);
+    const data = await webRes.json().catch(() => ({}));
+    res.status(webRes.status).json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Token proxy error", details: err?.message });
+  }
+});
+
+app.all("/register", async (req, res) => {
+  try {
+    const host = req.get("host") || "localhost:3001";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
+    const webReq = new Request(fullUrl.toString(), {
+      method: req.method,
+      headers: req.headers as any,
+      body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+    });
+    const webRes = await handleRegisterProxy(webReq);
+    const data = await webRes.json().catch(() => ({}));
+    res.status(webRes.status).json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: "Client registration error", details: err?.message });
+  }
+});
+
+// ════════════════════════════════════════════════════
+//  MCP JSON-RPC endpoint — POST /mcp
+// ════════════════════════════════════════════════════
+app.all("/mcp", async (req, res) => {
+  try {
+    req.headers["accept"] = "application/json, text/event-stream";
+    const host = req.get("host") || "localhost:3001";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
+    const { user, accessTier } = await resolveUserFromHeaders(req.headers as any, fullUrl.searchParams);
+    const server = createMcpServer({ user, accessTier });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+
+    res.on("close", () => transport.close());
+
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("MCP JSON-RPC error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: null,
       });
-
-      // Clean up transport when the HTTP connection closes
-      res.on("close", () => transport.close());
-
-      // Connect and handle the JSON-RPC request
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      console.error("MCP JSON-RPC error:", error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: "Internal server error" },
-          id: null,
-        });
-      }
     }
-  });
+  }
+});
 
-  // ════════════════════════════════════════════════════
-  //  Health check
-  // ════════════════════════════════════════════════════
-  app.get("/health", async (_req, res) => {
-    const { default: mongoose } = await import("mongoose");
+// ════════════════════════════════════════════════════
+//  Health check
+// ════════════════════════════════════════════════════
+app.get("/health", async (_req, res) => {
+  res.json({
+    status: "ok",
+    server: "materio-mcp-server",
+    version: "1.0.0",
+    protocol: "MCP (JSON-RPC 2.0 over Streamable HTTP)",
+  });
+});
+
+// ════════════════════════════════════════════════════
+//  Web root & Icon
+// ════════════════════════════════════════════════════
+app.get("/", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.status(200).json({
+    jsonrpc: "2.0",
+    message: "Materio MCP server is running. Use POST /mcp for JSON-RPC.",
+  });
+});
+
+app.head("/", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.status(200).end();
+});
+
+app.get(["/app.png", "/favicon.png", "/favicon.ico", "/apple-touch-icon.png"], sendFavicon);
+
+// ════════════════════════════════════════════════════
+//  OpenAPI spec — served for ChatGPT Actions import
+// ════════════════════════════════════════════════════
+app.get("/openapi.json", async (req, res) => {
+  try {
+    const specText = await readTextFile(OPENAPI_SPEC_PATH);
+    const spec = JSON.parse(specText);
+    const host = req.get("host");
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    if (host) {
+      spec.servers = [{ url: `${protocol}://${host}`, description: "Current server" }];
+    }
+    res.json(spec);
+  } catch {
+    res.status(404).json({ error: "openapi.json not found" });
+  }
+});
+
+app.get("/openapi.search-lite.json", async (req, res) => {
+  try {
+    const specText = await readTextFile(OPENAPI_LITE_SPEC_PATH);
+    const spec = JSON.parse(specText);
+    const host = req.get("host");
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    if (host) {
+      spec.servers = [{ url: `${protocol}://${host}`, description: "Current server" }];
+    }
+    res.json(spec);
+  } catch {
+    res.status(404).json({ error: "openapi.search-lite.json not found" });
+  }
+});
+
+// ════════════════════════════════════════════════════
+//  REST API endpoints — for ChatGPT Custom GPT Actions
+// ════════════════════════════════════════════════════
+
+app.get("/api/semesters", async (_req, res) => {
+  try {
+    const semesters = await listSemesters();
+    res.json({ semesters, count: semesters.length });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to list semesters." });
+  }
+});
+
+app.get("/api/subjects", async (req, res) => {
+  const sem = req.query.semester as string;
+  if (!sem) return res.status(400).json({ error: "semester query parameter required" });
+  try {
+    const subjects = await listSubjects(sem);
+    res.json({ semester: sem, subjects, count: subjects.length });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to list subjects." });
+  }
+});
+
+app.get("/api/resources", async (req, res) => {
+  const sem = req.query.semester as string;
+  const sub = req.query.subject as string;
+  if (!sem || !sub) return res.status(400).json({ error: "semester and subject parameters required" });
+  try {
+    const items = await listResources(sem, sub);
+    res.json({ semester: sem, subject: sub, resources: items, count: items.length });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to list resources." });
+  }
+});
+
+app.get("/api/search", async (req, res) => {
+  const q = (req.query.query ?? req.query.q) as string;
+  const sem = req.query.semester as string | undefined;
+  if (!q) return res.status(400).json({ error: "query parameter required" });
+  try {
+    const result = await findResources(q, sem);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to search resources." });
+  }
+});
+
+app.get("/api/pdf-url", async (req, res) => {
+  const sem = req.query.semester as string;
+  const sub = req.query.subject as string;
+  const topic = req.query.topic as string;
+  if (!sem || !sub || !topic)
+    return res.status(400).json({ error: "semester, subject, and topic parameters required" });
+  try {
+    const items = await listResources(sem, sub);
+    const match = items.find(
+      (i) =>
+        i.topic.toLowerCase() === topic.toLowerCase() ||
+        i.topic.toLowerCase().includes(topic.toLowerCase()) ||
+        topic.toLowerCase().includes(i.topic.toLowerCase())
+    );
+    const rawUrl = match
+      ? await resolvePdfUrl(match.semester, match.subject, match.topic)
+      : await resolvePdfUrl(sem, sub, topic);
+    const shareLink = await generateMaskedUrl(rawUrl);
+    res.json({ semester: sem, subject: match?.subject ?? sub, topic: match?.topic ?? topic, shareLink });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to resolve PDF URL." });
+  }
+});
+
+app.get("/api/index", async (_req, res) => {
+  try {
+    const index = await getFullIndex();
+    res.json({ totalSubjects: index.length, library: index });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to get library index." });
+  }
+});
+
+app.get("/api/concept-explorer", async (req, res) => {
+  const sem = req.query.semester as string;
+  const sub = req.query.subject as string;
+  const topic = req.query.topic as string;
+
+  if (!sem || !sub || !topic) {
+    return res.status(400).json({ error: "semester, subject, and topic parameters required" });
+  }
+
+  try {
+    const items = await listResources(sem, sub);
+    const match = items.find(
+      (i) =>
+        i.topic.toLowerCase() === topic.toLowerCase() ||
+        i.topic.toLowerCase().includes(topic.toLowerCase())
+    );
+
+    const chapters = items.filter((i) => i.sectionType === "Chapters");
+    const questionBanks = items.filter(
+      (i) => i.sectionType === "Question Banks" || i.sectionType === "Important Questions"
+    );
+    const prevYearPapers = items.filter((i) => i.sectionType === "Previous Year Papers");
+
+    let resolvedUrl = "";
+    if (match) {
+      resolvedUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
+    }
+
     res.json({
-      status: "ok",
-      server: "materio-mcp-server",
-      version: "1.0.0",
-      protocol: "MCP (JSON-RPC 2.0 over Streamable HTTP)",
-      db: {
-        readyState: mongoose.connection.readyState,
-        hasMongoUri: !!process.env.MONGODB_URI,
-        isVercel: process.env.VERCEL === "1",
-      },
+      found: !!match,
+      topic: match?.topic ?? topic,
+      semester: sem,
+      subject: match?.subject ?? sub,
+      sectionType: match?.sectionType ?? "unknown",
+      pdfUrl: resolvedUrl || null,
+      relatedChapters: chapters.map((c) => c.topic),
+      availableQuestionBanks: questionBanks.map((q) => ({
+        topic: q.topic,
+        pdfUrl: q.pdfUrl,
+      })),
+      previousYearPapers: prevYearPapers.map((p) => ({
+        topic: p.topic,
+        pdfUrl: p.pdfUrl,
+      })),
     });
-  });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to explore concept." });
+  }
+});
 
-  // ════════════════════════════════════════════════════
-  //  Web crawler support
-  // ════════════════════════════════════════════════════
-  app.get("/", (_req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.status(200).json({
-      jsonrpc: "2.0",
-      message: "Materio MCP server is running. Use POST /mcp for JSON-RPC.",
+app.get("/api/snap-search", async (req, res) => {
+  const q = (req.query.query ?? req.query.q) as string;
+  const sem = req.query.semester as string | undefined;
+  const sub = req.query.subject as string | undefined;
+  const pageRaw = req.query.page as string | undefined;
+  const resultsPerPageRaw = req.query.results_per_page as string | undefined;
+
+  if (!q) {
+    return res.status(400).json({ error: "query parameter required" });
+  }
+
+  try {
+    if (isDiagramIntent(q)) {
+      return res.status(400).json({
+        error:
+          "Diagram requests are not allowed in SnapSearch. Use diagram tools.",
+      });
+    }
+
+    const currentPage = Math.max(1, Number(pageRaw ?? 1) || 1);
+    const resultsPerPage = Math.min(20, Math.max(1, Number(resultsPerPageRaw ?? 3) || 3));
+    const fetchCount = Math.max(currentPage * resultsPerPage, 10);
+    const results = await queryVectorlessRAG(q, sem, sub, fetchCount);
+
+    const startIndex = (currentPage - 1) * resultsPerPage;
+    const pageResults = results.slice(startIndex, startIndex + resultsPerPage);
+
+    return res.json({
+      query: q,
+      semester: sem ?? null,
+      subject: sub ?? null,
+      page: currentPage,
+      resultsPerPage,
+      results: pageResults,
+      count: pageResults.length,
+      hasMore: results.length > startIndex + resultsPerPage,
     });
-  });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to perform snap search." });
+  }
+});
 
-  app.head("/", (_req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.status(200).end();
-  });
+app.get("/api/deep-think", async (req, res) => {
+  const host = req.get("host") || "localhost:3001";
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+  const fullUrl = new URL(req.originalUrl || req.url, `${protocol}://${host}`);
+  const { accessTier } = await resolveUserFromHeaders(req.headers as any, fullUrl.searchParams);
+  const access = checkToolAccess(accessTier, "plus");
+  if (!access.allowed) {
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${protocol}://${host}/.well-known/oauth-protected-resource"`
+    );
+    return res.status(access.status === "UNAUTHENTICATED" ? 401 : 403).json({
+      error: access.message,
+      status: access.status,
+      upgradeUrl: "https://auth.getmaterio.app",
+    });
+  }
 
-  app.get(["/app.png", "/favicon.png", "/favicon.ico", "/apple-touch-icon.png"], sendFavicon);
+  const q = req.query.query as string;
+  const sem = req.query.semester as string;
+  const sub = req.query.subject as string;
 
-  // ════════════════════════════════════════════════════
-  //  OpenAPI spec — served for ChatGPT Actions import
-  // ════════════════════════════════════════════════════
-  app.get("/openapi.json", async (_req, res) => {
-    try {
-      const spec = await readTextFile(OPENAPI_SPEC_PATH);
-      res.type("application/json").send(spec);
-    } catch {
-      res.status(404).json({ error: "openapi.json not found" });
-    }
-  });
+  if (!q || !sem || !sub) {
+    return res.status(400).json({ error: "query, semester, and subject parameters required" });
+  }
 
-  app.get("/openapi.search-lite.json", async (_req, res) => {
-    try {
-      const spec = await readTextFile(OPENAPI_LITE_SPEC_PATH);
-      res.type("application/json").send(spec);
-    } catch {
-      res.status(404).json({ error: "openapi.search-lite.json not found" });
-    }
-  });
+  try {
+    const contexts = await queryDeepThinkRAG(q, sem, sub, 5);
+    res.json({
+      query: q,
+      semester: sem,
+      subject: sub,
+      contexts,
+      count: contexts.length,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to perform deep think search." });
+  }
+});
 
-  // ════════════════════════════════════════════════════
-  //  REST API endpoints — for ChatGPT Custom GPT Actions
-  //  These are plain REST wrappers so ChatGPT (which
-  //  doesn't speak MCP) can call the same business logic.
-  // ════════════════════════════════════════════════════
+app.get("/api/share-link", async (req, res) => {
+  const directUrl = ((req.query.url as string) || "").trim();
+  const sem = req.query.semester as string | undefined;
+  const sub = req.query.subject as string | undefined;
+  const topic = req.query.topic as string | undefined;
 
-  app.get("/api/semesters", async (_req, res) => {
-    try {
-      const semesters = await listSemesters();
-      res.json({ semesters, count: semesters.length });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to list semesters." });
-    }
-  });
-
-  app.get("/api/subjects", async (req, res) => {
-    const sem = req.query.semester as string;
-    if (!sem) return res.status(400).json({ error: "semester query parameter required" });
-    try {
-      const subjects = await listSubjects(sem);
-      res.json({ semester: sem, subjects, count: subjects.length });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to list subjects." });
-    }
-  });
-
-  app.get("/api/resources", async (req, res) => {
-    const sem = req.query.semester as string;
-    const sub = req.query.subject as string;
-    if (!sem || !sub) return res.status(400).json({ error: "semester and subject parameters required" });
-    try {
-      const items = await listResources(sem, sub);
-      res.json({ semester: sem, subject: sub, resources: items, count: items.length });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to list resources." });
-    }
-  });
-
-  app.get("/api/search", async (req, res) => {
-    const q = (req.query.query ?? req.query.q) as string;
-    if (!q) return res.status(400).json({ error: "query parameter required" });
-    try {
-      const results = await searchResources(q);
-      res.json({ query: q, results, count: results.length });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to search resources." });
-    }
-  });
-
-  app.get("/api/pdf-url", async (req, res) => {
-    const sem = req.query.semester as string;
-    const sub = req.query.subject as string;
-    const topic = req.query.topic as string;
-    if (!sem || !sub || !topic)
-      return res.status(400).json({ error: "semester, subject, and topic parameters required" });
-    try {
-      // Fuzzy-match topic name like the MCP tool does
-      const items = await listResources(sem, sub);
-      const match = items.find(
-        (i) =>
-          i.topic.toLowerCase() === topic.toLowerCase() ||
-          i.topic.toLowerCase().includes(topic.toLowerCase()) ||
-          topic.toLowerCase().includes(i.topic.toLowerCase())
-      );
-      const pdfUrl = match
-        ? await resolvePdfUrl(match.semester, match.subject, match.topic)
-        : await resolvePdfUrl(sem, sub, topic);
-      res.json({ semester: sem, subject: match?.subject ?? sub, topic: match?.topic ?? topic, pdfUrl });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to resolve PDF URL." });
-    }
-  });
-
-  app.get("/api/index", async (_req, res) => {
-    try {
-      const index = await getFullIndex();
-      res.json({ totalSubjects: index.length, library: index });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to get library index." });
-    }
-  });
-
-  app.get("/api/concept-explorer", async (req, res) => {
-    const sem = req.query.semester as string;
-    const sub = req.query.subject as string;
-    const topic = req.query.topic as string;
-
-    if (!sem || !sub || !topic) {
-      return res.status(400).json({ error: "semester, subject, and topic parameters required" });
+  try {
+    let rawUrl = directUrl;
+    if (rawUrl && (rawUrl.includes("?share=") || rawUrl.includes("getmaterio.app/?share="))) {
+      return res.status(400).json({
+        error: "HARD GUARDRAIL: Input URL is already a masked share link. Masked share links cannot be re-masked.",
+      });
     }
 
-    try {
+    let resolvedSubject = sub;
+    let resolvedTopic = topic;
+
+    if (!rawUrl) {
+      if (!sem || !sub || !topic) {
+        return res
+          .status(400)
+          .json({ error: "Provide either url, or semester + subject + topic" });
+      }
+
       const items = await listResources(sem, sub);
       const match = items.find(
         (i) =>
@@ -397,966 +568,157 @@ export const app = express();
           i.topic.toLowerCase().includes(topic.toLowerCase())
       );
 
-      const chapters = items.filter((i) => i.sectionType === "Chapters");
-      const questionBanks = items.filter(
-        (i) => i.sectionType === "Question Banks" || i.sectionType === "Important Questions"
-      );
-      const prevYearPapers = items.filter((i) => i.sectionType === "Previous Year Papers");
-
-      let resolvedUrl = "";
       if (match) {
-        resolvedUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
-      }
-
-      res.json({
-        found: !!match,
-        topic: match?.topic ?? topic,
-        semester: sem,
-        subject: match?.subject ?? sub,
-        sectionType: match?.sectionType ?? "unknown",
-        pdfUrl: resolvedUrl || null,
-        relatedChapters: chapters.map((c) => c.topic),
-        availableQuestionBanks: questionBanks.map((q) => ({
-          topic: q.topic,
-          pdfUrl: q.pdfUrl,
-        })),
-        previousYearPapers: prevYearPapers.map((p) => ({
-          topic: p.topic,
-          pdfUrl: p.pdfUrl,
-        })),
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to explore concept." });
-    }
-  });
-
-  app.get("/api/snap-search", async (req, res) => {
-    const q = (req.query.query ?? req.query.q) as string;
-    const sem = req.query.semester as string | undefined;
-    const sub = req.query.subject as string | undefined;
-    const pageRaw = req.query.page as string | undefined;
-    const resultsPerPageRaw = req.query.results_per_page as string | undefined;
-    const maxWordsRaw = req.query.max_words as string | undefined;
-
-    if (!q) {
-      return res.status(400).json({ error: "query parameter required" });
-    }
-
-    try {
-      if (isDiagramIntent(q)) {
-        return res.status(400).json({
-          error:
-            "Diagram requests are not allowed in SnapSearch. Use the diagram tools (GenerateDiagramFromRequest, DiagramGenerator, DiagramValidator).",
-        });
-      }
-
-      const currentPage = Math.max(1, Number(pageRaw ?? 1) || 1);
-      const resultsPerPage = Math.min(20, Math.max(1, Number(resultsPerPageRaw ?? 3) || 3));
-      const maxWords = Math.min(500, Math.max(100, Number(maxWordsRaw ?? 350) || 350));
-      const fetchCount = Math.max(currentPage * resultsPerPage, 10);
-      const results = await queryVectorlessRAG(q, sem, sub, fetchCount);
-
-      if (results.length === 0) {
-        return res.json({
-          query: q,
-          semester: sem ?? null,
-          subject: sub ?? null,
-          page: currentPage,
-          resultsPerPage,
-          maxWords,
-          results: [],
-          count: 0,
-          hasMore: false,
-          nextPage: null,
-          message:
-            "No results found. Try broader terminology, a different semester/subject filter, or move to DeepThink/external lookup if needed.",
-        });
-      }
-
-      const startIndex = (currentPage - 1) * resultsPerPage;
-      const pageResults = results.slice(startIndex, startIndex + resultsPerPage);
-
-      let remainingWords = maxWords;
-      const items = pageResults.map((r, i) => {
-        const remainingItems = pageResults.length - i;
-        const available = remainingItems > 0
-          ? Math.max(25, Math.floor(remainingWords / remainingItems))
-          : remainingWords;
-        const clipped = truncateToWordLimit(r.content, available);
-        const used = Math.min(countWords(clipped), remainingWords);
-        remainingWords = Math.max(0, remainingWords - used);
-        return {
-          index: startIndex + i + 1,
-          topic: r.topic,
-          subject: r.subject,
-          similarity: r.similarity,
-          excerpt: clipped,
-        };
-      });
-
-      const hasMore = startIndex + resultsPerPage < results.length;
-      const nextPage = hasMore ? currentPage + 1 : null;
-
-      res.json({
-        query: q,
-        semester: sem ?? null,
-        subject: sub ?? null,
-        page: currentPage,
-        resultsPerPage,
-        maxWords,
-        results: items,
-        count: items.length,
-        hasMore,
-        nextPage,
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to perform snap search." });
-    }
-  });
-
-  app.get("/api/deep-think", async (req, res) => {
-    const q = req.query.query as string;
-    const sem = req.query.semester as string;
-    const sub = req.query.subject as string;
-
-    if (!q || !sem || !sub) {
-      return res.status(400).json({ error: "query, semester, and subject parameters required" });
-    }
-
-    try {
-      const contexts = await queryDeepThinkRAG(q, sem, sub, 5);
-      res.json({
-        query: q,
-        semester: sem,
-        subject: sub,
-        contexts,
-        count: contexts.length,
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to perform deep think search." });
-    }
-  });
-
-  app.get("/api/share-link", async (req, res) => {
-    const directUrl = req.query.url as string | undefined;
-    const sem = req.query.semester as string | undefined;
-    const sub = req.query.subject as string | undefined;
-    const topic = req.query.topic as string | undefined;
-
-    try {
-      let rawUrl = directUrl;
-      if (!rawUrl) {
-        if (!sem || !sub || !topic) {
-          return res
-            .status(400)
-            .json({ error: "Provide either url, or semester + subject + topic" });
-        }
-
-        const items = await listResources(sem, sub);
-        const match = items.find(
-          (i) =>
-            i.topic.toLowerCase() === topic.toLowerCase() ||
-            i.topic.toLowerCase().includes(topic.toLowerCase())
-        );
-
-        if (match) {
-          rawUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
-        } else {
-          rawUrl = await resolvePdfUrl(sem, sub, topic);
-        }
-      }
-
-      if (!rawUrl) {
-        return res.status(400).json({ error: "Could not resolve a PDF URL to generate a share link." });
-      }
-
-      const shareLink = await generateMaskedUrl(rawUrl);
-      res.json({ shareLink });
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to generate share link." });
-    }
-  });
-
-  app.get("/api/lookup-external-sources", async (req, res) => {
-    const topic = req.query.topic as string;
-    const useExa = String(req.query.useExa ?? req.query.use_exa ?? "").toLowerCase() === "true";
-    if (!topic) return res.status(400).json({ error: "topic parameter required" });
-
-    try {
-      const result = await lookupExternalSources(topic, useExa);
-      res.json(result);
-    } catch (e: any) {
-      res.status(500).json({ error: "Failed to look up external sources." });
-    }
-  });
-
-  app.post("/mcp/elevated", async (req, res) => {
-    try {
-      const access = await authorizeMaterioAccess(req);
-      res.json({
-        message: "Access granted",
-        accessLevel: access.accessLevel,
-        user: access.user,
-      });
-    } catch (error) {
-      if (error instanceof AuthError) {
-        res.status(error.status).json({ error: error.message });
-        return;
-      }
-
-      res.status(500).json({ error: "Failed to authorize Materio access." });
-    }
-  });
-
-  // ── Supermemory Proxy ──
-  app.use("/api/memory", async (req: express.Request, res: express.Response) => {
-    try {
-      const apiKey = req.headers.authorization?.replace("Bearer ", "");
-      if (!apiKey) {
-         res.status(401).json({ error: "Missing API Key" });
-         return;
-      }
-
-      const subPath = req.url; // e.g. "/", "/list", "/search"
-      const targetUrl = `https://api.supermemory.ai/v3${subPath === "/" ? "" : subPath}`;
-      
-      const response = await fetch(targetUrl, {
-        method: req.method,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
-      });
-
-      const text = await response.text();
-      if (response.status >= 500) {
-        console.error(`[Supermemory API Error] ${response.status}:`, text);
-      }
-      
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: text };
-      }
-      res.status(response.status).json(data);
-    } catch (err: any) {
-      console.error("[Supermemory Proxy] Fetch Error:", err);
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── Secure LLM Proxy ──
-  app.post("/api/chat/completions", async (req, res) => {
-    try {
-      const targetUrl = req.headers["x-target-url"] as string;
-      if (!targetUrl) {
-         res.status(400).json({ error: "Missing x-target-url header" });
-         return;
-      }
-
-      // Safety: only allow known AI provider domains
-      const ALLOWED_DOMAINS = [
-        "openrouter.ai",
-        "api.openai.com",
-        "api.anthropic.com",
-        "generativelanguage.googleapis.com",
-        "integrate.api.nvidia.com",
-        "api.llama.com",
-        "dashscope-intl.aliyuncs.com",
-        "api.moonshot.ai",
-        "api.perplexity.ai",
-        "openrouter.ai",
-        "api.deepseek.com",
-        "api.mistral.ai",
-        "api.groq.com",
-        "api.together.xyz",
-      ];
-      let targetHostname: string;
-      try {
-        targetHostname = new URL(targetUrl).hostname;
-      } catch {
-        res.status(400).json({ error: "Invalid x-target-url" });
-        return;
-      }
-      if (!ALLOWED_DOMAINS.some(d => targetHostname === d || targetHostname.endsWith(`.${d}`))) {
-        console.error(`[LLM Proxy] Blocked request to disallowed domain: ${targetHostname}`);
-        res.status(403).json({ error: `Domain not allowed: ${targetHostname}` });
-        return;
-      }
-      
-      let apiKey = req.headers.authorization as string | undefined;
-      
-      // If no API key is provided by the client (Free tier) — catches: missing, "Bearer", "Bearer undefined", "Bearer "
-      const keyValue = apiKey?.replace(/^Bearer\s*/i, "").trim() ?? "";
-      if (!keyValue || keyValue === "undefined" || keyValue === "null") {
-        apiKey = undefined;
-        if (targetUrl.includes("openrouter.ai")) {
-          // Fallback to server's env OpenRouter key
-          const serverKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
-          if (serverKey) {
-            apiKey = `Bearer ${serverKey}`;
-          }
-        }
-      }
-      
-      const response = await fetch(`${targetUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(apiKey ? { "Authorization": apiKey } : {}),
-          "HTTP-Referer": "https://mcp.getmaterio.app",
-          "X-Title": "Materio MCP",
-          "Connection": "close"
-        },
-        body: JSON.stringify(req.body)
-      });
-      
-      res.status(response.status);
-      const forbiddenHeaders = ["transfer-encoding", "content-encoding", "content-length", "connection", "keep-alive"];
-      response.headers.forEach((val, key) => {
-        if (!forbiddenHeaders.includes(key.toLowerCase())) {
-          res.setHeader(key, val);
-        }
-      });
-      
-      if (response.body) {
-        if (typeof (response.body as any).getReader === 'function') {
-          const reader = (response.body as any).getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value) {
-              res.write(Buffer.isBuffer(value) ? value : Buffer.from(value));
-            }
-          }
-          res.end();
-        } else if (typeof (response.body as any).pipe === 'function') {
-          // Fallback for node-fetch / Node.js Readable streams
-          (response.body as any).pipe(res);
-        } else {
-          // Fallback if body is somehow not a stream
-          const text = await response.text();
-          res.send(text);
-        }
+        resolvedSubject = match.subject;
+        resolvedTopic = match.topic;
+        rawUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
       } else {
-        res.end();
-      }
-    } catch (err: any) {
-      console.error("[LLM Proxy] Error:", err, err.cause);
-      if (res.headersSent) {
-        res.end();
-      } else {
-        const errorMsg = err.cause ? `${err.message} (${err.cause.message || err.cause.code})` : err.message;
-        res.status(500).json({ error: errorMsg });
+        rawUrl = await resolvePdfUrl(sem, sub, topic);
       }
     }
-  });
 
-  // ── Secure LLM Models Proxy ──
-  app.get("/api/chat/models", async (req, res) => {
-    try {
-      const targetUrl = req.headers["x-target-url"] as string;
-      if (!targetUrl) {
-         res.status(400).json({ error: "Missing x-target-url header" });
-         return;
-      }
-
-      // Safety: only allow known AI provider domains
-      const ALLOWED_DOMAINS = [
-        "openrouter.ai",
-        "api.openai.com",
-        "api.anthropic.com",
-        "generativelanguage.googleapis.com",
-        "integrate.api.nvidia.com",
-        "api.llama.com",
-        "dashscope-intl.aliyuncs.com",
-        "api.moonshot.ai",
-        "api.perplexity.ai",
-        "api.deepseek.com",
-        "api.mistral.ai",
-        "api.groq.com",
-        "api.together.xyz",
-      ];
-      let targetHostname: string;
-      try {
-        targetHostname = new URL(targetUrl).hostname;
-      } catch {
-        res.status(400).json({ error: "Invalid x-target-url" });
-        return;
-      }
-      if (!ALLOWED_DOMAINS.some(d => targetHostname === d || targetHostname.endsWith(`.${d}`))) {
-        console.error(`[LLM Models Proxy] Blocked request to disallowed domain: ${targetHostname}`);
-        res.status(403).json({ error: `Domain not allowed: ${targetHostname}` });
-        return;
-      }
-      
-      let apiKey = req.headers.authorization as string | undefined;
-      const response = await fetch(`${targetUrl}/models`, {
-        method: "GET",
-        headers: {
-          ...(apiKey ? { "Authorization": apiKey } : {}),
-          "Accept": "application/json",
-          "Connection": "close"
-        }
-      });
-      
-      res.status(response.status);
-      const data = await response.json();
-      res.json(data);
-    } catch (err: any) {
-      console.error("[LLM Models Proxy] Error:", err);
-      res.status(500).json({ error: err.message });
+    if (!rawUrl) {
+      return res.status(404).json({ error: "Could not resolve a valid PDF document to generate a share link." });
     }
-  });
 
-  // ── Secure MCP proxy to bypass CORS restrictions on custom connectors ──
-  app.all("/api/mcp-proxy", async (req, res) => {
-    try {
-      const targetUrl = (req.query.target || req.headers["x-target-url"]) as string;
-      if (!targetUrl) {
-        res.status(400).json({ error: "Missing target URL parameter or x-target-url header" });
-        return;
-      }
-
-      let parsedTargetUrl: URL;
-      try {
-        parsedTargetUrl = new URL(targetUrl);
-      } catch {
-        res.status(400).json({ error: "Invalid target URL" });
-        return;
-      }
-
-      const hostname = parsedTargetUrl.hostname.toLowerCase();
-      const isPrivateOrLoopback = 
-        hostname === "localhost" || 
-        hostname === "127.0.0.1" || 
-        hostname === "::1" ||
-        hostname.startsWith("169.254.") || 
-        hostname.startsWith("10.") || 
-        hostname.startsWith("192.168.") || 
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
-        
-      if (isPrivateOrLoopback) {
-        res.status(403).json({ error: "Access to private/local networks is not allowed" });
-        return;
-      }
-
-      const forwardedHeaders: Record<string, string> = {};
-      const excludedHeaders = ["host", "origin", "referer", "connection", "content-length"];
-      Object.entries(req.headers).forEach(([key, val]) => {
-        if (!excludedHeaders.includes(key.toLowerCase()) && typeof val === "string") {
-          forwardedHeaders[key] = val;
-        }
-      });
-
-      const fetchOpts: RequestInit = {
-        method: req.method,
-        headers: forwardedHeaders,
-      };
-
-      if (req.method !== "GET" && req.method !== "HEAD" && req.body) {
-        fetchOpts.body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-      }
-
-      const response = await fetch(targetUrl, fetchOpts);
-
-      res.status(response.status);
-      const forbiddenHeaders = ["transfer-encoding", "content-encoding", "content-length", "connection", "keep-alive"];
-      response.headers.forEach((val, key) => {
-        if (!forbiddenHeaders.includes(key.toLowerCase())) {
-          res.setHeader(key, val);
-        }
-      });
-
-      if (response.body) {
-        if (typeof (response.body as any).getReader === 'function') {
-          const reader = (response.body as any).getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value) {
-              res.write(Buffer.isBuffer(value) ? value : Buffer.from(value));
-            }
-          }
-          res.end();
-        } else if (typeof (response.body as any).pipe === 'function') {
-          (response.body as any).pipe(res);
-        } else {
-          const text = await response.text();
-          res.send(text);
-        }
-      } else {
-        res.end();
-      }
-    } catch (err: any) {
-      console.error("[MCP Proxy] Error proxying request:", err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      } else {
-        res.end();
-      }
-    }
-  });
-
-  // ── Database Routes ──
-  app.use("/api/db", async (req, res, next) => {
-    try {
-      await connectDB();
-      next();
-    } catch (err) {
-      console.error("DB middleware: connection failed", err);
-      res.status(503).json({ error: "Database unavailable" });
-    }
-  });
-
-  function buildOwnershipQuery(req: AuthenticatedRequest, id?: string) {
-    const conditions = [];
-    if (req.user) conditions.push({ userId: req.user.id });
-    if (req.anonymousId) conditions.push({ anonymousId: req.anonymousId });
-    
-    if (conditions.length === 0) return null;
-    
-    const query: any = {};
-    if (id) query.id = id;
-    
-    if (conditions.length === 1) {
-      Object.assign(query, conditions[0]);
-    } else {
-      query.$or = conditions;
-    }
-    return query;
-  }
-
-  app.get("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      const query = buildOwnershipQuery(req);
-      if (!query) {
-        return res.json([]);
-      }
-      const convos = await Conversation.find(query).sort({ updatedAt: -1 }).lean();
-      res.json(convos);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/db/conversations", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user && !req.anonymousId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      const conv = req.body;
-      if (req.user) conv.userId = req.user.id;
-      else if (req.anonymousId) conv.anonymousId = req.anonymousId;
-
-      const ownershipQuery = buildOwnershipQuery(req, conv.id);
-      if (!ownershipQuery) return res.status(401).json({ error: "Unauthorized" });
-      
-      const existing = await Conversation.findOne(ownershipQuery);
-      let updated;
-      if (existing) {
-        updated = await Conversation.findOneAndUpdate({ _id: existing._id }, conv, { returnDocument: 'after' }).lean();
-      } else {
-        // Fallback to inserting with appropriate ownership fields if it didn't exist
-        updated = await Conversation.findOneAndUpdate(
-          req.user ? { id: conv.id, userId: req.user.id } : { id: conv.id, anonymousId: req.anonymousId },
-          conv,
-          { upsert: true, returnDocument: 'after' }
-        ).lean();
-      }
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      const query = buildOwnershipQuery(req, req.params.id as string);
-      if (!query) return res.status(401).json({ error: "Unauthorized" });
-      const convo = await Conversation.findOne(query);
-      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
-
-      await Conversation.deleteOne(query);
-      await Message.deleteMany({ conversationId: req.params.id });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/share/:id", async (req: express.Request, res: express.Response) => {
-    try {
-      await connectDB();
-      const id = req.params.id;
-      const conv = await Conversation.findOne({
-        $or: [{ id }, { shareId: id }]
-      }).lean();
-
-      if (!conv) {
-        return res.status(404).send("Conversation not found");
-      }
-
-      if (conv.visibility !== "public") {
-        return res.status(403).send("This conversation is private");
-      }
-
-      const messages = await Message.find({ conversationId: conv.id }).sort({ timestamp: 1 }).lean();
-
-      // Render semantic HTML
-      const escapedTitle = (conv.title || "Shared Chat").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      
-      const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${escapedTitle}</title>
-  <meta name="description" content="Shared conversation: ${escapedTitle}">
-  <meta name="robots" content="index, follow">
-  <meta name="googlebot" content="index, follow">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
-      background: #0d0d0d;
-      color: #e0e0e0;
-    }
-    h1 {
-      color: #ffffff;
-      border-bottom: 1px solid #222;
-      padding-bottom: 0.8rem;
-      font-size: 2rem;
-    }
-    .message {
-      margin-bottom: 1.5rem;
-      padding: 1.2rem;
-      border-radius: 12px;
-      border: 1px solid #222;
-    }
-    .user {
-      background: #161616;
-      border-left: 4px solid #ff6b00;
-    }
-    .assistant {
-      background: #121212;
-      border-left: 4px solid #00a3ff;
-    }
-    .sender {
-      font-weight: 700;
-      margin-bottom: 0.6rem;
-      font-size: 0.9rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .user .sender {
-      color: #ff6b00;
-    }
-    .assistant .sender {
-      color: #00a3ff;
-    }
-    .content {
-      white-space: pre-wrap;
-      font-size: 1rem;
-    }
-  </style>
-</head>
-<body>
-  <h1>${escapedTitle}</h1>
-  <div class="messages">
-    ${messages.map(m => {
-      const escapedContent = (m.content || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const roleName = m.role === 'user' ? 'User' : 'Assistant';
-      return `
-      <div class="message ${m.role}">
-        <div class="sender">${roleName}</div>
-        <div class="content">${escapedContent}</div>
-      </div>
-      `;
-    }).join('')}
-  </div>
-</body>
-</html>`;
-
-      res.setHeader("Content-Type", "text/html");
-      res.status(200).send(html);
-    } catch (err: any) {
-      console.error("Failed to render share page for bot:", err);
-      res.status(500).send("Internal server error");
-    }
-  });
-
-  app.get("/api/db/conversations/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      const searchParam = req.params.id as string;
-      const idQuery = { $or: [{ id: searchParam }, { shareId: searchParam }] };
-      const ownershipQuery = buildOwnershipQuery(req);
-      
-      let convo = null;
-      if (ownershipQuery) {
-        convo = await Conversation.findOne({ $and: [idQuery, ownershipQuery] }).lean();
-      }
-      if (!convo) {
-        convo = await Conversation.findOne({ ...idQuery, visibility: "public" }).lean();
-      }
-      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
-      res.json(convo);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/api/db/conversations/:id/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      const searchParam = req.params.id as string;
-      const idQuery = { $or: [{ id: searchParam }, { shareId: searchParam }] };
-      const ownershipQuery = buildOwnershipQuery(req);
-      
-      let convo = null;
-      if (ownershipQuery) {
-        convo = await Conversation.findOne({ $and: [idQuery, ownershipQuery] });
-      }
-      if (!convo) {
-        convo = await Conversation.findOne({ ...idQuery, visibility: "public" });
-      }
-      if (!convo) return res.status(404).json({ error: "Not found or unauthorized" });
-
-      const msgs = await Message.find({ conversationId: convo.id }).sort({ timestamp: 1 }).lean();
-      res.json(msgs);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/db/messages", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user && !req.anonymousId) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      
-      const msg = req.body;
-      
-      // Enforce rate limiting for NEW user messages
-      if (msg.role === "user" && !msg._id) {
-        const isExisting = await Message.exists({ id: msg.id });
-        if (!isExisting) {
-          if (req.user) {
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const messageCount = await Message.countDocuments({
-              userId: req.user.id,
-              timestamp: { $gte: startOfDay.getTime() },
-              role: "user"
-            });
-            
-            let limit = 20;
-            if (req.user.hasAdminPrivileges) limit = 70;
-            else if (req.user.isPlusUser) limit = 35;
-            
-            if (messageCount >= limit) {
-              return res.status(429).json({ error: "Daily message limit reached" });
-            }
-          } else if (req.anonymousId) {
-            const messageCount = await Message.countDocuments({
-              anonymousId: req.anonymousId,
-              role: "user"
-            });
-            
-            if (messageCount >= 3) {
-              return res.status(429).json({ error: "Free trial limit reached. Please log in to continue." });
-            }
-          }
-        }
-      }
-
-      if (req.user) msg.userId = req.user.id;
-      else if (req.anonymousId) msg.anonymousId = req.anonymousId;
-
-      const ownershipQuery = buildOwnershipQuery(req, msg.id);
-      if (!ownershipQuery) return res.status(401).json({ error: "Unauthorized" });
-      
-      const existing = await Message.findOne(ownershipQuery);
-      let updated;
-      if (existing) {
-        updated = await Message.findOneAndUpdate({ _id: existing._id }, msg, { returnDocument: 'after' }).lean();
-      } else {
-        updated = await Message.findOneAndUpdate(
-          req.user ? { id: msg.id, userId: req.user.id } : { id: msg.id, anonymousId: req.anonymousId },
-          msg,
-          { upsert: true, returnDocument: 'after' }
-        ).lean();
-      }
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/db/messages/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      const query = buildOwnershipQuery(req, req.params.id as string);
-      if (!query) return res.status(401).json({ error: "Unauthorized" });
-      
-      const deleted = await Message.findOneAndDelete(query);
-      
-      if (!deleted) {
-        return res.status(404).json({ error: "Message not found or unauthorized" });
-      }
-      
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── Custom Connectors Routes ──
-  app.get("/api/db/custom-connectors", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      const connectors = await CustomConnector.find({ userId: req.user.id }).sort({ createdAt: 1 }).lean();
-      res.json(connectors);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/db/custom-connectors", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      const conn = req.body;
-      
-      // Upsert by userId + id
-      const updated = await CustomConnector.findOneAndUpdate(
-        { id: conn.id, userId: req.user.id },
-        { ...conn, userId: req.user.id },
-        { upsert: true, new: true, returnDocument: 'after' }
-      ).lean();
-      
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/db/custom-connectors/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      const deleted = await CustomConnector.findOneAndDelete({
-        id: req.params.id,
-        userId: req.user.id
-      });
-      if (!deleted) {
-        return res.status(404).json({ error: "Connector not found" });
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── Skills Routes ──
-  app.get("/api/db/skills", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const skills = await Skill.find({ userId: req.user.id }).lean();
-      res.json(skills);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/db/skills", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const skill = req.body;
-      const updated = await Skill.findOneAndUpdate(
-        { id: skill.id, userId: req.user.id },
-        { ...skill, userId: req.user.id },
-        { upsert: true, new: true, returnDocument: 'after' }
-      ).lean();
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/db/skills/:id", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const deleted = await Skill.findOneAndDelete({ id: req.params.id, userId: req.user.id });
-      if (!deleted) return res.status(404).json({ error: "Skill not found" });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── API Keys Routes ──
-  app.get("/api/db/api-keys", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const keys = await ApiKey.find({ userId: req.user.id }).lean();
-      res.json(keys);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/db/api-keys", requireAuth, async (req: AuthenticatedRequest, res: express.Response) => {
-    try {
-      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-      const { providerId, apiKey } = req.body;
-      const updated = await ApiKey.findOneAndUpdate(
-        { providerId, userId: req.user.id },
-        { providerId, apiKey, userId: req.user.id, updatedAt: Date.now() },
-        { upsert: true, new: true, returnDocument: 'after' }
-      ).lean();
-      res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ── Start ──
-  const port = Number(process.env.PORT ?? 3001);
-  const transport = process.env.TRANSPORT ?? "http";
-  const isVercel = process.env.VERCEL === "1";
-
-  if (transport === "stdio") {
-    runStdio().catch((err) => {
-      console.error("Fatal:", err);
-      process.exit(1);
+    const maskedUrl = await generateMaskedUrl(rawUrl);
+    // HARD GUARDRAIL: Return ONLY masked sharelink, NEVER expose internal CDN URL
+    res.json({
+      shareLink: maskedUrl,
+      maskedUrl,
+      subject: resolvedSubject,
+      topic: resolvedTopic,
     });
-  } else if (!isVercel && process.env.NODE_ENV !== "test") {
-    connectDB().then(() => {
-      app.listen(port, () => {
-        console.error(`✅ Materio MCP server running on http://localhost:${port}`);
-        console.error(`   ┌─────────────────────────────────────────────────────┐`);
-        console.error(`   │  MCP (JSON-RPC 2.0):  POST http://localhost:${port}/mcp  │`);
-        console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
-        console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
-        console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
-        console.error(`   │  Protected auth:      POST http://localhost:${port}/mcp/elevated │`);
-        console.error(`   └─────────────────────────────────────────────────────┘`);
-        console.error(`\n   Perplexity / Claude → POST /mcp (Streamable HTTP, JSON-RPC 2.0)`);
-        console.error(`   ChatGPT Custom GPT  → GET  /api/* (REST, via openapi.json)`);
-      });
-    }).catch((err: any) => {
-      console.error("Fatal DB:", err);
-      process.exit(1);
-    });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || "Failed to generate share link." });
   }
+});
 
-// ── Default export for Vercel serverless (api/index.ts re-exports this) ──
+app.get("/api/lookup-external-sources", async (req, res) => {
+  const q = (req.query.query ?? req.query.q) as string;
+  if (!q) {
+    return res.status(400).json({ error: "query parameter required" });
+  }
+  const useExa = req.query.useExa === "true";
+
+  try {
+    const result = await lookupExternalSources(q);
+    res.json({ query: q, result });
+  } catch (e: any) {
+    res.status(500).json({ error: "Failed to lookup external sources." });
+  }
+});
+
+app.post("/mcp/elevated", async (req, res) => {
+  try {
+    const { user, accessTier } = await resolveUserFromHeaders(req.headers as any);
+    if (!user) {
+      return res.status(401).json({ error: "Missing or invalid token" });
+    }
+    if (accessTier !== "plus" && accessTier !== "super") {
+      return res.status(403).json({ error: "Access restricted to admin or plus users" });
+    }
+    res.json({
+      message: "Access granted",
+      accessLevel: accessTier === "super" ? "admin" : "plus",
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to authorize Materio access." });
+  }
+});
+
+// ── MCP Proxy ──
+app.all("/api/mcp-proxy", async (req, res) => {
+  try {
+    const targetUrl = (req.query.target || req.headers["x-target-url"]) as string;
+    if (!targetUrl) {
+      res.status(400).json({ error: "Missing target URL parameter or x-target-url header" });
+      return;
+    }
+
+    let parsedTargetUrl: URL;
+    try {
+      parsedTargetUrl = new URL(targetUrl);
+    } catch {
+      res.status(400).json({ error: "Invalid target URL" });
+      return;
+    }
+
+    const hostname = parsedTargetUrl.hostname.toLowerCase();
+    const isPrivateOrLoopback = 
+      hostname === "localhost" || 
+      hostname === "127.0.0.1" || 
+      hostname === "::1" ||
+      hostname.startsWith("169.254.") || 
+      hostname.startsWith("10.") || 
+      hostname.startsWith("192.168.") || 
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname);
+      
+    if (isPrivateOrLoopback) {
+      res.status(403).json({ error: "Access to private/local networks is not allowed" });
+      return;
+    }
+
+    const forwardedHeaders: Record<string, string> = {};
+    const excludedHeaders = ["host", "origin", "referer", "connection", "content-length"];
+    Object.entries(req.headers).forEach(([key, val]) => {
+      if (!excludedHeaders.includes(key.toLowerCase()) && typeof val === "string") {
+        forwardedHeaders[key] = val;
+      }
+    });
+    forwardedHeaders["accept"] = "application/json, text/event-stream";
+
+    const fetchOpts: RequestInit = {
+      method: req.method,
+      headers: forwardedHeaders,
+      body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
+    };
+
+    const targetRes = await fetch(targetUrl, fetchOpts);
+    res.status(targetRes.status);
+    targetRes.headers.forEach((val, key) => {
+      if (!["transfer-encoding", "content-encoding", "content-length"].includes(key.toLowerCase())) {
+        res.setHeader(key, val);
+      }
+    });
+
+    if (targetRes.body) {
+      const reader = targetRes.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) res.write(value);
+      }
+    }
+    res.end();
+  } catch (err: any) {
+    console.error("MCP proxy error:", err);
+    res.status(502).json({ error: `Proxy failed: ${err.message}` });
+  }
+});
+
+// ── Start ──
+const port = Number(process.env.PORT ?? 3001);
+const transport = process.env.TRANSPORT ?? "http";
+const isVercel = process.env.VERCEL === "1";
+
+if (transport === "stdio") {
+  runStdio().catch((err) => {
+    console.error("Fatal:", err);
+    process.exit(1);
+  });
+} else if (!isVercel && process.env.NODE_ENV !== "test") {
+  app.listen(port, () => {
+    console.error(`✅ Materio MCP server running on http://localhost:${port}`);
+    console.error(`   ┌─────────────────────────────────────────────────────┐`);
+    console.error(`   │  MCP (JSON-RPC 2.0):  POST http://localhost:${port}/mcp  │`);
+    console.error(`   │  Health:              GET  http://localhost:${port}/health │`);
+    console.error(`   │  OpenAPI (ChatGPT):   GET  http://localhost:${port}/openapi.json │`);
+    console.error(`   │  REST API (ChatGPT):  GET  http://localhost:${port}/api/* │`);
+    console.error(`   │  Protected auth:      POST http://localhost:${port}/mcp/elevated │`);
+    console.error(`   └─────────────────────────────────────────────────────┘`);
+  });
+}
+
 export default app;

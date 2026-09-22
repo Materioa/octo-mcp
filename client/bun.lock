@@ -5,7 +5,12 @@
     "": {
       "name": "client",
       "dependencies": {
+        "@eraserlabs/layout": "^0.1.0",
+        "@eraserlabs/protocol": "^0.1.0",
+        "@eraserlabs/render": "^0.1.0",
+        "@eraserlabs/utils": "^0.1.0",
         "@modelcontextprotocol/sdk": "^1.29.0",
+        "@opencoredev/loginwithchatgpt-react": "^0.1.1",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@squircle/core": "^1.0.6",
         "@squircle/paint-polyfill": "^1.0.6",
@@ -100,6 +105,14 @@
     "@emnapi/runtime": ["@emnapi/runtime@1.10.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA=="],
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w=="],
+
+    "@eraserlabs/layout": ["@eraserlabs/layout@0.1.0", "", { "dependencies": { "@eraserlabs/utils": "0.1.0" } }, "sha512-ttF3sOjtdn9vmpUsVLi44zjeNLFKHAPKztKGl4lUuwQm7dMaBlOXsWu0lgETfMnvvlvmFviN/orRZyeC9/QjDg=="],
+
+    "@eraserlabs/protocol": ["@eraserlabs/protocol@0.1.0", "", {}, "sha512-WALQDKidAyeaEB/hFKlYEM2qAIUgaZRJ+2Hx5gFrqKZ+N31HbnHN6jWC6I8EDFFDvYGNt/eRG9R67YVrbAOp6w=="],
+
+    "@eraserlabs/render": ["@eraserlabs/render@0.1.0", "", { "dependencies": { "@eraserlabs/layout": "0.1.0", "@eraserlabs/protocol": "0.1.0", "@eraserlabs/utils": "0.1.0" } }, "sha512-X7HeQcW8aq2ZUbGiFMEamia08VxWZycRKhLaICczH6nDhgXNrPnrcSR4PDFkzT6vCN2+IHFldoS2eQyKwAedzg=="],
+
+    "@eraserlabs/utils": ["@eraserlabs/utils@0.1.0", "", {}, "sha512-YzfK+7+w/ME20ZP2JcQ5I6A2HNLYhDPCdNVCwBtWb3Mdd0pWoRNofeKruvFrHSQ8iVXnTaWgvEHml2VUXtMBIA=="],
 
     "@flatten-js/core": ["@flatten-js/core@1.6.12", "", { "dependencies": { "@flatten-js/interval-tree": "^2.0.0" } }, "sha512-FwTv9YuAPNojrw5XHT74TRjUYN/yEjeHejklNEoEZYEeT9VELZwnHmd1N4BMds6p/y1hBzeltEyHZpRIUyAsAg=="],
 
@@ -226,6 +239,10 @@
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.4", "", { "dependencies": { "@tybys/wasm-util": "^0.10.1" }, "peerDependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1" } }, "sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow=="],
 
     "@nodable/entities": ["@nodable/entities@2.1.1", "", {}, "sha512-Pig3HxDIoMgjdEH8OCf/dkcTmLFjJRjWuq8jSnklu284/TKOPibSRERmOykiwmyXTtv61mP+44f3GMx0tLAyjg=="],
+
+    "@opencoredev/loginwithchatgpt-core": ["@opencoredev/loginwithchatgpt-core@0.1.1", "", {}, "sha512-ev23J6Kh3ofaVIzbgLtYA1CJ9eNBGDJoRB9QWsYxGZ+E/zJdD6u2e+NoHRkgtwxCCaAoyAkZpT+WgMT7D65f3Q=="],
+
+    "@opencoredev/loginwithchatgpt-react": ["@opencoredev/loginwithchatgpt-react@0.1.1", "", { "dependencies": { "@opencoredev/loginwithchatgpt-core": "^0.1.1" }, "peerDependencies": { "react": "^18.0.0 || ^19.0.0" } }, "sha512-+xDFRRD0pFupQn+Dt0gy1Dn4q8mMwLemJUkkc2J5gtCymjS1E6QAsk6BhbYyPxWnnpBU+QCF3w1hZ2pi/gnfRg=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.130.0", "", {}, "sha512-ibD2usx9JRu7f5pu2tMKMI4cpA4NgXJQoYRP4pQ7Pxmn1l6k/53qWtQWZayhYy3X4QZkt90Ot+mJEaeXouio6Q=="],
 

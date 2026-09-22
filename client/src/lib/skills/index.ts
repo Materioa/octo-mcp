@@ -42,8 +42,8 @@ function makeBuiltinSkill(id: string, content: string, files?: { path: string, c
   };
 }
 
-const skillCreatorFilesMap = import.meta.glob("../../../../src/lib/skills/skill-creator/**/*", { query: "?raw", import: "default", eager: true });
-const productSelfKnowledgeFilesMap = import.meta.glob("../../../../src/lib/skills/product-self-knowledge/**/*", { query: "?raw", import: "default", eager: true });
+const skillCreatorFilesMap = import.meta.glob("./skill-creator/**/*", { query: "?raw", import: "default", eager: true });
+const productSelfKnowledgeFilesMap = import.meta.glob("./product-self-knowledge/**/*", { query: "?raw", import: "default", eager: true });
 
 function mapFiles(fileMap: Record<string, unknown>, prefixToStrip: string) {
   const files: { path: string, content: string }[] = [];
@@ -59,8 +59,8 @@ function mapFiles(fileMap: Record<string, unknown>, prefixToStrip: string) {
   return { mainContent, files };
 }
 
-const skillCreator = mapFiles(skillCreatorFilesMap, "../../../../src/lib/skills/skill-creator/");
-const productSelfKnowledge = mapFiles(productSelfKnowledgeFilesMap, "../../../../src/lib/skills/product-self-knowledge/");
+const skillCreator = mapFiles(skillCreatorFilesMap, "./skill-creator/");
+const productSelfKnowledge = mapFiles(productSelfKnowledgeFilesMap, "./product-self-knowledge/");
 
 export const BUILTIN_SKILLS: BuiltinSkill[] = [
   makeBuiltinSkill("builtin-skill-creator", skillCreator.mainContent, skillCreator.files),

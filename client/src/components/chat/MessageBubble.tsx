@@ -9,6 +9,7 @@ import type { Message } from "@/types";
 import { ToolCallGroup } from "./ToolCallCard";
 import { AskUserInputCard } from "./AskUserInputCard";
 import { DiagramRenderer } from "@/components/diagrams/DiagramRenderer";
+import { EraserDiagram } from "@/components/diagrams/EraserDiagram";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
 import { DownloadIcon, FileIcon, FileTextIcon, Copy, Pencil, Trash2, AlertCircle, ThumbsUp, ThumbsDown, RotateCcw, ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -263,11 +264,14 @@ export const MessageBubble = React.memo(function MessageBubble({
       const lang = match?.[1];
       const codeStr = String(children).replace(/\n$/, "");
 
-      if (lang && ["mermaid", "dot", "graphviz", "python", "javascript", "js", "html", "react", "jsx", "tsx", "markmap", "mindmap"].includes(lang)) {
+      const isEraserDiagram = lang && ["eraser", "eraser-diagram", "eraser-json"].includes(lang);
+      const isJsonDiagram = lang === "json" && codeStr.includes('"entities"') && codeStr.includes('"connections"');
+
+      if (lang && (["mermaid", "dot", "graphviz", "python", "javascript", "js", "html", "react", "jsx", "tsx", "markmap", "mindmap"].includes(lang) || isEraserDiagram || isJsonDiagram)) {
         return (
           <DiagramRenderer
             code={codeStr}
-            language={lang}
+            language={isEraserDiagram || isJsonDiagram ? "eraser" : lang}
             isStreaming={message.isStreaming}
           />
         );
@@ -461,7 +465,10 @@ export const MessageBubble = React.memo(function MessageBubble({
               <>
                 {(() => {
                   const askUserInputCalls = message.toolCalls!.filter((tc) => tc.name === "ask_user_input_v0");
-                  const otherToolCalls = message.toolCalls!.filter((tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory");
+                  const eraserToolCalls = message.toolCalls!.filter((tc) => tc.name === "generate_eraser_diagram");
+                  const otherToolCalls = message.toolCalls!.filter(
+                    (tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory" && tc.name !== "generate_eraser_diagram"
+                  );
                   
                   return (
                     <ErrorBoundary>
@@ -469,6 +476,14 @@ export const MessageBubble = React.memo(function MessageBubble({
                       {askUserInputCalls.map((tc) => (
                         <AskUserInputCard key={tc.id} toolCall={tc} />
                       ))}
+                      {eraserToolCalls.map((tc) => {
+                        const codeStr = typeof tc.args === "string" ? tc.args : JSON.stringify(tc.args || {});
+                        return (
+                          <div key={tc.id} className="my-2">
+                            <EraserDiagram code={codeStr} />
+                          </div>
+                        );
+                      })}
                     </ErrorBoundary>
                   );
                 })()}

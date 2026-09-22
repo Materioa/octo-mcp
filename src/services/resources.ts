@@ -65,25 +65,70 @@ export function buildPdfUrl(
 }
 
 export async function generateMaskedUrl(actualUrl: string): Promise<string> {
-  const response = await fetch(
-    "https://getmaterio.app/api/v2/features?action=pdf-share&subAction=create",
-    {
+  const trimmed = (actualUrl || "").trim();
+
+  // HARD GUARDRAIL: Never accept an empty URL
+  if (!trimmed) {
+    throw new Error("HARD GUARDRAIL: actualUrl is required to generate a masked share link.");
+  }
+
+  // HARD GUARDRAIL: Reject already-masked share links to prevent recursion / invalid links
+  if (
+    trimmed.includes("?share=") ||
+    trimmed.includes("getmaterio.app/?share=") ||
+    trimmed.includes("materioa.vercel.app/?share=")
+  ) {
+    throw new Error(
+      "HARD GUARDRAIL: Cannot generate a share link from an existing masked share link (contains '?share='). " +
+      "Masked share links are end-user web pages, not raw PDF assets. Provide the real PDF document URL or semester, subject, and topic instead."
+    );
+  }
+
+  // HARD GUARDRAIL: Validate URL structure (must be http/https, reject fake/placeholder protocols)
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Protocol must be http or https");
+    }
+  } catch {
+    throw new Error(
+      `HARD GUARDRAIL: Invalid URL provided for share link generation: "${trimmed}". Do NOT hallucinate or guess fake URLs.`
+    );
+  }
+
+  // HARD GUARDRAIL: Must actually call the canonical API
+  const apiUrl = "https://getmaterio.app/api/v2/features?action=pdf-share&subAction=create";
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ actualUrl }),
-    }
-  );
+      body: JSON.stringify({ actualUrl: trimmed }),
+    });
+  } catch (netErr: any) {
+    throw new Error(
+      `HARD GUARDRAIL: Network failure connecting to share link API: ${netErr?.message || netErr}. Do NOT guess or hallucinate pseudo links.`
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Share link API failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `HARD GUARDRAIL: Share link API returned error status ${response.status} (${response.statusText}). ` +
+      `Failed to generate verified share link. Do NOT hallucinate or guess pseudo links.`
+    );
   }
 
   const data = (await response.json()) as any;
-  if (!data || !data.maskId) {
-    throw new Error("Share link API returned no maskId");
+  if (!data || typeof data.maskId !== "string" || !data.maskId.trim()) {
+    throw new Error(
+      "HARD GUARDRAIL: Share link API response did not return a valid maskId. " +
+      "Cannot construct verified share link. Do NOT hallucinate or guess pseudo links."
+    );
   }
 
-  return `https://getmaterio.app/?share=${data.maskId}`;
+  const maskId = data.maskId.trim();
+  // Strictly construct the verified masked share link
+  return `https://getmaterio.app/?share=${encodeURIComponent(maskId)}`;
 }
 
 /**
@@ -225,4 +270,209 @@ export async function getFullIndex(): Promise<
     }
   }
   return result;
+}
+
+export interface ExploreLibraryParams {
+  semester?: string;
+  subject?: string;
+  topic?: string;
+  search?: string;
+}
+
+/**
+ * Unified library exploration service powering the consolidated ResourceLibrary tool.
+ * Evaluates options hierarchically and returns structured curriculum data.
+ */
+export async function exploreLibrary(params: ExploreLibraryParams = {}) {
+  const lib = await getResourceLibrary();
+  const { semester, subject, topic, search } = params;
+
+  // 1. Search mode: match query across all semesters, subjects, sections, topics
+  if (search && search.trim().length >= 2) {
+    const q = search.trim().toLowerCase();
+    const matches: Array<{ semester: string; subject: string; sectionType: string; topic: string }> = [];
+
+    for (const [sem, subjects] of Object.entries(lib)) {
+      if (semester && sem !== semester.trim()) continue;
+      for (const [sub, sections] of Object.entries(subjects)) {
+        if (subject && !sub.toLowerCase().includes(subject.trim().toLowerCase())) continue;
+        const subMatch = sub.toLowerCase().includes(q);
+
+        for (const sec of sections) {
+          const typeMatch = sec.type.toLowerCase().includes(q);
+          for (const top of sec.content) {
+            const topMatch = top.toLowerCase().includes(q);
+            if (subMatch || typeMatch || topMatch) {
+              matches.push({ semester: sem, subject: sub, sectionType: sec.type, topic: top });
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      mode: "search" as const,
+      query: search,
+      totalMatches: matches.length,
+      matches: matches.slice(0, 30),
+      truncated: matches.length > 30,
+      hint: "Use subject and topic names with SnapSearch or DeepThink to retrieve study content.",
+    };
+  }
+
+  // 2. Topic inspection mode: locate a specific topic and return its context
+  if (topic && topic.trim()) {
+    const q = topic.trim().toLowerCase();
+    let foundMatch: {
+      semester: string;
+      subject: string;
+      sectionType: string;
+      topic: string;
+      siblingTopics: string[];
+      availableSections: string[];
+    } | null = null;
+
+    for (const [sem, subjects] of Object.entries(lib)) {
+      if (semester && sem !== semester.trim()) continue;
+      for (const [sub, sections] of Object.entries(subjects)) {
+        if (subject && !sub.toLowerCase().includes(subject.trim().toLowerCase())) continue;
+
+        for (const sec of sections) {
+          const exact = sec.content.find((t) => t.toLowerCase() === q);
+          const partial = sec.content.find((t) => t.toLowerCase().includes(q));
+          const matchedTopic = exact || partial;
+
+          if (matchedTopic) {
+            foundMatch = {
+              semester: sem,
+              subject: sub,
+              sectionType: sec.type,
+              topic: matchedTopic,
+              siblingTopics: sec.content.filter((t) => t !== matchedTopic),
+              availableSections: sections.map((s) => s.type),
+            };
+            break;
+          }
+        }
+        if (foundMatch) break;
+      }
+      if (foundMatch) break;
+    }
+
+    if (foundMatch) {
+      return {
+        mode: "topic" as const,
+        found: true,
+        ...foundMatch,
+        hint: "Use SnapSearch or DeepThink for content text. Use ShareLinkGenerator for a user share link.",
+      };
+    }
+
+    return {
+      mode: "topic" as const,
+      found: false,
+      query: topic,
+      message: `Topic "${topic}" was not found in the library. Try searching with a shorter keyword using the 'search' parameter.`,
+    };
+  }
+
+  // 3. Subject mode: return all categorized sections and topics for a subject
+  if (subject && subject.trim()) {
+    const q = subject.trim().toLowerCase();
+    let matchedSem = semester?.trim();
+    let matchedSub: string | null = null;
+    let sectionsList: Array<{ type: string; content: string[] }> | null = null;
+
+    if (matchedSem && lib[matchedSem]) {
+      const foundKey = Object.keys(lib[matchedSem]).find(
+        (k) => k.toLowerCase() === q || k.toLowerCase().includes(q)
+      );
+      if (foundKey) {
+        matchedSub = foundKey;
+        sectionsList = lib[matchedSem][foundKey];
+      }
+    } else {
+      // Auto-detect semester across all semesters
+      for (const [sem, subjects] of Object.entries(lib)) {
+        const foundKey = Object.keys(subjects).find(
+          (k) => k.toLowerCase() === q || k.toLowerCase().includes(q)
+        );
+        if (foundKey) {
+          matchedSem = sem;
+          matchedSub = foundKey;
+          sectionsList = subjects[foundKey];
+          break;
+        }
+      }
+    }
+
+    if (matchedSem && matchedSub && sectionsList) {
+      const grouped: Record<string, string[]> = {};
+      let totalTopics = 0;
+      for (const sec of sectionsList) {
+        grouped[sec.type] = sec.content;
+        totalTopics += sec.content.length;
+      }
+
+      return {
+        mode: "subject" as const,
+        semester: matchedSem,
+        subject: matchedSub,
+        totalResources: totalTopics,
+        sections: grouped,
+        hint: "To read course material for any topic, call SnapSearch or DeepThink with the exact topic name.",
+      };
+    }
+
+    return {
+      mode: "subject" as const,
+      found: false,
+      message: `Subject "${subject}" was not found${semester ? ` in semester ${semester}` : ""}. Call ResourceLibrary without parameters to see all available subjects.`,
+    };
+  }
+
+  // 4. Semester mode: list all subjects in that semester
+  if (semester && semester.trim()) {
+    const sem = semester.trim();
+    const semData = lib[sem];
+
+    if (!semData) {
+      const available = Object.keys(lib).sort((a, b) => Number(a) - Number(b));
+      return {
+        mode: "semester" as const,
+        found: false,
+        message: `Semester "${semester}" was not found. Available semesters: ${available.join(", ")}`,
+      };
+    }
+
+    const subjects = Object.entries(semData).map(([name, sections]) => ({
+      name,
+      sectionTypes: sections.map((s) => s.type),
+      totalTopics: sections.reduce((acc, s) => acc + s.content.length, 0),
+    }));
+
+    return {
+      mode: "semester" as const,
+      semester: sem,
+      totalSubjects: subjects.length,
+      subjects,
+      hint: `Pass { semester: "${sem}", subject: "<subject_name>" } to view all chapters and question banks.`,
+    };
+  }
+
+  // 5. Overview mode: list all available semesters and their subjects
+  const sortedSemesters = Object.keys(lib).sort((a, b) => Number(a) - Number(b));
+  const curriculum = sortedSemesters.map((sem) => ({
+    semester: sem,
+    subjectCount: Object.keys(lib[sem] || {}).length,
+    subjects: Object.keys(lib[sem] || {}),
+  }));
+
+  return {
+    mode: "overview" as const,
+    totalSemesters: sortedSemesters.length,
+    availableSemesters: sortedSemesters,
+    curriculum,
+    hint: "Pass { semester: '...' } to view a semester, { subject: '...' } to view chapters, or { search: '...' } to find a specific topic.",
+  };
 }

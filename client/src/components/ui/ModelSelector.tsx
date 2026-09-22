@@ -41,6 +41,25 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         }
       };
       fetchGeminiModels();
+    } else if (currentProviderId === 'chatgpt' && !models) {
+      const fetchChatgptModels = async () => {
+        try {
+          const apiBase = import.meta.env.VITE_API_URL
+            || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+          const response = await fetch(`${apiBase}/api/chatgpt/models`, {
+            credentials: "include"
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.models && Array.isArray(data.models)) {
+              settings.setFetchedModels(currentProviderId, data.models);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch ChatGPT models:", error);
+        }
+      };
+      fetchChatgptModels();
     } else if (currentProviderId !== 'openrouter-free' && !models) {
       const fetchModels = async () => {
         const key = settings.apiKeys[currentProviderId] || settings.aiProvider.apiKey;

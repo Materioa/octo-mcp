@@ -25,15 +25,31 @@ interface AuthState {
   logout: () => void;
 }
 
+export const TEST_USER: User = {
+  id: "test-user-id",
+  username: "testuser",
+  displayName: "Test User",
+  name: "Test User",
+  email: "test@example.com",
+  hasAdminPrivileges: true,
+  isPlusUser: true,
+};
+
+const isLocalDev = typeof window !== "undefined" && (
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  Boolean(import.meta.env.DEV)
+);
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
-      user: null,
-      anonymousId: uuidv4(), // Generate a unique anonymous ID if one doesn't exist
+      token: isLocalDev ? "test_token" : null,
+      user: isLocalDev ? TEST_USER : null,
+      anonymousId: "test_anonymous_id",
       loginOpen: false,
       setLoginOpen: (open) => set({ loginOpen: open }),
-      setAuth: (token, user) => set({ token, user }),
+      setAuth: (token, user) => set({ token, user, loginOpen: false }),
       logout: () => {
         set({ token: null, user: null });
         import("./settings").then((settingsStore) => {

@@ -6,6 +6,7 @@
       "name": "materio-mcp-server",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.12.1",
+        "@opencoredev/loginwithchatgpt-server": "^0.1.1",
         "@supabase/supabase-js": "^2.103.2",
         "@types/express": "^5.0.6",
         "@types/pdfkit": "^0.17.6",
@@ -141,6 +142,10 @@
     "@oozcitak/url": ["@oozcitak/url@1.0.0", "", { "dependencies": { "@oozcitak/infra": "1.0.3", "@oozcitak/util": "1.0.2" } }, "sha512-LGrMeSxeLzsdaitxq3ZmBRVOrlRRQIgNNci6L0VRnOKlJFuRIkNm4B+BObXPCJA6JT5bEJtrrwjn30jueHJYZQ=="],
 
     "@oozcitak/util": ["@oozcitak/util@8.3.4", "", {}, "sha512-6gH/bLQJSJEg7OEpkH4wGQdA8KXHRbzL1YkGyUO12YNAgV3jxKy4K9kvfXj4+9T0OLug5k58cnPCKSSIKzp7pg=="],
+
+    "@opencoredev/loginwithchatgpt-core": ["@opencoredev/loginwithchatgpt-core@0.1.1", "", {}, "sha512-ev23J6Kh3ofaVIzbgLtYA1CJ9eNBGDJoRB9QWsYxGZ+E/zJdD6u2e+NoHRkgtwxCCaAoyAkZpT+WgMT7D65f3Q=="],
+
+    "@opencoredev/loginwithchatgpt-server": ["@opencoredev/loginwithchatgpt-server@0.1.1", "", { "dependencies": { "@opencoredev/loginwithchatgpt-core": "^0.1.1" } }, "sha512-DGtPPWsuZQ9TBKZir/ThVYFzI2SITWipzlTpDRevOYEEPzXl2lUW5JX+HNLiGAPq9s/nkvIxG+QP3tQG/02pRw=="],
 
     "@puppeteer/browsers": ["@puppeteer/browsers@3.0.4", "", { "dependencies": { "modern-tar": "^0.7.6", "yargs": "^17.7.2" }, "peerDependencies": { "proxy-agent": ">=8.0.1" }, "optionalPeers": ["proxy-agent"], "bin": { "browsers": "lib/main-cli.js" } }, "sha512-HGM8iAmGTf+Y7t0373szVbTmt3d7vPkYL/1bpOkOFO0YUYLgSeuYBCzESklogNPvOBnZ/MRD5f07OkpqH1trtA=="],
 

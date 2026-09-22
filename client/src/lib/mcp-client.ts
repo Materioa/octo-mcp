@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { MCPTool, CustomConnector } from "@/types";
 
 const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
@@ -36,7 +37,7 @@ class MCPClientManager {
             );
             const transport = new StreamableHTTPClientTransport(
               new URL(options.mainServerUrl, window.location.origin),
-              { requestInit: { headers: { "X-Materio-Client": "true" } } }
+              { requestInit: { headers: { "X-Materio-Client": "true", "Accept": "application/json, text/event-stream" } } }
             );
             await client.connect(transport);
             this.clients.set("main", client);
@@ -55,7 +56,9 @@ class MCPClientManager {
         for (const connector of options.customConnectors) {
           const connectCustom = async () => {
             try {
-              const headers: Record<string, string> = {};
+              const headers: Record<string, string> = {
+                "Accept": "application/json, text/event-stream"
+              };
               if (connector.authType === "api_key" && connector.apiKey) {
                 headers["Authorization"] = `Bearer ${connector.apiKey}`;
               } else if (connector.authType === "oauth" && connector.oauthToken) {
@@ -70,10 +73,19 @@ class MCPClientManager {
               );
               const proxyUrl = new URL("/api/mcp-proxy", API_URL);
               proxyUrl.searchParams.set("target", connector.url);
-              const transport = new StreamableHTTPClientTransport(
-                proxyUrl,
-                { requestInit: { headers } }
-              );
+              
+              const isSse = connector.url.toLowerCase().includes("/sse") || connector.url.toLowerCase().includes("transport=sse");
+              const transport = isSse
+                ? new SSEClientTransport(
+                    proxyUrl,
+                    {
+                      requestInit: { headers }
+                    }
+                  )
+                : new StreamableHTTPClientTransport(
+                    proxyUrl,
+                    { requestInit: { headers } }
+                  );
               await client.connect(transport);
               this.clients.set(connector.id, client);
 

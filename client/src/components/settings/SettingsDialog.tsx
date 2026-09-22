@@ -17,9 +17,198 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { WandSparkles } from "lucide-react";
+import { WandSparkles, Loader2, Key, CheckCircle2, AlertTriangle, ExternalLink, Copy } from "lucide-react";
 import { ModelSelector } from "@/components/ui/ModelSelector";
 import { SkillsTab } from "@/components/settings/SkillsTab";
+import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
+
+function ChatGPTLoginPanel() {
+  const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+  const settings = useSettingsStore();
+  const {
+    status,
+    user,
+    userCode,
+    verificationUrl,
+    login,
+    logout,
+    copyCode,
+  } = useLoginWithChatGPT({
+    basePath: `${apiBase}/api/chatgpt`
+  });
+
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    copyCode();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      const fetchModels = async () => {
+        try {
+          const response = await fetch(`${apiBase}/api/chatgpt/models`, {
+            credentials: "include"
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.models && Array.isArray(data.models) && data.models.length > 0) {
+              settings.setFetchedModels("chatgpt", data.models);
+              if (!data.models.includes(settings.aiProvider.model)) {
+                settings.setAIProvider({
+                  ...settings.aiProvider,
+                  model: data.models[0]
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch ChatGPT models:", error);
+        }
+      };
+      fetchModels();
+    }
+  }, [status]);
+
+  return (
+    <div className="rounded-[24px] border border-border p-4 bg-muted/10 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="font-semibold text-sm text-foreground">ChatGPT Account Authentication</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Use your ChatGPT Plus or Pro subscription to stream GPT models in Thinklet.
+          </p>
+        </div>
+        {status === "authenticated" && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Connected
+          </span>
+        )}
+      </div>
+
+      {status === "loading" && (
+        <div className="flex items-center justify-center py-6 gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin text-primary" />
+          Checking connection status...
+        </div>
+      )}
+
+      {status === "unauthenticated" && (
+        <div className="flex flex-col items-center justify-center py-4 space-y-3">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+            <Key className="w-5 h-5" />
+          </div>
+          <p className="text-xs text-muted-foreground text-center max-w-xs">
+            Authenticate once. Your access token is kept securely on the server and is never exposed to the browser.
+          </p>
+          <Button 
+            onClick={() => login()}
+            className="w-full sm:w-auto !rounded-[8px] cursor-pointer"
+          >
+            Connect ChatGPT Account
+          </Button>
+        </div>
+      )}
+
+      {(status === "connecting" || status === "pending") && (
+        <div className="space-y-4 border border-border/60 rounded-lg p-4 bg-background/50">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Waiting for ChatGPT activation...
+          </div>
+          
+          <div className="space-y-3 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-foreground">1</span>
+              <div>
+                Open the OpenAI authorization page:
+                <a 
+                  href={verificationUrl} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary hover:underline font-semibold ml-1.5 cursor-pointer"
+                >
+                  Confirm on OpenAI <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-foreground">2</span>
+              <div className="flex-1">
+                Enter or confirm this temporary code:
+                <div className="mt-1.5 flex items-center gap-2">
+                  <span className="font-mono font-bold text-base text-foreground bg-muted/60 px-3 py-1.5 rounded-md border border-border select-all tracking-wider">
+                    {userCode}
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleCopy}
+                    className="h-9 px-3 gap-1.5 !rounded-[8px] cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {status === "authenticated" && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-border/60 rounded-lg p-4 bg-background/50">
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Signed in as</div>
+            <div className="font-medium text-sm text-foreground">{user?.email || "ChatGPT User"}</div>
+          </div>
+          <Button 
+            variant="destructive" 
+            size="sm" 
+            onClick={() => logout()}
+            className="w-full sm:w-auto !rounded-[8px] cursor-pointer"
+          >
+            Disconnect Account
+          </Button>
+        </div>
+      )}
+
+      {status === "expired" && (
+        <div className="flex flex-col items-center justify-center py-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+            <AlertTriangle className="w-4 h-4" />
+            Verification Code Expired
+          </div>
+          <p className="text-xs text-muted-foreground text-center">
+            The verification window has timed out. Please try again.
+          </p>
+          <Button onClick={() => login()} className="!rounded-[8px] cursor-pointer">
+            Generate New Code
+          </Button>
+        </div>
+      )}
+
+      {status === "error" && (
+        <div className="flex flex-col items-center justify-center py-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+            <AlertTriangle className="w-4 h-4" />
+            Authentication Error
+          </div>
+          <p className="text-xs text-muted-foreground text-center">
+            Something went wrong during authentication. Please retry.
+          </p>
+          <Button onClick={() => login()} className="!rounded-[8px] cursor-pointer">
+            Retry Authentication
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface SettingsDialogProps {
   open: boolean;
@@ -354,7 +543,7 @@ export function SettingsDialog({
                     </div>
                   )}
 
-                  {!isFreeBuiltIn && (
+                  {!isFreeBuiltIn && localSettings.providerId !== 'chatgpt' && (
                     <div className="space-y-3">
                       <label className="text-sm font-medium">API Key</label>
                       <Input
@@ -367,6 +556,10 @@ export function SettingsDialog({
                         className="h-10"
                       />
                     </div>
+                  )}
+
+                  {localSettings.providerId === 'chatgpt' && (
+                    <ChatGPTLoginPanel />
                   )}
 
                   <div className="space-y-3">

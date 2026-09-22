@@ -1,3 +1,8 @@
+// ─────────────────────────────────────────────────────
+//  Materio MCP Services — External Knowledge Lookup
+//  Powered by Firecrawl Keyless with Educational Domain Priority
+// ─────────────────────────────────────────────────────
+
 import { lookupGfG } from "../tools/gfg.js";
 
 export interface ExternalLookupResult {
@@ -5,135 +10,219 @@ export interface ExternalLookupResult {
   source: string | null;
   content: string;
   found: boolean;
-  provider: "exa" | "gfg" | "wikipedia" | null;
-  shouldAskUser: boolean;
+  provider: "firecrawl" | "gfg" | "official_docs" | "educational" | null;
+  shouldAskUser?: boolean;
   prompt?: string;
 }
 
-interface ExaSearchResponse {
-  results?: Array<{
-    title?: string;
-    url?: string;
-    text?: string;
-    summary?: string;
-    highlights?: string[];
-  }>;
+const TRUSTED_DOMAINS = [
+  "geeksforgeeks.org",
+  "tutorialspoint.com",
+  "w3schools.com",
+  "developer.mozilla.org",
+  "docs.python.org",
+  "docs.oracle.com",
+  "nodejs.org",
+  "dev.mysql.com",
+  "en.cppreference.com",
+  "learn.microsoft.com",
+  "wikipedia.org",
+];
+
+const BLOCKED_DOMAINS = [
+  "quora.com",
+  "reddit.com",
+  "pinterest.com",
+  "blogspot.com",
+  "medium.com",
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "tiktok.com",
+  "instagram.com",
+];
+
+function isTrustedDomain(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    const host = parsed.hostname.toLowerCase();
+    if (BLOCKED_DOMAINS.some((b) => host.includes(b))) return false;
+    return TRUSTED_DOMAINS.some((d) => host.includes(d));
+  } catch {
+    return false;
+  }
 }
 
-const DEFAULT_EXA_API_URL = "https://api.exa.ai/search";
-const DEFAULT_EXTERNAL_LOOKUP_PROMPT = "No related material data was found - should I look for external sources?";
-
-function toTrimmedString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+function getDomainRank(urlStr: string): number {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    if (host.includes("geeksforgeeks.org")) return 1;
+    if (host.includes("developer.mozilla.org")) return 2;
+    if (host.includes("tutorialspoint.com")) return 3;
+    if (host.includes("w3schools.com")) return 4;
+    if (host.includes("docs.") || host.includes("learn.microsoft.com")) return 5;
+    if (host.includes("wikipedia.org")) return 6;
+    return 10;
+  } catch {
+    return 99;
+  }
 }
 
-function getExternalLookupPrompt(): string {
-  return DEFAULT_EXTERNAL_LOOKUP_PROMPT;
-}
-
-async function searchExa(topic: string): Promise<ExternalLookupResult> {
-  const apiKey = toTrimmedString(process.env.EXA_API_KEY);
-
-  if (!apiKey) {
-    throw new Error("Exa API key is not configured");
+/**
+ * Searches and crawls using Firecrawl (keyless by default, or with FIRECRAWL_API_KEY if configured).
+ */
+async function searchWithFirecrawl(topic: string): Promise<ExternalLookupResult | null> {
+  const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
-  const exaUrl = toTrimmedString(process.env.EXA_API_URL) || DEFAULT_EXA_API_URL;
-  const response = await fetch(exaUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      query: topic,
-      type: "auto",
-      numResults: 5,
-      contents: {
-        text: true,
-        highlights: true,
-        summary: true,
-      },
-    }),
-  });
+  // Focus search query on prioritized educational resources
+  const targetedQuery = `${topic} (site:geeksforgeeks.org OR site:developer.mozilla.org OR site:tutorialspoint.com OR site:w3schools.com)`;
 
-  if (!response.ok) {
-    throw new Error(`Exa search failed with status ${response.status}`);
-  }
+  try {
+    const res = await fetch("https://api.firecrawl.dev/v1/search", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        query: targetedQuery,
+        limit: 5,
+        scrapeOptions: {
+          formats: ["markdown"],
+        },
+      }),
+    });
 
-  const payload = (await response.json()) as ExaSearchResponse;
-  const results = payload.results ?? [];
-  const bestMatch = results[0];
+    if (!res.ok) {
+      return null;
+    }
 
-  if (!bestMatch?.url) {
+    const json = (await res.json()) as any;
+    const rawResults = json?.data || json?.results || [];
+    if (!Array.isArray(rawResults) || rawResults.length === 0) {
+      return null;
+    }
+
+    // Filter and sort by educational domain trust
+    const sorted = rawResults
+      .filter((item: any) => item?.url && !BLOCKED_DOMAINS.some((b) => item.url.includes(b)))
+      .sort((a: any, b: any) => getDomainRank(a.url) - getDomainRank(b.url));
+
+    const best = sorted[0];
+    if (!best) return null;
+
+    const content =
+      (typeof best.markdown === "string" ? best.markdown.trim() : "") ||
+      (typeof best.description === "string" ? best.description.trim() : "") ||
+      (typeof best.content === "string" ? best.content.trim() : "");
+
+    if (!content) return null;
+
+    // Cap output length to avoid context overflow
+    const trimmedContent = content.length > 4000 ? content.slice(0, 4000) + "\n\n...(truncated for brevity)" : content;
+
     return {
       topic,
-      source: null,
-      content: "",
-      found: false,
-      provider: "exa",
-      shouldAskUser: true,
-      prompt: getExternalLookupPrompt(),
+      source: best.url,
+      content: trimmedContent,
+      found: true,
+      provider: "firecrawl",
     };
+  } catch {
+    return null;
   }
-
-  const content =
-    toTrimmedString(bestMatch.summary) ||
-    toTrimmedString(bestMatch.text) ||
-    toTrimmedString(bestMatch.highlights?.[0]);
-
-  return {
-    topic,
-    source: bestMatch.url,
-    content,
-    found: Boolean(content),
-    provider: "exa",
-    shouldAskUser: false,
-  };
 }
 
-export async function lookupExternalSources(topic: string, useExa = false): Promise<ExternalLookupResult> {
-  if (!useExa) {
+/**
+ * Keyless fallback crawler using reader proxy for high-priority educational sources
+ */
+async function scrapeFallbackReader(url: string, topic: string): Promise<ExternalLookupResult | null> {
+  try {
+    const res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
+      headers: {
+        "Accept": "text/markdown, text/plain",
+      },
+    });
+    if (!res.ok) return null;
+
+    const text = await res.text();
+    if (!text || text.length < 50) return null;
+
+    const trimmed = text.length > 4000 ? text.slice(0, 4000) + "\n\n...(truncated for brevity)" : text;
+
+    return {
+      topic,
+      source: url,
+      content: trimmed,
+      found: true,
+      provider: "educational",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Main external source lookup:
+ * Prioritizes GeeksforGeeks, TutorialsPoint, W3Schools, MDN, and official documentation.
+ */
+export async function lookupExternalSources(topic: string): Promise<ExternalLookupResult> {
+  const cleanTopic = topic.trim();
+  if (!cleanTopic) {
     return {
       topic,
       source: null,
       content: "",
       found: false,
       provider: null,
-      shouldAskUser: true,
-      prompt: getExternalLookupPrompt(),
     };
   }
 
+  // 1. Primary: Firecrawl keyless / API search
+  const firecrawlResult = await searchWithFirecrawl(cleanTopic);
+  if (firecrawlResult && firecrawlResult.found) {
+    return firecrawlResult;
+  }
+
+  // 2. High Priority Fallback: GeeksforGeeks Direct Parser
   try {
-    const exaResult = await searchExa(topic);
-    if (exaResult.found) {
-      return exaResult;
+    const gfgResult = await lookupGfG(cleanTopic);
+    if (gfgResult.found && gfgResult.content) {
+      return {
+        topic: gfgResult.topic,
+        source: gfgResult.source,
+        content: gfgResult.content,
+        found: true,
+        provider: "gfg",
+      };
     }
   } catch {
-    // Fall through to legacy external sources.
+    // Ignore and proceed to reader fallback
   }
 
-  const legacyResult = await lookupGfG(topic);
+  // 3. Fallback: Search common educational documentation pages via reader
+  const educationalSeeds = [
+    `https://www.geeksforgeeks.org/${encodeURIComponent(cleanTopic.toLowerCase().replace(/\s+/g, "-"))}/`,
+    `https://developer.mozilla.org/en-US/docs/Glossary/${encodeURIComponent(cleanTopic)}`,
+  ];
 
-  if (legacyResult.found) {
-    return {
-      topic: legacyResult.topic,
-      source: legacyResult.source,
-      content: legacyResult.content,
-      found: true,
-      provider: legacyResult.source?.includes("geeksforgeeks.org") ? "gfg" : "wikipedia",
-      shouldAskUser: false,
-    };
+  for (const url of educationalSeeds) {
+    const scraped = await scrapeFallbackReader(url, cleanTopic);
+    if (scraped && scraped.found) {
+      return scraped;
+    }
   }
 
   return {
-    topic,
+    topic: cleanTopic,
     source: null,
     content: "",
     found: false,
     provider: null,
-    shouldAskUser: true,
-    prompt: getExternalLookupPrompt(),
+    shouldAskUser: false,
+    prompt: "No verified educational source found for this topic.",
   };
 }

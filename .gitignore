@@ -15,3 +15,7 @@ test-memory.ts
 .vercel
 .env*.local
 test-*
+.staging
+*.log
+implementation_plan.md
+mcp/

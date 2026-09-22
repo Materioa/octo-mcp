@@ -127,3 +127,12 @@ const ApiKeySchema = new mongoose.Schema({
 
 ApiKeySchema.index({ userId: 1, providerId: 1 }, { unique: true });
 export const ApiKey = mongoose.model("ApiKey", ApiKeySchema);
+
+const LwcSessionSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  value: { type: mongoose.Schema.Types.Mixed, required: true },
+  expiresAt: { type: Date, required: true },
+});
+
+LwcSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+export const LwcSession = mongoose.model("LwcSession", LwcSessionSchema);

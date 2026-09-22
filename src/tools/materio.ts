@@ -5,67 +5,36 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
-  listSemesters,
-  listSubjects,
+  exploreLibrary,
   listResources,
-  searchResources,
   resolvePdfUrl,
-  getFullIndex,
   generateMaskedUrl,
 } from "../services/resources.js";
+import { findResources } from "../services/finder.js";
 import { queryDeepThinkRAG, queryVectorlessRAG } from "../services/rag.js";
 import { CHARACTER_LIMIT } from "../constants.js";
-import { registerDiagramTools } from "./diagrams.js";
-import { registerDiagramGeneratorTools } from "./diagram-generator.js";
-import { registerWorksheetPaperTools } from "./worksheet-paper.js";
 import { lookupExternalSources } from "../services/external-lookup.js";
+import {
+  type MaterioProtectedUser,
+  type AccessTier,
+  validateToken,
+  checkToolAccess,
+} from "../services/materio-auth.js";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-const PROMPT_FILES = [
-  {
-    name: "diagram-generation",
-    title: "Accurate Diagram Generation",
-    description: "Prompt templates and rules for reliable Mermaid/DOT diagram generation.",
-    file: "diagram-generation.txt",
-  },
-  {
-    name: "diagram-enhancements",
-    title: "Diagram Tool Enhancements",
-    description: "Architecture and usage notes for enhanced diagram rendering tools.",
-    file: "diagram-enhancements.txt",
-  },
-  {
-    name: "diagram-usage-examples",
-    title: "Diagram Usage Examples",
-    description: "End-to-end examples for generating and rendering supported diagram formats.",
-    file: "diagram-usage-examples.txt",
-  },
-  {
-    name: "share-link-policy",
-    title: "Share Link Policy",
-    description: "Rules for safely handling internal PDF URLs and masked share links.",
-    file: "share-link-policy.txt",
-  },
-  {
-    name: "worksheet-paper-generation",
-    title: "Worksheet and Paper Generation",
-    description: "Workflow for generating worksheets, sample papers, question papers, and reusable paper templates.",
-    file: "worksheet-paper-generation.txt",
-  },
-] as const;
-
-function promptPath(fileName: string): string {
-  return fileURLToPath(new URL(`../../prompts/${fileName}`, import.meta.url));
-}
+const PROMPT_FILES: Array<{ name: string; title: string; description: string; file: string }> = [];
 
 function readPromptFile(fileName: string): string {
   try {
-    const path = promptPath(fileName);
-    return fs.existsSync(path) ? fs.readFileSync(path, "utf8") : "";
+    if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
+      const p = fileURLToPath(new URL(`../../prompts/${fileName}`, import.meta.url));
+      return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+    }
   } catch {
-    return "";
+    // ignore in environments without local file access (e.g. Cloudflare Workers)
   }
+  return "";
 }
 
 function registerPromptFiles(server: McpServer): void {
@@ -95,8 +64,6 @@ function registerPromptFiles(server: McpServer): void {
   }
 }
 
-// ── Load share-link policy prompt for tool descriptions ──
-const SHARE_LINK_POLICY = readPromptFile("share-link-policy.txt");
 
 const DIAGRAM_INTENT_PATTERN = /(?:^|\b)(draw|diagram|visualize|render|flowchart|mermaid|graphviz|dot|svg|dfa|fsm|automaton|state machine|circuit|gantt|timeline|logic gate|schemdraw|matplotlib|plot|chart)(?:\b|$)/i;
 
@@ -106,72 +73,62 @@ function isDiagramIntent(query: string): boolean {
 
 // ────────── Schemas ──────────
 
-const ListSemestersSchema = {} as const;
-
-const ListSubjectsSchema = {
+const ResourceLibrarySchema = {
   semester: z
     .string()
-    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6","7"'),
-};
-
-const ListResourcesSchema = {
-  semester: z
-    .string()
-    .describe('Semester number, e.g. "1", "2", "3", "4", "5", "6","7"'),
+    .optional()
+    .describe("Optional semester number (e.g. '1', '2', '3', '4', '5', '6', '7', '9')."),
   subject: z
     .string()
-    .describe(
-      "Subject name or partial match, e.g. 'Operating System', 'Maths', 'Java'"
-    ),
+    .optional()
+    .describe("Optional subject name or partial match (e.g. 'Operating System', 'DBMS'). If semester is omitted, auto-locates the subject across all semesters."),
+  topic: z
+    .string()
+    .optional()
+    .describe("Optional topic or chapter name to locate. Returns its section type, subject, semester, and related sibling topics."),
+  search: z
+    .string()
+    .optional()
+    .describe("Optional keyword query to search across all semesters, subjects, sections, and topics in the library."),
 };
 
-const SearchResourcesSchema = {
+const FinderSchema = {
   query: z
     .string()
     .min(2, "Query must be at least 2 characters")
     .describe(
-      "Search query to match against subjects, section types, or topic names"
+      "Concept, keyword, or question to find matching course resources for (e.g. 'cpu scheduling algorithms', 'deadlocks', 'fode matrices')."
     ),
-};
-
-const GetPdfUrlSchema = {
-  semester: z.string().describe("Semester number"),
-  subject: z
+  semester: z
     .string()
-    .describe("Subject name (exact or partial match)"),
-  topic: z
-    .string()
-    .describe("Topic / file name within the subject"),
-};
-
-const GetTopicContentSchema = {
-  semester: z.string().describe("Semester number"),
-  subject: z
-    .string()
-    .describe("Subject name (exact or partial match)"),
-  topic: z
-    .string()
-    .describe("Topic / file name within the subject to explain"),
+    .optional()
+    .describe("Optional semester number (e.g. '4', '7') to prioritize or narrow results."),
 };
 
 const DeepThinkSchema = {
   query: z.string().describe("The user's specific question that requires deep RAG search"),
   semester: z.string().describe("Semester number"),
   subject: z.string().describe("Subject name to scope the search context"),
+  authToken: z
+    .string()
+    .optional()
+    .describe(
+      "Optional Materio ID token or handoff code if not provided via HTTP Authorization header."
+    ),
 };
 
 const VectorlessSearchSchema = {
-  query: z.string().describe("Keyword search query for finding specific text content across course materials"),
-  semester: z.string().optional().describe("Optional semester to narrow search"),
-  subject: z.string().optional().describe("Optional subject to narrow search"),
-  page: z.number().int().min(1).optional().describe("Result page number. Use page 1 first, then request later pages if needed."),
+  query: z.string().describe("Search keywords or query string. MANDATORY: You MUST run this tool to retrieve real context before answering ANY course/content query. DO NOT self-answer from weights."),
+  semester: z.string().optional().describe("Optional semester number (e.g. '7') to limit results and improve precision."),
+  subject: z.string().optional().describe("Optional subject name (e.g. 'Information and Network Security') to scope the search context."),
+  page: z.number().int().min(1).optional().describe("Result page number. Start at 1, increment to fetch more results if needed."),
   results_per_page: z
     .number()
     .int()
     .min(1)
     .max(20)
     .optional()
-    .describe("How many chunk results to include per page. Prefer <= 5; max 20."),
+    .describe("Number of chunk results to return per page. Prefer <= 5; max 20."),
   max_words: z.number().int().min(100).max(500).optional().describe("Maximum total words to return across the page of chunk content."),
 };
 
@@ -187,99 +144,48 @@ function truncateToWordLimit(text: string, wordLimit: number): string {
 }
 
 const GenerateShareLinkSchema = {
-  url: z.string().optional().describe("Direct raw CDN URL. If provided, semester/subject/topic are ignored."),
-  semester: z.string().optional().describe("Semester number"),
-  subject: z.string().optional().describe("Subject name"),
-  topic: z.string().optional().describe("Topic / file name"),
+  url: z.string().optional().describe("Direct raw internal PDF URL. DO NOT guess or hallucinate. If not known, supply semester, subject, and topic instead."),
+  semester: z.string().optional().describe("Semester number (e.g. '7'). Must match the document's semester."),
+  subject: z.string().optional().describe("Subject name (e.g. 'Information and Network Security'). Must match the document's subject."),
+  topic: z.string().optional().describe("Topic / file name (e.g. 'practical 2 lab manual'). Must match the topic/chapter name exactly."),
 };
 
 const LookupExternalSourcesSchema = {
-  topic: z.string().describe("The topic or question to look up on GeeksforGeeks"),
-  useExa: z.boolean().optional().describe("Set to true to search external sources with Exa after user opt-in."),
+  topic: z.string().describe("The educational or technical topic, algorithm, concept, or question to look up."),
 };
 
 // ────────── Register all tools ──────────
 
-export function registerMaterioTools(server: McpServer): void {
+export function registerMaterioTools(server: McpServer, context?: { user?: MaterioProtectedUser | null; accessTier?: AccessTier; token?: string }): void {
   registerPromptFiles(server);
 
-  // Register diagram generation tools (Mermaid, Graphviz)
-  registerDiagramTools(server);
-  registerDiagramGeneratorTools(server);
-  registerWorksheetPaperTools(server);
-  // ──── 1. SemesterNavigator ────
+  const isPlusOrAdmin =
+    context?.accessTier === "plus" ||
+    context?.accessTier === "super" ||
+    (context?.accessTier as string) === "admin" ||
+    context?.accessTier === undefined;
+  // ──── 1. resource_library (Unified Course Catalog & Curriculum Explorer) ────
   server.registerTool(
-    "SemesterNavigator",
+    "resource_library",
     {
-      title: "List Available Semesters",
-      description: `List all semesters available in the Materio course library.
+      title: "Explore Course Library (Semesters, Subjects, Topics)",
+      description: `Unified navigation tool for discovering courses, subjects, chapters, and materials in the Materio library.
+Powered by the live catalog (resource.lib.json).
 
-Returns an array of semester numbers (e.g. ["1", "2", "3", "4", "5", "6", "9"]).
-Use this as the first step to discover what content is available.
-
-Returns:
-  JSON array of semester identifiers sorted numerically.
-
-Examples:
-  - "What semesters are available?" → call with no params
-  - "Show me all semesters" → call with no params`,
-      inputSchema: ListSemestersSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async () => {
-      try {
-        const semesters = await listSemesters();
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  semesters,
-                  count: semesters.length,
-                  hint: "Use CourseDirectory with a semester number to see its subjects.",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error listing semesters: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // ──── 2. CourseDirectory ────
-  server.registerTool(
-    "CourseDirectory",
-    {
-      title: "List Subjects for a Semester",
-      description: `List all subjects available in a specific semester of the Materio library.
+Usage Modes:
+1. Overview: Call with no arguments ({}) to see all available semesters and their subjects.
+2. Semester: Pass semester (e.g. semester="4") to see all subjects in that semester.
+3. Subject: Pass subject (e.g. subject="Operating System") with or without semester to view all categorized sections (Chapters, Question Banks, Papers) and exact topic names.
+4. Topic Inspection: Pass topic (e.g. topic="Deadlocks") to find which semester, subject, and section it belongs to, plus related sibling topics.
+5. Search: Pass search (e.g. search="deadlock") to search across all semesters, subjects, and topics.
 
 Args:
-  - semester (string): The semester number, e.g. "1", "2", "3", "4", "5", "6"
-
-Returns:
-  JSON with the semester, an array of subject names, and count.
-
-Examples:
-  - "What subjects are in semester 4?" → semester="4"
-  - "Show me sem 3 courses" → semester="3"`,
-      inputSchema: ListSubjectsSchema,
+  - semester: (Optional) Semester number, e.g. "1", "2", "3", "4", "5", "6", "7", "9".
+  - subject: (Optional) Subject name or partial match. If semester is omitted, auto-locates the subject across all semesters.
+  - topic: (Optional) Topic/chapter name to locate and inspect.
+  - search: (Optional) Keyword query to search across the entire library.
+`,
+      inputSchema: ResourceLibrarySchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -287,122 +193,17 @@ Examples:
         openWorldHint: false,
       },
     },
-    async ({ semester }) => {
+    async ({ semester, subject, topic, search }) => {
       try {
-        const subjects = await listSubjects(semester);
-        if (subjects.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `No subjects found for semester "${semester}". Use SemesterNavigator to see available semesters.`,
-              },
-            ],
-          };
-        }
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  semester,
-                  subjects,
-                  count: subjects.length,
-                  hint: "Use ResourceLibrary with semester + subject to see available materials.",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error listing subjects: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    }
-  );
+        const result = await exploreLibrary({ semester, subject, topic, search });
+        let text = JSON.stringify(result, null, 2);
 
-  // ──── 3. ResourceLibrary ────
-  server.registerTool(
-    "ResourceLibrary",
-    {
-      title: "List Resources for a Subject",
-      description: `List all available course materials (chapters, assignments, question banks, previous year papers, etc.) for a specific subject in a semester.
-
-Args:
-  - semester (string): Semester number
-  - subject (string): Subject name or partial match (case-insensitive fuzzy match)
-
-Returns:
-  JSON array of resource items grouped by section type, each with topic name and PDF URL.
-
-Examples:
-  - "Show me Operating System materials" → semester="4", subject="Operating System"
-  - "What chapters are in DBMS?" → semester="3", subject="Database Management Systems"
-  - "Get me Maths-2 tutorials" → semester="2", subject="Maths-2"`,
-      inputSchema: ListResourcesSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async ({ semester, subject }) => {
-      try {
-        const items = await listResources(semester, subject);
-        if (items.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `No resources found for "${subject}" in semester ${semester}. Use CourseDirectory to see available subjects for this semester.`,
-              },
-            ],
-          };
-        }
-
-        // Group by section type for readability
-        const grouped: Record<string, Array<{ topic: string; pdfUrl: string }>> = {};
-        for (const item of items) {
-          if (!grouped[item.sectionType]) grouped[item.sectionType] = [];
-          grouped[item.sectionType].push({
-            topic: item.topic,
-            pdfUrl: item.pdfUrl,
-          });
-        }
-
-        const output = {
-          semester,
-          subject: items[0].subject,
-          totalResources: items.length,
-          sections: grouped,
-        };
-
-        let text = JSON.stringify(output, null, 2);
         if (text.length > CHARACTER_LIMIT) {
-          // Truncate to section summaries
-          const summary = {
-            semester,
-            subject: items[0].subject,
-            totalResources: items.length,
-            sections: Object.entries(grouped).map(([type, topics]) => ({
-              type,
-              count: topics.length,
-              firstFew: topics.slice(0, 3).map((t) => t.topic),
-            })),
-            truncated: true,
-            hint: "Response truncated. Use GlobalSearch to locate topic names, then SnapSearch/DeepThink for actual content.",
-          };
-          text = JSON.stringify(summary, null, 2);
+          if (result.mode === "search" && (result as any).matches) {
+            (result as any).matches = (result as any).matches.slice(0, 20);
+            (result as any).truncated = true;
+          }
+          text = JSON.stringify(result, null, 2);
         }
 
         return {
@@ -413,7 +214,7 @@ Examples:
           content: [
             {
               type: "text" as const,
-              text: `Error listing resources: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Error exploring resource library: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };
@@ -421,29 +222,29 @@ Examples:
     }
   );
 
-  // ──── 4. GlobalSearch ────
+  // ──── 2. finder (Intelligent Resource Discovery & Jev System 1 Decision Ranking) ────
   server.registerTool(
-    "GlobalSearch",
+    "finder",
     {
-      title: "Search Course Materials",
-      description: `Metadata search across ALL semesters, subjects, and topics in the Materio library.
-Matches against subject names, section types (Chapters, Assignments, Question Banks, etc.), and topic names.
-Use this to locate documents and topic names. Do NOT use this to answer content questions.
-Never use this tool for diagram generation or any non-content task.
+      title: "Find Relevant Course Materials (Search & Topic Discovery)",
+      description: `Intelligent search engine to discover which syllabus topic, chapter, or question bank matches a user's question or concept.
+Powered by Materio's Search API with TypeSafe AI Jev System 1 decision ranking.
+
+CRITICAL DISTINCTION — READ CAREFULLY:
+- This tool discovers the LOCATION of relevant material (semester, subject, section, topic name), NOT the full text content.
+- DO NOT answer the user's content question based on this tool alone.
+- Once Finder identifies the exact topic and subject, you MUST call SnapSearch (or DeepThink) with that subject and topic to read the actual textbook content.
 
 Args:
-  - query (string): Search query (min 2 chars). Matches case-insensitively against subject names, section types, and topic names.
+  - query: (string) The concept, keyword, or question to find materials for (e.g. 'cpu scheduling algorithms', 'deadlocks', 'fode matrices').
+  - semester: (Optional string) Limit search to a specific semester (e.g. '4', '7').
 
 Returns:
-  JSON array of matching resource items with semester, subject, section type, topic name, and PDF URL.
-
-Examples:
-  - "Find deadlocks material" → query="Deadlocks"
-  - "Search for question banks" → query="Question Bank"
-  - "Find Python content" → query="Python"
-  - "Get previous year papers for OS" → query="Operating System"
-  - "Find sorting algorithms" → query="Sorting"`,
-      inputSchema: SearchResourcesSchema,
+  - bestMatch: The highest-scoring topic, subject, and semester.
+  - candidates: Other top candidate matches.
+  - mandatoryNextStep: Explicit instruction directing you to call SnapSearch/DeepThink.
+`,
+      inputSchema: FinderSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -451,50 +252,10 @@ Examples:
         openWorldHint: false,
       },
     },
-    async ({ query }) => {
+    async ({ query, semester }) => {
       try {
-        const results = await searchResources(query);
-        if (results.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `No results found for "${query}". Try broader search terms or use SemesterNavigator to browse.`,
-              },
-            ],
-          };
-        }
-
-        let output: any = {
-          query,
-          totalResults: results.length,
-          results: results.map((r) => ({
-            semester: r.semester,
-            subject: r.subject,
-            type: r.sectionType,
-            topic: r.topic,
-            pdfUrl: r.pdfUrl,
-          })),
-        };
-
-        let text = JSON.stringify(output, null, 2);
-        if (text.length > CHARACTER_LIMIT) {
-          output = {
-            query,
-            totalResults: results.length,
-            showing: 30,
-            truncated: true,
-            results: results.slice(0, 30).map((r) => ({
-              semester: r.semester,
-              subject: r.subject,
-              type: r.sectionType,
-              topic: r.topic,
-              pdfUrl: r.pdfUrl,
-            })),
-            hint: "Results truncated. Narrow your search query for more precise results.",
-          };
-          text = JSON.stringify(output, null, 2);
-        }
+        const result = await findResources(query, semester);
+        const text = JSON.stringify(result, null, 2);
 
         return {
           content: [{ type: "text" as const, text }],
@@ -504,7 +265,7 @@ Examples:
           content: [
             {
               type: "text" as const,
-              text: `Error searching: ${error instanceof Error ? error.message : String(error)}`,
+              text: `Finder error: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };
@@ -512,261 +273,16 @@ Examples:
     }
   );
 
-  // ──── 5. ResourceAccess ────
+  // ──── 3. snap_search ────
   server.registerTool(
-    "ResourceAccess",
-    {
-      title: "Get PDF Download URL (Internal Use Only)",
-      description: `Get the resolved download URL for a specific PDF document.
-Automatically detects pointer files (≤1KB) and returns the API proxy URL instead of the direct CDN URL.
-
-## SHARE LINK POLICY (MANDATORY)
-${SHARE_LINK_POLICY ? SHARE_LINK_POLICY.slice(0, 1500) : `
-- NEVER expose the URL returned by this tool directly to the user in chat.
-- If the user asks for a link, you MUST pass this URL into ShareLinkGenerator to generate a masked share link.
-- You CAN use the raw URL for internal fetching/downloading if you need to read the PDF.
-- Share links (materioa.vercel.app/?share=...) are UI pages, NOT raw PDFs. You CANNOT fetch/read PDFs via share links.
-`}
-
-Args:
-  - semester (string): Semester number
-  - subject (string): Subject name (exact or partial)
-  - topic (string): Topic / file name
-
-Returns:
-  JSON with the resolved PDF URL (direct CDN or API proxy depending on file size).
-  This URL is for INTERNAL use: fetching content, passing to ShareLinkGenerator, etc.
-
-Examples:
-  - "Get the PDF for Deadlocks in OS sem 4" → semester="4", subject="Operating System", topic="Deadlocks"
-  - "Download link for Stacks chapter in DDS" → semester="3", subject="Design of Data Structures", topic="Stacks, Recursion and Queue"`,
-      inputSchema: GetPdfUrlSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    async ({ semester, subject, topic }) => {
-      try {
-        // First try to find exact match in library for correct naming
-        const items = await listResources(semester, subject);
-        const match = items.find(
-          (i) =>
-            i.topic.toLowerCase() === topic.toLowerCase() ||
-            i.topic.toLowerCase().includes(topic.toLowerCase())
-        );
-
-        let resolvedUrl: string;
-        if (match) {
-          resolvedUrl = await resolvePdfUrl(
-            match.semester,
-            match.subject,
-            match.topic
-          );
-        } else {
-          resolvedUrl = await resolvePdfUrl(semester, subject, topic);
-        }
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  semester,
-                  subject: match?.subject ?? subject,
-                  topic: match?.topic ?? topic,
-                  pdfUrl: resolvedUrl,
-                  sectionType: match?.sectionType ?? "unknown",
-                  _policy: "INTERNAL URL — do NOT show to user. Use ShareLinkGenerator for user-facing links. Use this URL only for fetching/reading PDF content.",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error resolving PDF URL: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // ──── 6. ConceptExplorer ────
-  server.registerTool(
-    "ConceptExplorer",
-    {
-      title: "Get Topic Content and Explanation",
-      description: `Retrieve information about a specific topic from the Materio library and provide context for answering questions about it.
-Returns the topic metadata, related resources (other chapters in the same subject), and the PDF URL for reference.
-
-Use this when a user asks a question ABOUT a specific topic (e.g. "Explain deadlocks", "What is Laplace Transform?").
-The response includes enough context for you to provide a helpful answer or direct the user to the right PDF.
-
-Args:
-  - semester (string): Semester number
-  - subject (string): Subject name (exact or partial)
-  - topic (string): The topic to explain / find content for
-
-Returns:
-  JSON with topic details, PDF URL, related topics in the same subject, and study context.
-
-Examples:
-  - "Explain deadlocks in OS" → semester="4", subject="Operating System", topic="Deadlocks"
-  - "What is Laplace Transform?" → semester="2", subject="Maths-2", topic="Laplace Transform"
-  - "Tell me about Inheritance in Java" → semester="3", subject="Object Oriented Programming with Java", topic="Inheritance"`,
-      inputSchema: GetTopicContentSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async ({ semester, subject, topic }) => {
-      try {
-        const items = await listResources(semester, subject);
-        const match = items.find(
-          (i) =>
-            i.topic.toLowerCase() === topic.toLowerCase() ||
-            i.topic.toLowerCase().includes(topic.toLowerCase())
-        );
-
-        // All chapters in the same subject for context
-        const chapters = items.filter((i) => i.sectionType === "Chapters");
-        const questionBanks = items.filter(
-          (i) =>
-            i.sectionType === "Question Banks" ||
-            i.sectionType === "Important Questions"
-        );
-        const prevYearPapers = items.filter(
-          (i) => i.sectionType === "Previous Year Papers"
-        );
-
-        let resolvedUrl = "";
-        if (match) {
-          resolvedUrl = await resolvePdfUrl(
-            match.semester,
-            match.subject,
-            match.topic
-          );
-        }
-
-        const output = {
-          found: !!match,
-          topic: match?.topic ?? topic,
-          semester,
-          subject: match?.subject ?? subject,
-          sectionType: match?.sectionType ?? "unknown",
-          pdfUrl: resolvedUrl || null,
-          relatedChapters: chapters.map((c) => c.topic),
-          availableQuestionBanks: questionBanks.map((q) => ({
-            topic: q.topic,
-            pdfUrl: q.pdfUrl,
-          })),
-          previousYearPapers: prevYearPapers.map((p) => ({
-            topic: p.topic,
-            pdfUrl: p.pdfUrl,
-          })),
-          studyAdvice: match
-            ? `This topic "${match.topic}" is part of ${match.subject} (Semester ${match.semester}). The PDF is available for detailed study. Related chapters and question banks are listed above.`
-            : `Topic "${topic}" was not found exactly, but here are all available chapters for ${subject} in semester ${semester}. Try browsing the chapter list or searching with different terms.`,
-        };
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(output, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error getting topic content: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // ──── 7. KnowledgeAtlas ────
-  server.registerTool(
-    "KnowledgeAtlas",
-    {
-      title: "Get Full Library Index",
-      description: `Get a compact overview of the entire Materio course library.
-Returns all semesters, subjects, and section types with resource counts.
-Useful for understanding the full scope of available materials.
-
-Returns:
-  JSON array with semester, subject name, and array of section types with counts.
-
-Examples:
-  - "What's available in the entire library?" → call with no params
-  - "Give me an overview of all materials" → call with no params`,
-      inputSchema: {} as const,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    async () => {
-      try {
-        const index = await getFullIndex();
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  totalSubjects: index.length,
-                  library: index,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error getting full index: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // ──── 8. SnapSearch ────
-  server.registerTool(
-    "SnapSearch",
+    "snap_search",
     {
       title: "Primary Vectorless Search (FTS)",
       description: `Primary tool for extremely fast, non-semantic keyword matching across course material text chunks.
 Uses Postgres Full-Text Search (TSVECTOR) to instantly find documents containing specific keywords or topics.
 CRITICAL: If you are searching for a specific chapter (e.g. "chapter 1") but don't know its actual name, you MUST use ResourceLibrary FIRST to get the list of chapters and find the exact name. Do NOT search for generic terms like "chapter 1" here.
 Use this first for most content lookups. Keep responses short, then request the next page if the first chunk set is not enough by repeating the same filters and incrementing \`page\`.
-Secondary content option is Fetch/ResourceAccess when a specific document is already known. DeepThink and external lookup are later options when the primary path is not sufficient.
+DeepThink is available when semantic understanding across complex or distributed concepts is needed.
 Never use this tool for diagram generation or any non-content task.
 
 Args:
@@ -787,6 +303,22 @@ Args:
     },
     async ({ query, semester, subject, page, results_per_page, max_words }) => {
       try {
+        if (
+          query.includes("?share=") ||
+          query.includes("getmaterio.app/?share=") ||
+          (subject && subject.includes("?share=")) ||
+          (semester && semester.includes("?share="))
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "HARD GUARDRAIL VIOLATION: Masked share links (https://getmaterio.app/?share=...) cannot be used for search or context retrieval. They are web view pages for users. Search by topic name, keywords, or concepts instead.",
+              },
+            ],
+          };
+        }
+
         if (isDiagramIntent(query)) {
           return {
             content: [
@@ -912,31 +444,80 @@ Args:
     }
   );
 
-  // ──── 9. DeepThink ────
-  server.registerTool(
-    "DeepThink",
-    {
-      title: "Deep Think RAG Tool",
-      description: `Power tool for complex questions when PDF fetch fails or the document is OCR-unreadable.
-This tool performs a semantic Deep RAG search over the Materio vector database (pgvector).
-Use it when standard context retrieval isn't enough, or when an error occurs fetching standard PDFs.
+  // ──── 9. deep_think (Pro & Admin Tier Only) ────
+  if (isPlusOrAdmin) {
+    server.registerTool(
+      "deep_think",
+      {
+        title: "Deep Think RAG Tool",
+        description: `Power tool for complex conceptual questions requiring multi-document vector synthesis.
+Performs semantic Deep RAG over the Materio vector database (pgvector).
+Reserved for Materio Pro and Admin members. Free users can use SnapSearch.
 
 Args:
   - query: Exact question being asked.
   - semester: The semester.
   - subject: The specific subject context.
+  - authToken: (Optional) Materio ID token if not passed in HTTP Authorization header.
 `,
-      inputSchema: DeepThinkSchema,
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
+        inputSchema: DeepThinkSchema,
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
       },
-    },
-    async ({ query, semester, subject }) => {
-      try {
+      async ({ query, semester, subject, authToken }) => {
+        try {
+          let effectiveTier: AccessTier = context?.accessTier ?? "guest";
+          let effectiveUser = context?.user ?? null;
+          const effectiveToken = authToken || context?.token;
+
+          if (effectiveToken) {
+            const validated = await validateToken(effectiveToken);
+            if (validated.user) {
+              effectiveUser = validated.user;
+              effectiveTier = validated.accessTier;
+            }
+          }
+
+          const access = checkToolAccess(effectiveTier, "plus");
+          if (!access.allowed) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `DeepThink Access Restricted: ${access.message}
+
+How to unlock:
+1. Sign in or upgrade to Materio Pro at https://auth.getmaterio.app
+2. Provide your Materio ID token in the authorization header or 'authToken' parameter.
+
+Alternative for General Users:
+Use 'SnapSearch' immediately to search course content, chapters, and textbook excerpts without a Pro subscription.`,
+                },
+              ],
+            };
+          }
+
         const trimmedQuery = query.trim();
+        if (
+          trimmedQuery.includes("?share=") ||
+          trimmedQuery.includes("getmaterio.app/?share=") ||
+          subject.includes("?share=") ||
+          semester.includes("?share=")
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "HARD GUARDRAIL VIOLATION: Masked share links (https://getmaterio.app/?share=...) cannot be used for deep think analysis. Provide subject and topic/concept query instead.",
+              },
+            ],
+          };
+        }
+
         if (!trimmedQuery || !semester.trim() || !subject.trim()) {
           return {
             content: [
@@ -995,27 +576,21 @@ ${r.content}`).join("\n\n");
       }
     }
   );
+  }
 
-  // ──── 10. ShareLinkGenerator ────
+  // ──── 10. share_link_generator ────
   server.registerTool(
-    "ShareLinkGenerator",
+    "share_link_generator",
     {
       title: "Generate Secure Share Link",
-      description: `Generates a secure, masked share link for a Materio PDF document.
-MANDATORY: If a user asks for ANY link to a file, ALWAYS use this tool. NEVER show raw CDN/API URLs in chat.
-Returns a clean materioa.vercel.app/?share=... link that opens natively in the Materio UI.
-
-CRITICAL: The generated share link is a UI web page, NOT a raw PDF.
-- You CANNOT use the share link to download or fetch the PDF yourself.
-- Use the share link EXCLUSIVELY to present to the user.
-- To fetch/read a PDF internally, use the raw URL from ResourceAccess instead.
+      description: `Generates a user-facing share link (https://getmaterio.app/?share=...) for a document.
+Call this tool whenever the user asks for a link, share link, or download link to course material.
 
 Args:
-  - url: (Optional) Direct CDN URL of the PDF (from ResourceAccess).
   - semester: (Optional) Semester number
   - subject: (Optional) Subject name
   - topic: (Optional) Topic / file name
-`,
+  - url: (Optional) Internal document URL if already known`,
       inputSchema: GenerateShareLinkSchema,
       annotations: {
         readOnlyHint: true,
@@ -1026,11 +601,65 @@ Args:
     },
     async ({ url, semester, subject, topic }) => {
       try {
-        let rawUrl = url;
+        let rawUrl = (url || "").trim();
+
+        // HARD GUARDRAIL 3: Reject if input URL is already a masked share link
+        if (
+          rawUrl.includes("?share=") ||
+          rawUrl.includes("getmaterio.app/?share=") ||
+          rawUrl.includes("materioa.vercel.app/?share=")
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "HARD GUARDRAIL VIOLATION: The provided URL is already a masked share link (contains '?share='). Masked share links are end-user web pages and cannot be re-masked or used as PDF sources. To generate a share link for a document, provide the semester, subject, and topic instead."
+              }
+            ]
+          };
+        }
+
+        // HARD GUARDRAIL 2: Reject invalid, fake, or placeholder URLs
+        if (rawUrl) {
+          if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "HARD GUARDRAIL VIOLATION: Invalid URL format. Provide a valid HTTP/HTTPS URL or provide semester, subject, and topic."
+                }
+              ]
+            };
+          }
+          if (
+            rawUrl.includes("example.com") ||
+            rawUrl.includes("placeholder") ||
+            rawUrl.includes("fake") ||
+            rawUrl.includes("sample.pdf")
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "HARD GUARDRAIL VIOLATION: Placeholder or fake URL detected. Do not guess or hallucinate URLs. Provide semester, subject, and topic instead."
+                }
+              ]
+            };
+          }
+        }
+
+        let resolvedSubject = subject;
+        let resolvedTopic = topic;
+
         if (!rawUrl) {
           if (!semester || !subject || !topic) {
             return {
-              content: [{ type: "text", text: "Error: You must provide either a 'url' OR 'semester', 'subject', and 'topic'." }]
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: You must provide either a valid 'url' OR all three of 'semester', 'subject', and 'topic'."
+                }
+              ]
             };
           }
 
@@ -1042,6 +671,8 @@ Args:
           );
 
           if (match) {
+            resolvedSubject = match.subject;
+            resolvedTopic = match.topic;
             rawUrl = await resolvePdfUrl(match.semester, match.subject, match.topic);
           } else {
             rawUrl = await resolvePdfUrl(semester, subject, topic);
@@ -1050,33 +681,68 @@ Args:
 
         if (!rawUrl) {
           return {
-            content: [{ type: "text", text: "Error: Could not resolve a PDF URL to generate a share link. Verify the semester, subject, and topic are correct." }]
+            content: [
+              {
+                type: "text" as const,
+                text: `HARD GUARDRAIL: Could not resolve a valid PDF document for semester='${semester || ""}', subject='${subject || ""}', topic='${topic || ""}'. Verify the names using ResourceLibrary. Do NOT guess or hallucinate share links.`
+              }
+            ]
           };
         }
 
+        // Call canonical API to generate verified masked share link
         const shareLink = await generateMaskedUrl(rawUrl);
+
+        // HARD GUARDRAIL 1: Guarantee raw internal CDN URLs are never exposed in output
+        const outputPayload = {
+          status: "success",
+          shareLink,
+          subject: resolvedSubject,
+          topic: resolvedTopic,
+          guardrails: [
+            "DO NOT expose internal CDN URLs (cdn.getmaterio.app/pdfs/...) in chat.",
+            "Present ONLY this verified masked share link to the user.",
+            "NEVER try to fetch, search, or read PDF contents using this masked share link (it is a web UI page, not a raw PDF file)."
+          ]
+        };
+
+        let outputText = JSON.stringify(outputPayload, null, 2);
+        // Hard sanitize: strip any accidental CDN link from the response
+        if (outputText.includes("cdn.getmaterio.app/pdfs") || outputText.includes("/api/pdfs/")) {
+          outputText = JSON.stringify({
+            status: "success",
+            shareLink,
+            guardrails: "Present ONLY this verified masked share link to the user. Do NOT expose direct CDN URLs."
+          }, null, 2);
+        }
+
         return {
           content: [
             {
-              type: "text",
-              text: `Secure Share Link:\n${shareLink}\n\nPresent ONLY this masked share link to the user. Do NOT expose the direct CDN URL.`
+              type: "text" as const,
+              text: `Verified Secure Share Link:\n${shareLink}\n\n${outputText}`
             }
           ]
         };
       } catch (error) {
         return {
-          content: [{ type: "text", text: `Error generating share link: ${error instanceof Error ? error.message : String(error)}` }]
+          content: [
+            {
+              type: "text" as const,
+              text: `Error generating share link: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ]
         };
       }
     }
   );
 
-  // ──── 11. LookupExternalSources ────
+  // ──── 11. lookup_external_sources ────
   server.registerTool(
-    "LookupExternalSources",
+    "lookup_external_sources",
     {
-      title: "Lookup External Sources (GeeksforGeeks)",
-      description: "Look up any topic or question in external sources to extract relevant educational context. Ask the user before using Exa: 'No related material data was found - should I look for external sources?'. Use this if the answer is not found in the regular Materio library or SnapSearch/DeepThink yield insufficient context.",
+      title: "Lookup External Sources (GeeksforGeeks, MDN, TutorialsPoint, W3Schools)",
+      description: "Look up educational, algorithmic, or programming topics in verified external sources (GeeksforGeeks, TutorialsPoint, W3Schools, MDN, official documentation) using Firecrawl keyless search and crawling. Avoids low-credibility sources.",
       inputSchema: LookupExternalSourcesSchema,
       annotations: {
         readOnlyHint: true,
@@ -1085,19 +751,13 @@ Args:
         openWorldHint: true,
       },
     },
-    async ({ topic, useExa }) => {
+    async ({ topic }) => {
       try {
-        const result = await lookupExternalSources(topic, Boolean(useExa));
+        const result = await lookupExternalSources(topic);
 
-        if (!result.found) {
-          if (result.shouldAskUser) {
-            return {
-              content: [{ type: "text" as const, text: result.prompt || "No related material data was found - should I look for external sources?" }]
-            };
-          }
-
+        if (!result.found || !result.content) {
           return {
-            content: [{ type: "text" as const, text: "No relevant external source found for the topic." }]
+            content: [{ type: "text" as const, text: result.prompt || "No relevant external source found for the topic." }]
           };
         }
 

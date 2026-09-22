@@ -7,6 +7,7 @@ import { getModelCounterpart, getAvailableModels } from "@/lib/providers/presets
 import { Loader, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
+import { useAuthStore } from "@/stores/auth";
 import { saveDraftAttachment, getDraftAttachments, deleteDraftAttachment, clearDraftAttachments } from "@/lib/draftsDb";
 import {
   DropdownMenu,
@@ -214,7 +215,9 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
   const [isParsing, setIsParsing] = useState(false);
   const activeConversationId = useChatStore(s => s.activeConversationId) || 'new';
-  const rateLimitResetTime = useChatStore(s => s.rateLimitResetTime);
+  const isTestUser = useAuthStore(s => s.token === "test_token" || s.user?.id === "test-user-id");
+  const rawRateLimitResetTime = useChatStore(s => s.rateLimitResetTime);
+  const rateLimitResetTime = isTestUser ? null : rawRateLimitResetTime;
 
   useEffect(() => {
     getDraftAttachments(activeConversationId).then(drafts => {

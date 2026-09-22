@@ -62,6 +62,7 @@ export type ProviderId =
   | "qwen"
   | "kimi"
   | "perplexity"
+  | "chatgpt"
   | "custom";
 
 export interface ProviderPreset {
