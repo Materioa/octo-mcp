@@ -83,9 +83,12 @@ export default function App() {
 
   const hasExchanged = useRef(false);
 
-  // Capture the handoff code synchronously during the very first render.
-  // This prevents React Router's <Navigate> from clearing it from the URL before the useEffect runs!
+  // Capture the handoff code synchronously during the very first render for non-callback routes.
+  // Dedicated callback routes (/auth/callback, /callback) are handled by <AuthCallback />.
   const [initialHandoffCode] = useState(() => {
+    if (window.location.pathname.includes("callback")) {
+      return null;
+    }
     const params = new URLSearchParams(window.location.search);
     return params.get("code") || params.get("handoff");
   });
