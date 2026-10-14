@@ -91,7 +91,7 @@ export function ProfileDropdown({ user, onLogout, onSettings, isCollapsed }: Pro
         </button>
         <button 
           className="flex w-full items-center gap-3 rounded-xl sm:rounded-lg px-4 sm:px-3 py-3 sm:py-2 text-[15px] sm:text-[14px] font-medium text-popover-foreground transition-colors hover:bg-accent"
-          onClick={() => { closeDropdown(); window.open("https://getmaterio.app/account/profile", "_blank"); }}
+          onClick={() => { closeDropdown(); window.open("https://accounts.getmaterio.app/account/profile", "_blank"); }}
         >
           <UserIcon className="w-[20px] h-[20px] sm:w-[18px] sm:h-[18px]" />
           Profile

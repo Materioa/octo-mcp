@@ -3,6 +3,7 @@ import type { ToolCall } from "@/types";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
 import { mcpClient } from "@/lib/mcp-client";
+import { formatToolIntent } from "@/lib/tool-intent";
 
 interface ToolCallGroupProps {
   toolCalls: ToolCall[];
@@ -16,6 +17,7 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
 
   const isMultiple = toolCalls.length > 1;
   const isRunning = toolCalls.some(tc => tc.status === "running");
+  const runningTool = toolCalls.find(tc => tc.status === "running") || toolCalls.find(tc => tc.status === "pending") || toolCalls[0];
 
   const firstTool = toolCalls[0];
   const serverId = firstTool ? mcpClient.getToolServerId(firstTool.name) : undefined;
@@ -48,13 +50,13 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
         
         <div className="flex-1 font-medium">
           {isRunning ? (
-            <span className="text-brand animate-pulse">
-              Calling {toolCalls.find(tc => tc.status === "running")?.name || "tool"}...
+            <span className="animate-shimmer-text font-medium">
+              {formatToolIntent(runningTool, { tense: "present" })}...
             </span>
           ) : isMultiple ? (
             <span>{toolCalls.length} tools executed</span>
           ) : (
-            <span>{toolCalls[0]?.name || "Unknown Tool"} executed</span>
+            <span>{formatToolIntent(toolCalls[0], { tense: "past" })}</span>
           )}
         </div>
 
@@ -66,9 +68,12 @@ export function ToolCallGroup({ toolCalls }: ToolCallGroupProps) {
           {toolCalls.map((tc, idx) => (
             <div key={tc.id} className={cn("p-3", idx > 0 && "border-t border-border")}>
               <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary/50" />
-                  {tc.name}
+                <span className="flex items-center gap-1.5 flex-wrap">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary/50 shrink-0" />
+                  <span className="font-semibold">{tc.name}</span>
+                  <span className="text-muted-foreground/70 text-[11px] font-normal normal-case ml-1">
+                    · {formatToolIntent(tc, { tense: tc.status === "running" ? "present" : "past" })}
+                  </span>
                 </span>
                 <span
                   className={cn(

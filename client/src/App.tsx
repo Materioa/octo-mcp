@@ -5,25 +5,37 @@ import { useAuthStore } from "@/stores/auth";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Loader } from "lucide-react";
 import { OAuthCallback } from "@/components/OAuthCallback";
+import { AuthCallback } from "@/components/auth/AuthCallback";
+
+import { useChatStore } from "@/stores/chat";
+
+const AUTH_URL = import.meta.env.VITE_MATERIO_AUTH_URL || "https://auth.getmaterio.app";
+const ACCOUNTS_URL = import.meta.env.VITE_MATERIO_ACCOUNTS_URL || "https://accounts.getmaterio.app";
+
+function isTrustedOrigin(origin: string): boolean {
+  if (!origin || origin === "null") return true;
+  if (origin === window.location.origin) return true;
+  if (/^https?:\/\/([a-z0-9_-]+\.)*getmaterio\.app$/i.test(origin)) return true;
+  if (/^https?:\/\/materio\.jinansh\.workers\.dev$/i.test(origin)) return true;
+  if (/^tauri:\/\/localhost/i.test(origin) || /^https?:\/\/tauri\.localhost/i.test(origin)) return true;
+  if (/^capacitor:\/\/localhost/i.test(origin) || /^https?:\/\/capacitor\.localhost/i.test(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+  return false;
+}
 
 function IframeListener() {
   const navigate = useNavigate();
   
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Security check: Only allow postMessage from trusted origins
-      const allowedOrigins = [
-        "https://getmaterio.app",
-        "https://www.getmaterio.app"
-      ];
-      
-      // Only allow localhost:1000 if the chat app itself is running locally
-      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-        allowedOrigins.push("http://localhost:1000");
+    // Proactively request currently open PDF from parent viewer (e.g. Oread / PDF.js)
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "MATERIO_REQUEST_ACTIVE_PDF" }, "*");
       }
-      
-      // Allow from same origin just in case (e.g. self-messaging in dev)
-      if (!allowedOrigins.includes(event.origin) && event.origin !== window.location.origin) {
+    } catch (e) {}
+
+    const handleMessage = (event: MessageEvent) => {
+      if (!isTrustedOrigin(event.origin)) {
         return;
       }
 
@@ -42,6 +54,15 @@ function IframeListener() {
         window.dispatchEvent(new CustomEvent("materio-hide-sidebar-icon", {
           detail: { hide: event.data.hide !== false }
         }));
+      }
+      if (event.data?.type === "MATERIO_ACTIVE_PDF" && event.data.pdf) {
+        useChatStore.getState().setCurrentPdf(event.data.pdf);
+      }
+      if (event.data?.type === "MATERIO_PAGE_CHANGED" && typeof event.data.pageNumber === "number") {
+        useChatStore.getState().updateCurrentPdfPage(event.data.pageNumber);
+      }
+      if (event.data?.type === "MATERIO_AUTH" && event.data.token) {
+        useAuthStore.getState().setAuth(event.data.token, event.data.user);
       }
     };
     window.addEventListener("message", handleMessage);
@@ -63,7 +84,8 @@ export default function App() {
   // Capture the handoff code synchronously during the very first render.
   // This prevents React Router's <Navigate> from clearing it from the URL before the useEffect runs!
   const [initialHandoffCode] = useState(() => {
-    return new URLSearchParams(window.location.search).get("handoff");
+    const params = new URLSearchParams(window.location.search);
+    return params.get("code") || params.get("handoff");
   });
   
   const [initialTheme] = useState(() => {
@@ -114,7 +136,7 @@ export default function App() {
       }
 
       // Verify if token is still valid on startup/mount
-      fetch("https://getmaterio.app/api/v2/profile", {
+      fetch(`${ACCOUNTS_URL}/api/v2/profile`, {
         headers: { "Authorization": `Bearer ${token}` }
       })
       .then(res => {
@@ -136,7 +158,7 @@ export default function App() {
       // Clean up URL immediately
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      fetch("https://getmaterio.app/api/v2/login", {
+      fetch(`${AUTH_URL}/api/v2/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "exchange", code: initialHandoffCode })
@@ -162,7 +184,7 @@ export default function App() {
           
           if (!user || typeof user !== 'object') {
             try {
-              const profileRes = await fetch("https://getmaterio.app/api/v2/profile", {
+              const profileRes = await fetch(`${ACCOUNTS_URL}/api/v2/profile`, {
                 headers: { "Authorization": `Bearer ${token}` }
               });
               if (profileRes.ok) {
@@ -207,7 +229,7 @@ export default function App() {
       <div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-4">
           <Loader className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground font-medium">Authenticating with Materio...</p>
+          <p className="text-sm text-muted-foreground font-medium">Authenticating with Materio ID...</p>
         </div>
       </div>
     );
@@ -224,6 +246,8 @@ export default function App() {
         <Route path="/share/:id" element={<ChatLayout />} />
         <Route path="/settings" element={<ChatLayout />} />
         <Route path="/settings/:tab" element={<ChatLayout />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/callback" element={<AuthCallback />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
       </Routes>
     </BrowserRouter>

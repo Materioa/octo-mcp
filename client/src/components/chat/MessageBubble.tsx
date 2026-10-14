@@ -18,6 +18,7 @@ import { getPreset } from "@/lib/providers/presets";
 import { OriginalThinkingLoader } from "./OriginalThinkingLoader";
 import { ThinkingView } from "./ThinkingView";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { formatToolIntent } from "@/lib/tool-intent";
 
 function formatModelName(model: string, customNvidiaModels?: { slug: string; label: string }[]): string {
   const map: Record<string, string> = {
@@ -109,26 +110,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
   };
   
-  // Shimmering loader state
-  const [shimmerIndex, setShimmerIndex] = useState(0);
-  const shimmerPhrases = [
-    "Cooking up a response...",
-    "Thinklet is thinking...",
-    "Brewing a response...",
-    "Calling tools...",
-    "Big thoughts take time...",
-    "Analyzing context...",
-    "Reasoning deeply..."
-  ];
 
-  useEffect(() => {
-    if (message.isStreaming && !message.content && !message.toolCalls?.length) {
-      const interval = setInterval(() => {
-        setShimmerIndex(i => (i + 1) % shimmerPhrases.length);
-      }, 2500);
-      return () => clearInterval(interval);
-    }
-  }, [message.isStreaming, message.content, message.toolCalls]);
   
   const hasSiblings = !!(prevSiblingId || nextSiblingId);
   
@@ -197,6 +179,60 @@ export const MessageBubble = React.memo(function MessageBubble({
 
   // Clean any stray closing tags that leaked into the content
   cleanContent = cleanContent.replace(/<\/(?:thought|think)>/gi, "").trim();
+
+  const otherToolCalls = useMemo(() => {
+    return (message.toolCalls || []).filter(
+      (tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory" && tc.name !== "generate_eraser_diagram"
+    );
+  }, [message.toolCalls]);
+
+  const activeRunningTool = useMemo(() => {
+    return (message.toolCalls || []).find((tc) => tc.status === "running") ||
+      (message.toolCalls || []).find((tc) => tc.status === "pending");
+  }, [message.toolCalls]);
+
+  const hasVisibleRunningTool = useMemo(() => {
+    return otherToolCalls.some((tc) => tc.status === "running" || tc.status === "pending");
+  }, [otherToolCalls]);
+
+  // Shimmering loader state
+  const [shimmerIndex, setShimmerIndex] = useState(0);
+  const thinkingPhrases = useMemo(() => [
+    "Thinklet is thinking...",
+    "Cooking up a response...",
+    "Brewing a response...",
+    "Analyzing context...",
+    "Reasoning deeply...",
+    "Big thoughts take time..."
+  ], []);
+
+  const postToolPhrases = useMemo(() => [
+    "Synthesizing findings...",
+    "Drafting response...",
+    "Analyzing results...",
+    "Formulating answer..."
+  ], []);
+
+  useEffect(() => {
+    if (message.isStreaming && !cleanContent) {
+      const interval = setInterval(() => {
+        setShimmerIndex((i) => i + 1);
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [message.isStreaming, cleanContent]);
+
+  const activeShimmerText = useMemo(() => {
+    if (activeRunningTool) {
+      return `${formatToolIntent(activeRunningTool, { tense: "present" })}...`;
+    }
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      return postToolPhrases[shimmerIndex % postToolPhrases.length];
+    }
+    return thinkingPhrases[shimmerIndex % thinkingPhrases.length];
+  }, [activeRunningTool, message.toolCalls, shimmerIndex, postToolPhrases, thinkingPhrases]);
+
+  const showShimmerLoader = message.isStreaming && !cleanContent && !hasVisibleRunningTool && (thoughts.length === 0 || !!message.toolCalls?.length);
 
   const markdownComponents = useMemo(() => ({
     a(props: any) {
@@ -466,9 +502,6 @@ export const MessageBubble = React.memo(function MessageBubble({
                 {(() => {
                   const askUserInputCalls = message.toolCalls!.filter((tc) => tc.name === "ask_user_input_v0");
                   const eraserToolCalls = message.toolCalls!.filter((tc) => tc.name === "generate_eraser_diagram");
-                  const otherToolCalls = message.toolCalls!.filter(
-                    (tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory" && tc.name !== "generate_eraser_diagram"
-                  );
                   
                   return (
                     <ErrorBoundary>
@@ -507,11 +540,11 @@ export const MessageBubble = React.memo(function MessageBubble({
                 </ErrorBoundary>
               </div>
             )}
-            {message.isStreaming && !message.content && !message.toolCalls?.length && (
+            {showShimmerLoader && (
               <div className="flex items-center gap-3 px-1 pt-2 pb-1 text-muted-foreground animate-in fade-in duration-500">
                 <OriginalThinkingLoader className="w-7 h-7" />
-                <span key={shimmerIndex} className="text-sm font-medium tracking-wide animate-shimmer-text">
-                  {shimmerPhrases[shimmerIndex]}
+                <span key={activeShimmerText} className="text-sm font-medium tracking-wide animate-shimmer-text">
+                  {activeShimmerText}
                 </span>
               </div>
             )}

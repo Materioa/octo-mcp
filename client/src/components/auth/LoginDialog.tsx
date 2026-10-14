@@ -23,8 +23,9 @@ export function LoginDialog({ open, onOpenChange, message }: LoginDialogProps) {
   const settings = useSettingsStore();
 
   const handleRedirect = () => {
-    const callbackUrl = encodeURIComponent(window.location.origin);
-    window.location.href = `https://getmaterio.app/account?callback=${callbackUrl}`;
+    const authUrl = import.meta.env.VITE_MATERIO_AUTH_URL || "https://auth.getmaterio.app";
+    const callbackUrl = encodeURIComponent(`${window.location.origin}/auth/callback`);
+    window.location.href = `${authUrl}/login?callback=${callbackUrl}`;
   };
 
   const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");

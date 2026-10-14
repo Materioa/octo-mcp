@@ -4,7 +4,7 @@ import { BUILTIN_SKILLS } from "@/lib/skills";
 import { parseFileContent, generatePdfPreview } from "@/lib/file-parser";
 import { uploadFileToSupabase } from "@/lib/supabase";
 import { getModelCounterpart, getAvailableModels } from "@/lib/providers/presets";
-import { Loader, X } from "lucide-react";
+import { Loader, X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chat";
 import { useAuthStore } from "@/stores/auth";
@@ -59,6 +59,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
   const activeConversation = useChatStore(s => 
     s.conversations.find(c => c.id === s.activeConversationId)
   );
+  const currentPdf = useChatStore(s => s.currentPdf);
   const pinnedMcpId = activeConversation?.pinnedMcpId;
   const draftPinnedMcpId = useChatStore(s => s.draftPinnedMcpId);
   const effectivePinnedMcpId = pinnedMcpId || draftPinnedMcpId;
@@ -525,6 +526,24 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             </div>
           )}
 
+          {/* Active PDF from Oread */}
+          {currentPdf && (
+            <div className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 max-w-full">
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate max-w-[200px] sm:max-w-[320px] font-medium" title={currentPdf.title}>
+                  {currentPdf.title}
+                </span>
+                <span className="text-[11px] opacity-75 shrink-0">
+                  (p. {currentPdf.currentPage || 1}/{currentPdf.numPages})
+                </span>
+                <span className="text-[9px] uppercase tracking-wider font-semibold bg-primary/20 px-1.5 py-0.5 rounded shrink-0">
+                  Open PDF
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Textarea row */}
           <textarea
             ref={textareaRef}
@@ -534,7 +553,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             onPaste={handlePaste}
             onCompositionStart={() => setIsComposing(true)}
             onCompositionEnd={() => setIsComposing(false)}
-            placeholder="Write a message…"
+            placeholder={currentPdf ? `Ask anything about "${currentPdf.title}"…` : "Write a message…"}
             disabled={disabled}
             rows={1}
             className={`w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[15px] leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${value.length === 0 ? 'select-none' : 'select-text'}`}

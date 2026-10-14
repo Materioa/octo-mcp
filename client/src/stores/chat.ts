@@ -22,6 +22,15 @@ import type { EraserDocument } from "@/lib/eraser/types";
 import { FOUR_LAYER_ARCHITECTURE_EXAMPLE } from "@/lib/eraser/defaults";
 import { CLIENT_TOOLS, isClientTool, executeClientTool } from "@/lib/client-tools";
 
+export interface OpenPdfDocument {
+  title: string;
+  url?: string;
+  numPages: number;
+  currentPage: number;
+  text?: string;
+  pages?: { pageNumber: number; text: string }[];
+}
+
 interface ChatStore {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -57,6 +66,9 @@ interface ChatStore {
   submitUserInput: (toolCallId: string, result: any) => void;
   activeDocument: { url: string; format: string; title: string } | null;
   setActiveDocument: (doc: { url: string; format: string; title: string } | null) => void;
+  currentPdf: OpenPdfDocument | null;
+  setCurrentPdf: (pdf: OpenPdfDocument | null) => void;
+  updateCurrentPdfPage: (pageNumber: number) => void;
   activeEraserDiagram: EraserDocument | null;
   isEraserCanvasOpen: boolean;
   openEraserCanvas: (doc?: EraserDocument) => void;
@@ -95,6 +107,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   
   activeDocument: null,
   setActiveDocument: (doc) => set({ activeDocument: doc }),
+  currentPdf: null,
+  setCurrentPdf: (pdf) => set({ currentPdf: pdf }),
+  updateCurrentPdfPage: (pageNumber) =>
+    set((state) => ({
+      currentPdf: state.currentPdf ? { ...state.currentPdf, currentPage: pageNumber } : null,
+    })),
   activeEraserDiagram: null,
   isEraserCanvasOpen: false,
   openEraserCanvas: (doc) =>
@@ -584,6 +602,32 @@ RULES FOR THE TITLE:
 
     if (get().sharedContext) {
       finalSystemPrompt += `\n\n<shared_context>\n${get().sharedContext}\n</shared_context>`;
+    }
+
+    const currentPdf = get().currentPdf;
+    if (currentPdf) {
+      let pdfContext = `\n\n<current_open_pdf>\n`;
+      pdfContext += `Document Title: "${currentPdf.title}"\n`;
+      pdfContext += `Total Pages: ${currentPdf.numPages}\n`;
+      pdfContext += `User's Currently Viewing Page: ${currentPdf.currentPage}\n`;
+      if (currentPdf.url) {
+        pdfContext += `Document URL: ${currentPdf.url}\n`;
+      }
+      if (currentPdf.text) {
+        const textContent = currentPdf.text.length > 50000
+          ? currentPdf.text.slice(0, 50000) + "\n\n[... Additional pages accessible via the read_current_pdf tool ...]"
+          : currentPdf.text;
+        pdfContext += `\n--- Document Text Content ---\n${textContent}\n`;
+      }
+      pdfContext += `</current_open_pdf>\n\n`;
+      pdfContext += `DOCUMENT GROUNDING INSTRUCTIONS:
+The user has this PDF document currently open in the Oread viewer right beside you.
+- Answer questions directly using the text of this open document.
+- When referencing information from the document, cite the page number(s) (e.g. "On page 4...").
+- You have the "read_current_pdf" tool available if you need to read specific pages, search for terms across the PDF, or look up the user's current page.
+- Do NOT say you cannot read the document or that you need an MCP connector. You have direct access to the user's open PDF in the Oread viewer.`;
+
+      finalSystemPrompt += pdfContext;
     }
 
     const aiMessages: AIMessage[] = [

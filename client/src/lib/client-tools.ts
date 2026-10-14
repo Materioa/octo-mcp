@@ -1,5 +1,6 @@
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
+import { useChatStore } from "@/stores/chat";
 import { executeCode } from "@/lib/sandbox";
 import type { EraserDocument } from "@/lib/eraser/types";
 
@@ -14,6 +15,29 @@ export interface ClientToolDefinition {
 }
 
 export const CLIENT_TOOLS: ClientToolDefinition[] = [
+  {
+    name: "read_current_pdf",
+    description: "Read, search, or inspect content from the currently open PDF in the Oread viewer. Use this to read specific pages, search for keywords or sections across the document, read the user's active page, or get an outline of the document without needing any MCP connector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["read_page", "get_current_page", "search_text", "get_summary"],
+          description: "Action to perform: 'read_page' reads a specific page, 'get_current_page' reads the page currently in view, 'search_text' searches for a word/phrase across pages, 'get_summary' gets the title and page listing."
+        },
+        pageNumber: {
+          type: "number",
+          description: "The 1-based page number to read (for 'read_page')."
+        },
+        query: {
+          type: "string",
+          description: "Search keyword or phrase to search within the document (for 'search_text')."
+        }
+      },
+      required: ["action"]
+    }
+  },
   {
     name: "ask_user_input_v0",
     description: "Use this tool to ask the user one or more multiple-choice or free-text questions. This will pause execution and render an interactive modal in the chat UI. When the user submits the form, execution will resume and the tool will return the user's answers.",
@@ -331,6 +355,80 @@ export async function executeClientTool(
       } catch (err: any) {
         return `Web search failed: ${err.message}`;
       }
+    }
+
+    case "read_current_pdf": {
+      const currentPdf = useChatStore.getState().currentPdf;
+      if (!currentPdf) {
+        return JSON.stringify({
+          error: "No PDF document is currently open in the Oread viewer."
+        });
+      }
+
+      const { action, pageNumber, query } = args;
+
+      if (action === "get_current_page") {
+        const pageNum = currentPdf.currentPage || 1;
+        const pageObj = currentPdf.pages?.find((p) => p.pageNumber === pageNum);
+        return JSON.stringify({
+          title: currentPdf.title,
+          currentPage: pageNum,
+          totalPages: currentPdf.numPages,
+          text: pageObj ? pageObj.text : (currentPdf.text ? currentPdf.text.slice(0, 3000) : "No text extracted for this page.")
+        });
+      }
+
+      if (action === "read_page") {
+        const num = Number(pageNumber) || currentPdf.currentPage || 1;
+        const pageObj = currentPdf.pages?.find((p) => p.pageNumber === num);
+        if (pageObj) {
+          return JSON.stringify({
+            title: currentPdf.title,
+            pageNumber: num,
+            totalPages: currentPdf.numPages,
+            text: pageObj.text
+          });
+        }
+        return JSON.stringify({
+          title: currentPdf.title,
+          pageNumber: num,
+          totalPages: currentPdf.numPages,
+          text: currentPdf.text ? currentPdf.text.slice(0, 4000) : "No text extracted for this page."
+        });
+      }
+
+      if (action === "search_text" && query) {
+        const q = String(query).toLowerCase();
+        const matches: any[] = [];
+        if (currentPdf.pages && currentPdf.pages.length > 0) {
+          for (const p of currentPdf.pages) {
+            if (p.text.toLowerCase().includes(q)) {
+              const idx = p.text.toLowerCase().indexOf(q);
+              const snippet = p.text.slice(Math.max(0, idx - 100), Math.min(p.text.length, idx + 200));
+              matches.push({ pageNumber: p.pageNumber, snippet: snippet.trim() });
+              if (matches.length >= 6) break;
+            }
+          }
+        } else if (currentPdf.text && currentPdf.text.toLowerCase().includes(q)) {
+          const idx = currentPdf.text.toLowerCase().indexOf(q);
+          const snippet = currentPdf.text.slice(Math.max(0, idx - 100), Math.min(currentPdf.text.length, idx + 200));
+          matches.push({ snippet: snippet.trim() });
+        }
+
+        return JSON.stringify({
+          title: currentPdf.title,
+          query,
+          matchCount: matches.length,
+          matches: matches.length > 0 ? matches : "No matches found in the document."
+        });
+      }
+
+      return JSON.stringify({
+        title: currentPdf.title,
+        numPages: currentPdf.numPages,
+        currentPage: currentPdf.currentPage,
+        hasFullText: !!currentPdf.text
+      });
     }
 
     default:
