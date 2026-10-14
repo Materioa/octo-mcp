@@ -31,6 +31,10 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         if (!key) return;
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+          if (!response.ok) {
+            console.warn("Failed to fetch Gemini models:", response.status, response.statusText);
+            return;
+          }
           const data = await response.json();
           if (data.models) {
             const geminiFetched = data.models.filter((m: any) => m.name.includes("models/gemini") || m.name.includes("models/learnlm")).map((m: any) => m.name.replace("models/", ""));
@@ -46,7 +50,7 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         try {
           const apiBase = import.meta.env.VITE_API_URL
             || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
-          const response = await fetch(`${apiBase}/api/chatgpt/models`, {
+          const response = await fetch(`${apiBase}/backend-api/chatgpt/models`, {
             credentials: "include"
           });
           if (response.ok) {
@@ -68,7 +72,7 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         try {
           const apiBase = import.meta.env.VITE_API_URL
             || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
-          const proxyUrl = `${apiBase}/api/chat/models`;
+          const proxyUrl = `${apiBase}/backend-api/chat/models`;
 
           const response = await fetch(proxyUrl, {
             headers: {

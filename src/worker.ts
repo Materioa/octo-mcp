@@ -59,8 +59,42 @@ import {
   handleTokenProxy,
   handleRegisterProxy,
 } from "./services/materio-auth.js";
+import { createChatGPTHandler } from "@opencoredev/loginwithchatgpt-server";
+import {
+  listConversations,
+  getConversation,
+  upsertConversation,
+  deleteConversation,
+  listMessages,
+  saveMessage,
+  deleteMessage,
+  listCustomConnectors,
+  upsertCustomConnector,
+  deleteCustomConnector,
+  listSkills,
+  upsertSkill,
+  deleteSkill,
+  listApiKeys,
+  upsertApiKey,
+} from "./services/db-service.js";
 import openapiSpec from "../openapi.json" with { type: "json" };
 import openapiLiteSpec from "../openapi.search-lite.json" with { type: "json" };
+
+const chatgptAuth = createChatGPTHandler({
+  basePath: "/api/chatgpt",
+  secret: process.env.LWC_SECRET || "bf3f3a8b273d6eb3ea27df418c21bc4e3a80db6f8c2e171b3e100f91a54b321a",
+  responsesProxy: {
+    maxRequestBytes: 8 * 1024 * 1024,
+  },
+});
+
+const backendChatgptAuth = createChatGPTHandler({
+  basePath: "/backend-api/chatgpt",
+  secret: process.env.LWC_SECRET || "bf3f3a8b273d6eb3ea27df418c21bc4e3a80db6f8c2e171b3e100f91a54b321a",
+  responsesProxy: {
+    maxRequestBytes: 8 * 1024 * 1024,
+  },
+});
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -249,20 +283,141 @@ export default {
         return jsonResponse(spec);
       }
 
-      // 5. REST Endpoints for ChatGPT & External Tools
-      if (url.pathname === "/api/semesters") {
+      // 5. ChatGPT Auth Routes
+      if (url.pathname.startsWith("/api/chatgpt")) {
+        const res = await chatgptAuth.handler(request);
+        return addCors(res);
+      }
+      if (url.pathname.startsWith("/backend-api/chatgpt")) {
+        const res = await backendChatgptAuth.handler(request);
+        return addCors(res);
+      }
+
+      // Normalize /backend-api to /api so all endpoints work identically under both prefixes
+      const normalizedPath = url.pathname.startsWith("/backend-api")
+        ? url.pathname.replace(/^\/backend-api/, "/api")
+        : url.pathname;
+
+      // 6. Database Routes (/backend-api/db/* and /api/db/*)
+      if (normalizedPath.startsWith("/api/db")) {
+        const dbPath = normalizedPath.replace(/^\/api\/db/, "");
+        const { user } = await resolveUserFromHeaders(request.headers, url.searchParams);
+        const anonymousId = request.headers.get("x-anonymous-id") || request.headers.get("X-Anonymous-Id") || null;
+
+        // Conversations
+        if (dbPath === "/conversations" && method === "GET") {
+          const convs = await listConversations(user?.id, anonymousId);
+          return jsonResponse(convs);
+        }
+        if (dbPath === "/conversations" && method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          const conv = await upsertConversation(body, user?.id, anonymousId);
+          return jsonResponse(conv);
+        }
+        const matchConvId = dbPath.match(/^\/conversations\/([^\/]+)$/);
+        if (matchConvId) {
+          const id = matchConvId[1];
+          if (method === "GET") {
+            const conv = await getConversation(id, user?.id, anonymousId);
+            if (!conv) return jsonResponse({ error: "Not found or unauthorized" }, 404);
+            return jsonResponse(conv);
+          }
+          if (method === "DELETE") {
+            const result = await deleteConversation(id, user?.id, anonymousId);
+            return jsonResponse(result);
+          }
+        }
+
+        // Conversation Messages
+        const matchConvMsgs = dbPath.match(/^\/conversations\/([^\/]+)\/messages$/);
+        if (matchConvMsgs && method === "GET") {
+          const msgs = await listMessages(matchConvMsgs[1], user?.id, anonymousId);
+          return jsonResponse(msgs);
+        }
+
+        // Messages
+        if (dbPath === "/messages" && method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          const msg = await saveMessage(body, user?.id, anonymousId, user?.isPlusUser, user?.hasAdminPrivileges);
+          return jsonResponse(msg);
+        }
+        const matchMsgId = dbPath.match(/^\/messages\/([^\/]+)$/);
+        if (matchMsgId && method === "DELETE") {
+          const result = await deleteMessage(matchMsgId[1], user?.id, anonymousId);
+          return jsonResponse(result);
+        }
+
+        // Custom Connectors (requires user)
+        if (dbPath === "/custom-connectors") {
+          if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+          if (method === "GET") {
+            const items = await listCustomConnectors(user.id);
+            return jsonResponse(items);
+          }
+          if (method === "POST") {
+            const body = await request.json().catch(() => ({}));
+            const item = await upsertCustomConnector(body, user.id);
+            return jsonResponse(item);
+          }
+        }
+        const matchConnId = dbPath.match(/^\/custom-connectors\/([^\/]+)$/);
+        if (matchConnId && method === "DELETE") {
+          if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+          const result = await deleteCustomConnector(matchConnId[1], user.id);
+          return jsonResponse(result);
+        }
+
+        // Skills (requires user)
+        if (dbPath === "/skills") {
+          if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+          if (method === "GET") {
+            const items = await listSkills(user.id);
+            return jsonResponse(items);
+          }
+          if (method === "POST") {
+            const body = await request.json().catch(() => ({}));
+            const item = await upsertSkill(body, user.id);
+            return jsonResponse(item);
+          }
+        }
+        const matchSkillId = dbPath.match(/^\/skills\/([^\/]+)$/);
+        if (matchSkillId && method === "DELETE") {
+          if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+          const result = await deleteSkill(matchSkillId[1], user.id);
+          return jsonResponse(result);
+        }
+
+        // API Keys (requires user)
+        if (dbPath === "/api-keys") {
+          if (!user) return jsonResponse({ error: "Unauthorized" }, 401);
+          if (method === "GET") {
+            const items = await listApiKeys(user.id);
+            return jsonResponse(items);
+          }
+          if (method === "POST") {
+            const body = await request.json().catch(() => ({}));
+            const item = await upsertApiKey(body.providerId, body.apiKey, user.id);
+            return jsonResponse(item);
+          }
+        }
+
+        return jsonResponse({ error: `Not found: ${url.pathname}` }, 404);
+      }
+
+      // 7. REST Endpoints for ChatGPT & External Tools
+      if (normalizedPath === "/api/semesters") {
         const semesters = await listSemesters();
         return jsonResponse({ semesters, count: semesters.length });
       }
 
-      if (url.pathname === "/api/subjects") {
+      if (normalizedPath === "/api/subjects") {
         const sem = url.searchParams.get("semester");
         if (!sem) return jsonResponse({ error: "semester query parameter required" }, 400);
         const subjects = await listSubjects(sem);
         return jsonResponse({ semester: sem, subjects, count: subjects.length });
       }
 
-      if (url.pathname === "/api/resources") {
+      if (normalizedPath === "/api/resources") {
         const sem = url.searchParams.get("semester");
         const sub = url.searchParams.get("subject");
         if (!sem || !sub) return jsonResponse({ error: "semester and subject parameters required" }, 400);
@@ -270,7 +425,7 @@ export default {
         return jsonResponse({ semester: sem, subject: sub, resources: items, count: items.length });
       }
 
-      if (url.pathname === "/api/search") {
+      if (normalizedPath === "/api/search") {
         const q = url.searchParams.get("query") || url.searchParams.get("q");
         const sem = url.searchParams.get("semester") || undefined;
         if (!q) return jsonResponse({ error: "query parameter required" }, 400);
@@ -278,7 +433,7 @@ export default {
         return jsonResponse(result);
       }
 
-      if (url.pathname === "/api/pdf-url") {
+      if (normalizedPath === "/api/pdf-url") {
         const sem = url.searchParams.get("semester");
         const sub = url.searchParams.get("subject");
         const topic = url.searchParams.get("topic");
@@ -304,12 +459,12 @@ export default {
         });
       }
 
-      if (url.pathname === "/api/index") {
+      if (normalizedPath === "/api/index") {
         const index = await getFullIndex();
         return jsonResponse({ totalSubjects: index.length, library: index });
       }
 
-      if (url.pathname === "/api/snap-search") {
+      if (normalizedPath === "/api/snap-search") {
         const q = url.searchParams.get("query") || url.searchParams.get("q");
         const sem = url.searchParams.get("semester") || undefined;
         const sub = url.searchParams.get("subject") || undefined;
@@ -336,7 +491,7 @@ export default {
         });
       }
 
-      if (url.pathname === "/api/deep-think") {
+      if (normalizedPath === "/api/deep-think") {
         const { accessTier } = await resolveUserFromHeaders(request.headers, url.searchParams);
         const accessCheck = checkToolAccess(accessTier, "plus");
         if (!accessCheck.allowed) {
@@ -364,7 +519,7 @@ export default {
         return jsonResponse({ query: q, semester: sem, subject: sub, results });
       }
 
-      if (url.pathname === "/api/share-link") {
+      if (normalizedPath === "/api/share-link") {
         const directUrl = (url.searchParams.get("url") || "").trim();
         const sem = url.searchParams.get("semester");
         const sub = url.searchParams.get("subject");
@@ -414,7 +569,7 @@ export default {
         });
       }
 
-      if (url.pathname === "/api/lookup-external-sources") {
+      if (normalizedPath === "/api/lookup-external-sources") {
         const q = url.searchParams.get("query") || url.searchParams.get("q");
         if (!q) return jsonResponse({ error: "query parameter required" }, 400);
         const results = await lookupExternalSources(q);
@@ -422,7 +577,7 @@ export default {
       }
 
       // 6. MCP Proxy Endpoint: /api/mcp-proxy
-      if (url.pathname === "/api/mcp-proxy") {
+      if (normalizedPath === "/api/mcp-proxy") {
         const target = url.searchParams.get("target");
         if (!target) return jsonResponse({ error: "Missing target URL" }, 400);
 

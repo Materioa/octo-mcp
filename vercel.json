@@ -1,15 +1,16 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/mcp", "destination": "/api/index" },
-    { "source": "/mcp/(.*)", "destination": "/api/index" },
-    { "source": "/health", "destination": "/api/index" },
-    { "source": "/openapi.json", "destination": "/api/index" },
-    { "source": "/openapi.search-lite.json", "destination": "/api/index" },
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/backend-api/(.*)", "destination": "/backend-api/index" },
+    { "source": "/api/(.*)", "destination": "/backend-api/index" },
+    { "source": "/mcp", "destination": "/backend-api/index" },
+    { "source": "/mcp/(.*)", "destination": "/backend-api/index" },
+    { "source": "/health", "destination": "/backend-api/index" },
+    { "source": "/openapi.json", "destination": "/backend-api/index" },
+    { "source": "/openapi.search-lite.json", "destination": "/backend-api/index" },
+    { "source": "/(.*)", "destination": "/backend-api/index" }
   ],
   "functions": {
-    "api/**/*": {
+    "backend-api/**/*": {
       "includeFiles": "openapi*.json"
     }
   }

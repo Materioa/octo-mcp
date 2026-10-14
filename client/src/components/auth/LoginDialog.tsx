@@ -37,7 +37,7 @@ export function LoginDialog({ open, onOpenChange, message }: LoginDialogProps) {
     login,
     copyCode,
   } = useLoginWithChatGPT({
-    basePath: `${apiBase}/api/chatgpt`
+    basePath: `${apiBase}/backend-api/chatgpt`
   });
 
   const [copied, setCopied] = useState(false);
@@ -60,7 +60,7 @@ export function LoginDialog({ open, onOpenChange, message }: LoginDialogProps) {
     if (status === "authenticated") {
       const fetchModelsAndSetProvider = async () => {
         try {
-          const response = await fetch(`${apiBase}/api/chatgpt/models`, {
+          const response = await fetch(`${apiBase}/backend-api/chatgpt/models`, {
             credentials: "include"
           });
           if (response.ok) {
@@ -75,7 +75,7 @@ export function LoginDialog({ open, onOpenChange, message }: LoginDialogProps) {
               // 3. Save as current active provider
               settings.setAIProvider({
                 providerId: "chatgpt",
-                baseUrl: "/api/chatgpt",
+                baseUrl: "/backend-api/chatgpt",
                 apiKey: "",
                 model: selectedModel
               });

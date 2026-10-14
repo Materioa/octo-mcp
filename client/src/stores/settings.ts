@@ -67,7 +67,7 @@ export const useSettingsStore = create<SettingsStore>()(
             import("./auth").then((authModule) => {
               const token = authModule.useAuthStore.getState().token;
               if (token && config.apiKey) {
-                fetch(`${API_URL}/api/db/api-keys`, {
+                fetch(`${API_URL}/backend-api/db/api-keys`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                   body: JSON.stringify({ providerId: newAiProvider.providerId, apiKey: config.apiKey })
@@ -124,7 +124,7 @@ export const useSettingsStore = create<SettingsStore>()(
         import("./auth").then((authModule) => {
           const token = authModule.useAuthStore.getState().token;
           if (token) {
-            fetch(`${API_URL}/api/db/skills`, {
+            fetch(`${API_URL}/backend-api/db/skills`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
               body: JSON.stringify(newSkill)
@@ -140,7 +140,7 @@ export const useSettingsStore = create<SettingsStore>()(
               import("./auth").then((authModule) => {
                 const token = authModule.useAuthStore.getState().token;
                 if (token) {
-                  fetch(`${API_URL}/api/db/skills`, {
+                  fetch(`${API_URL}/backend-api/db/skills`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                     body: JSON.stringify(updated)
@@ -159,7 +159,7 @@ export const useSettingsStore = create<SettingsStore>()(
         import("./auth").then((authModule) => {
           const token = authModule.useAuthStore.getState().token;
           if (token) {
-            fetch(`${API_URL}/api/db/skills/${id}`, {
+            fetch(`${API_URL}/backend-api/db/skills/${id}`, {
               method: "DELETE",
               headers: { "Authorization": `Bearer ${token}` }
             }).catch(console.error);
@@ -196,7 +196,7 @@ export const useSettingsStore = create<SettingsStore>()(
         import("./auth").then((authModule) => {
           const token = authModule.useAuthStore.getState().token;
           if (token) {
-            fetch(`${API_URL}/api/db/custom-connectors`, {
+            fetch(`${API_URL}/backend-api/db/custom-connectors`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -224,7 +224,7 @@ export const useSettingsStore = create<SettingsStore>()(
               import("./auth").then((authModule) => {
                 const token = authModule.useAuthStore.getState().token;
                 if (token) {
-                  fetch(`${API_URL}/api/db/custom-connectors`, {
+                  fetch(`${API_URL}/backend-api/db/custom-connectors`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -257,7 +257,7 @@ export const useSettingsStore = create<SettingsStore>()(
         import("./auth").then((authModule) => {
           const token = authModule.useAuthStore.getState().token;
           if (token) {
-            fetch(`${API_URL}/api/db/custom-connectors/${id}`, {
+            fetch(`${API_URL}/backend-api/db/custom-connectors/${id}`, {
               method: "DELETE",
               headers: {
                 "Authorization": `Bearer ${token}`
@@ -275,7 +275,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       syncCustomConnectors: async (token) => {
         try {
-          const res = await fetch(`${API_URL}/api/db/custom-connectors`, {
+          const res = await fetch(`${API_URL}/backend-api/db/custom-connectors`, {
             headers: {
               "Authorization": `Bearer ${token}`
             }
@@ -301,7 +301,7 @@ export const useSettingsStore = create<SettingsStore>()(
               if (localOnly.length > 0) {
                 localOnly.forEach(async (lc) => {
                   try {
-                    const postRes = await fetch(`${API_URL}/api/db/custom-connectors`, {
+                    const postRes = await fetch(`${API_URL}/backend-api/db/custom-connectors`, {
                       method: "POST",
                       headers: {
                         "Content-Type": "application/json",
@@ -331,7 +331,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       syncSkills: async (token) => {
         try {
-          const res = await fetch(`${API_URL}/api/db/skills`, { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetch(`${API_URL}/backend-api/db/skills`, { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
             const serverSkills: Skill[] = await res.json();
             set((state) => {
@@ -340,7 +340,7 @@ export const useSettingsStore = create<SettingsStore>()(
               const localOnly = localSkills.filter(ls => !serverSkills.some(ss => ss.id === ls.id));
               if (localOnly.length > 0) {
                 localOnly.forEach(async (ls) => {
-                  fetch(`${API_URL}/api/db/skills`, {
+                  fetch(`${API_URL}/backend-api/db/skills`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                     body: JSON.stringify(ls)
@@ -355,7 +355,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       syncApiKeys: async (token) => {
         try {
-          const res = await fetch(`${API_URL}/api/db/api-keys`, { headers: { "Authorization": `Bearer ${token}` } });
+          const res = await fetch(`${API_URL}/backend-api/db/api-keys`, { headers: { "Authorization": `Bearer ${token}` } });
           if (res.ok) {
             const serverKeys = await res.json();
             set((state) => {
@@ -367,7 +367,7 @@ export const useSettingsStore = create<SettingsStore>()(
               // Upload any local keys missing from server
               Object.entries(merged).forEach(([providerId, apiKey]) => {
                 if (!serverKeys.some((sk: any) => sk.providerId === providerId)) {
-                  fetch(`${API_URL}/api/db/api-keys`, {
+                  fetch(`${API_URL}/backend-api/db/api-keys`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                     body: JSON.stringify({ providerId, apiKey })

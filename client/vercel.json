@@ -20,6 +20,22 @@
       "destination": "https://accounts.getmaterio.app/api/v2/profile"
     },
     {
+      "source": "/backend-api/:path*",
+      "destination": "https://mcp.getmaterio.app/backend-api/:path*"
+    },
+    {
+      "source": "/api/chatgpt/:path*",
+      "destination": "https://mcp.getmaterio.app/api/chatgpt/:path*"
+    },
+    {
+      "source": "/api/chat/:path*",
+      "destination": "https://mcp.getmaterio.app/api/chat/:path*"
+    },
+    {
+      "source": "/api/db/:path*",
+      "destination": "https://mcp.getmaterio.app/api/db/:path*"
+    },
+    {
       "source": "/share/:id",
       "has": [
         {

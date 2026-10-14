@@ -159,7 +159,7 @@ export class OpenAICompatProvider implements AIProvider {
     const apiBase = import.meta.env.VITE_API_URL
       || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
     
-    const isChatGPT = this.baseUrl.includes("/api/chatgpt") || this.model.startsWith("chatgpt:") || this.model.startsWith("chatgpt");
+    const isChatGPT = this.baseUrl.includes("/backend-api/chatgpt") || this.baseUrl.includes("/api/chatgpt") || this.model.startsWith("chatgpt:") || this.model.startsWith("chatgpt");
 
     const body: Record<string, any> = {
       model: this.model,
@@ -242,6 +242,7 @@ export class OpenAICompatProvider implements AIProvider {
           lowerUrl.includes("openrouter.ai") ||
           lowerUrl.includes("deepseek.com") ||
           lowerUrl.includes("groq.com") ||
+          lowerUrl.includes("/backend-api/chatgpt") ||
           lowerUrl.includes("/api/chatgpt")
         );
 
@@ -261,8 +262,8 @@ export class OpenAICompatProvider implements AIProvider {
         throw new Error("No AI provider configured. Please set a provider in Settings.");
       }
       const proxyUrl = isChatGPT
-        ? `${apiBase}/api/chatgpt/responses`
-        : `${apiBase}/api/chat/completions`;
+        ? `${apiBase}/backend-api/chatgpt/responses`
+        : `${apiBase}/backend-api/chat/completions`;
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

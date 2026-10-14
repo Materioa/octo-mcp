@@ -9,7 +9,7 @@ memDb.version(1).stores({
 });
 const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
-const SUPERMEMORY_API = (import.meta.env.VITE_API_URL || defaultApiUrl) + "/api/memory";
+const SUPERMEMORY_API = (import.meta.env.VITE_API_URL || defaultApiUrl) + "/backend-api/memory";
 
 export class MemoryManager {
   private apiKey: string;

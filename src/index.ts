@@ -53,6 +53,24 @@ import {
   handleTokenProxy,
   handleRegisterProxy,
 } from "./services/materio-auth.js";
+import {
+  listConversations,
+  getConversation,
+  upsertConversation,
+  deleteConversation,
+  listMessages,
+  saveMessage,
+  deleteMessage,
+  listCustomConnectors,
+  upsertCustomConnector,
+  deleteCustomConnector,
+  listSkills,
+  upsertSkill,
+  deleteSkill,
+  listApiKeys,
+  upsertApiKey,
+} from "./services/db-service.js";
+import { createChatGPTHandler } from "@opencoredev/loginwithchatgpt-server";
 
 let APP_ICON_PATH = path.join(__srcDir, "app.png");
 let OPENAPI_SPEC_PATH = path.join(__srcDir, "../openapi.json");
@@ -695,6 +713,236 @@ app.all("/api/mcp-proxy", async (req, res) => {
   } catch (err: any) {
     console.error("MCP proxy error:", err);
     res.status(502).json({ error: `Proxy failed: ${err.message}` });
+  }
+});
+
+// ── ChatGPT Auth Handlers ──
+const chatgptAuth = createChatGPTHandler({
+  basePath: "/api/chatgpt",
+  secret: process.env.LWC_SECRET || "bf3f3a8b273d6eb3ea27df418c21bc4e3a80db6f8c2e171b3e100f91a54b321a",
+  responsesProxy: {
+    maxRequestBytes: 8 * 1024 * 1024,
+  },
+});
+
+const backendChatgptAuth = createChatGPTHandler({
+  basePath: "/backend-api/chatgpt",
+  secret: process.env.LWC_SECRET || "bf3f3a8b273d6eb3ea27df418c21bc4e3a80db6f8c2e171b3e100f91a54b321a",
+  responsesProxy: {
+    maxRequestBytes: 8 * 1024 * 1024,
+  },
+});
+
+async function handleChatGPTRequest(req: express.Request, res: express.Response, handler: (request: Request) => Promise<Response>) {
+  try {
+    const protocol = req.protocol || "https";
+    const host = req.get("host") || "localhost";
+    const url = `${protocol}://${host}${req.originalUrl}`;
+
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value) {
+        if (Array.isArray(value)) value.forEach(v => headers.append(key, v));
+        else headers.set(key, value);
+      }
+    }
+
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+    };
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      init.body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    }
+
+    const webRequest = new Request(url, init);
+    const webResponse = await handler(webRequest);
+
+    res.status(webResponse.status);
+    webResponse.headers.forEach((val, key) => {
+      res.setHeader(key, val);
+    });
+
+    const buffer = await webResponse.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err: any) {
+    console.error("ChatGPT handler error:", err);
+    res.status(500).json({ error: err.message || "ChatGPT proxy error" });
+  }
+}
+
+app.all(["/api/chatgpt", "/api/chatgpt/*"], (req, res) => handleChatGPTRequest(req, res, chatgptAuth.handler));
+app.all(["/backend-api/chatgpt", "/backend-api/chatgpt/*"], (req, res) => handleChatGPTRequest(req, res, backendChatgptAuth.handler));
+
+// ── Database Routes (Conversations, Messages, Connectors, Skills, API Keys) ──
+async function resolveAuthUser(req: express.Request) {
+  const { user } = await resolveUserFromHeaders(req.headers as any, req.query as any);
+  const anonymousId = (req.headers["x-anonymous-id"] || req.headers["X-Anonymous-Id"]) as string | undefined;
+  return { user, anonymousId };
+}
+
+// Conversations
+app.get(["/api/db/conversations", "/backend-api/db/conversations"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const convs = await listConversations(user?.id, anonymousId);
+    res.json(convs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/db/conversations", "/backend-api/db/conversations"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const conv = await upsertConversation(req.body, user?.id, anonymousId);
+    res.json(conv);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get(["/api/db/conversations/:id", "/backend-api/db/conversations/:id"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const conv = await getConversation(req.params.id as string, user?.id, anonymousId);
+    if (!conv) return res.status(404).json({ error: "Not found or unauthorized" });
+    res.json(conv);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete(["/api/db/conversations/:id", "/backend-api/db/conversations/:id"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const result = await deleteConversation(req.params.id as string, user?.id, anonymousId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Messages
+app.get(["/api/db/conversations/:id/messages", "/backend-api/db/conversations/:id/messages"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const msgs = await listMessages(req.params.id as string, user?.id, anonymousId);
+    res.json(msgs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/db/messages", "/backend-api/db/messages"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const msg = await saveMessage(req.body, user?.id, anonymousId, user?.isPlusUser, user?.hasAdminPrivileges);
+    res.json(msg);
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete(["/api/db/messages/:id", "/backend-api/db/messages/:id"], async (req, res) => {
+  try {
+    const { user, anonymousId } = await resolveAuthUser(req);
+    const result = await deleteMessage(req.params.id as string, user?.id, anonymousId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Custom Connectors
+app.get(["/api/db/custom-connectors", "/backend-api/db/custom-connectors"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const items = await listCustomConnectors(user.id);
+    res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/db/custom-connectors", "/backend-api/db/custom-connectors"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const item = await upsertCustomConnector(req.body, user.id);
+    res.json(item);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete(["/api/db/custom-connectors/:id", "/backend-api/db/custom-connectors/:id"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const result = await deleteCustomConnector(req.params.id as string, user.id);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Skills
+app.get(["/api/db/skills", "/backend-api/db/skills"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const items = await listSkills(user.id);
+    res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/db/skills", "/backend-api/db/skills"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const item = await upsertSkill(req.body, user.id);
+    res.json(item);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete(["/api/db/skills/:id", "/backend-api/db/skills/:id"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const result = await deleteSkill(req.params.id as string, user.id);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API Keys
+app.get(["/api/db/api-keys", "/backend-api/db/api-keys"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const items = await listApiKeys(user.id);
+    res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(["/api/db/api-keys", "/backend-api/db/api-keys"], async (req, res) => {
+  try {
+    const { user } = await resolveAuthUser(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const item = await upsertApiKey(req.body.providerId, req.body.apiKey, user.id);
+    res.json(item);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

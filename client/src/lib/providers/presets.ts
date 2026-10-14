@@ -147,7 +147,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: "chatgpt",
     name: "Login with ChatGPT",
-    baseUrl: "/api/chatgpt",
+    baseUrl: "/backend-api/chatgpt",
     defaultModel: "gpt-4o",
     models: ["gpt-4o", "gpt-4o-mini", "o1-mini", "o3-mini", "gpt-4-turbo"],
     keyPlaceholder: "No API key needed - log in below",

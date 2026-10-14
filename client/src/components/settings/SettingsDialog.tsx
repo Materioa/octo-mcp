@@ -34,7 +34,7 @@ function ChatGPTLoginPanel() {
     logout,
     copyCode,
   } = useLoginWithChatGPT({
-    basePath: `${apiBase}/api/chatgpt`
+    basePath: `${apiBase}/backend-api/chatgpt`
   });
 
   const [copied, setCopied] = useState(false);
@@ -49,7 +49,7 @@ function ChatGPTLoginPanel() {
     if (status === "authenticated") {
       const fetchModels = async () => {
         try {
-          const response = await fetch(`${apiBase}/api/chatgpt/models`, {
+          const response = await fetch(`${apiBase}/backend-api/chatgpt/models`, {
             credentials: "include"
           });
           if (response.ok) {

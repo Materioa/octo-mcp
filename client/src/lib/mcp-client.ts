@@ -71,7 +71,7 @@ class MCPClientManager {
                 { name: "mcp-chat-client", version: "1.0.0" },
                 { capabilities: {} }
               );
-              const proxyUrl = new URL("/api/mcp-proxy", API_URL);
+              const proxyUrl = new URL("/backend-api/mcp-proxy", API_URL);
               proxyUrl.searchParams.set("target", connector.url);
               
               const isSse = connector.url.toLowerCase().includes("/sse") || connector.url.toLowerCase().includes("transport=sse");
