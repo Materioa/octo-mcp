@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
+import { exchangeHandoffCode } from "@/lib/auth-api";
 
 const AUTH_URL = import.meta.env.VITE_MATERIO_AUTH_URL || "https://auth.getmaterio.app";
 const ACCOUNTS_URL = import.meta.env.VITE_MATERIO_ACCOUNTS_URL || "https://accounts.getmaterio.app";
@@ -32,50 +33,12 @@ export function AuthCallback() {
 
     isExchanging.current = true;
 
-    // Exchange the code directly with auth.getmaterio.app
-    fetch(`${AUTH_URL}/api/v2/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "exchange", code })
-    })
-      .then(async (res) => {
-        const text = await res.text();
-        let data: any = {};
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(`Authentication server returned invalid response (Status ${res.status})`);
-        }
-
-        if (!res.ok || (!data.token && !data.accessToken)) {
-          throw new Error(data.error || "Authentication exchange failed");
-        }
-
-        const token = data.token || data.accessToken || data.jwt;
-        let user = data.user || data.profile || data.data;
-
-        // Fetch fresh profile if needed
-        if (!user || !user.id) {
-          try {
-            const profileRes = await fetch(`${ACCOUNTS_URL}/api/v2/profile`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            if (profileRes.ok) {
-              const profileData = await profileRes.json();
-              user = profileData.user || profileData.profile || profileData.data || profileData;
-            }
-          } catch (e) {
-            console.warn("Failed to fetch supplementary profile:", e);
-          }
-        }
-
-        if (token && user && user.id) {
-          useAuthStore.getState().setAuth(token, user);
-          useAuthStore.getState().setLoginOpen(false);
-          navigate("/new", { replace: true });
-        } else {
-          throw new Error("Missing user profile information");
-        }
+    // Exchange the code via proxy / direct fallback
+    exchangeHandoffCode(code)
+      .then(({ token, user }) => {
+        useAuthStore.getState().setAuth(token, user);
+        useAuthStore.getState().setLoginOpen(false);
+        navigate("/new", { replace: true });
       })
       .catch((err) => {
         console.error("Auth callback error:", err);

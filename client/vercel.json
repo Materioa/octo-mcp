@@ -12,6 +12,14 @@
   ],
   "rewrites": [
     {
+      "source": "/api/v2/login",
+      "destination": "https://auth.getmaterio.app/api/v2/login"
+    },
+    {
+      "source": "/api/v2/profile",
+      "destination": "https://accounts.getmaterio.app/api/v2/profile"
+    },
+    {
       "source": "/share/:id",
       "has": [
         {

@@ -13,6 +13,16 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      "/api/v2/login": {
+        target: "https://auth.getmaterio.app",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/api/v2/profile": {
+        target: "https://accounts.getmaterio.app",
+        changeOrigin: true,
+        secure: false,
+      },
       "/mcp-proxy": {
         target: "https://mcp.getmaterio.app",
         changeOrigin: true,
@@ -29,6 +39,16 @@ export default defineConfig({
   preview: {
     port: 5173,
     proxy: {
+      "/api/v2/login": {
+        target: "https://auth.getmaterio.app",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/api/v2/profile": {
+        target: "https://accounts.getmaterio.app",
+        changeOrigin: true,
+        secure: false,
+      },
       "/mcp-proxy": {
         target: "https://mcp.getmaterio.app",
         changeOrigin: true,

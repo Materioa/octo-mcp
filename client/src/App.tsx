@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-route
 import { Loader } from "lucide-react";
 import { OAuthCallback } from "@/components/OAuthCallback";
 import { AuthCallback } from "@/components/auth/AuthCallback";
+import { exchangeHandoffCode, fetchUserProfile } from "@/lib/auth-api";
+import { useAlertStore } from "@/stores/alert";
 
 import { useChatStore } from "@/stores/chat";
 
@@ -136,18 +138,14 @@ export default function App() {
       }
 
       // Verify if token is still valid on startup/mount
-      fetch(`${ACCOUNTS_URL}/api/v2/profile`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      .then(res => {
-        if (res.status === 401 || res.status === 403) {
-          useAuthStore.getState().logout();
-          useAuthStore.getState().setLoginOpen(true);
-        }
-      })
-      .catch(err => {
-        console.error("Failed to verify token on startup", err);
-      });
+      fetchUserProfile(token)
+        .catch(err => {
+          console.warn("Failed to verify token on startup", err);
+          if (err.message?.includes("401") || err.message?.includes("403")) {
+            useAuthStore.getState().logout();
+            useAuthStore.getState().setLoginOpen(true);
+          }
+        });
     }
   }, [token]);
 
@@ -158,61 +156,18 @@ export default function App() {
       // Clean up URL immediately
       window.history.replaceState({}, document.title, window.location.pathname);
       
-      fetch(`${AUTH_URL}/api/v2/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "exchange", code: initialHandoffCode })
-      })
-      .then(async res => {
-        const text = await res.text();
-        try {
-          return { status: res.status, ok: res.ok, data: JSON.parse(text) };
-        } catch (e) {
-          alert(`Login Failed: Not JSON. Status: ${res.status}. Body: ${text.slice(0, 100)}`);
-          throw new Error("Not JSON");
-        }
-      })
-      .then(async ({ status, ok, data }) => {
-        if (!ok) {
-          alert(`Login Failed: HTTP ${status} - ${data.error || JSON.stringify(data)}`);
-          return;
-        }
-
-        const token = data.token || data.accessToken || data.jwt;
-        if (token) {
-          let user = data.user || data.profile || data.data;
-          
-          if (!user || typeof user !== 'object') {
-            try {
-              const profileRes = await fetch(`${ACCOUNTS_URL}/api/v2/profile`, {
-                headers: { "Authorization": `Bearer ${token}` }
-              });
-              if (profileRes.ok) {
-                const profileData = await profileRes.json();
-                user = profileData.user || profileData.profile || profileData.data || profileData;
-              }
-            } catch (err) {
-              console.error("Failed to fetch user profile:", err);
-            }
-          }
-          
-          if (user && user.id) {
-            setAuth(token, user);
-            setLoginOpen(false);
-          } else {
-            alert(`Login Failed: Missing user ID in profile. Keys: ${Object.keys(user || {}).join(',')}`);
-          }
-        } else {
-          alert(`Login Failed: No token in response. Data: ${JSON.stringify(data).slice(0, 100)}`);
-        }
-      })
-      .catch(err => {
-        console.error("Handoff fetch error:", err);
-        alert(`Login Failed: Network error. Details: ${err.message}`);
-      })
-      .finally(() => setIsExchanging(false));
+      exchangeHandoffCode(initialHandoffCode)
+        .then(({ token, user }) => {
+          setAuth(token, user);
+          setLoginOpen(false);
+        })
+        .catch(err => {
+          console.error("Handoff exchange error:", err);
+          useAlertStore.getState().addAlert(`Login Failed: ${err.message}`, "error");
+        })
+        .finally(() => setIsExchanging(false));
     }
-  }, [setAuth]);
+  }, [setAuth, initialHandoffCode, setLoginOpen]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
