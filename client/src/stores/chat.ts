@@ -207,6 +207,50 @@ function extractTextToolCalls(text: string): {
   return { toolCalls, cleanedText: cleaned.trim() };
 }
 
+export function cleanDocumentTitle(rawTitle?: string, url?: string): string {
+  let name = (rawTitle || "").trim();
+
+  // Strip common generic prefixes from PowerPoint / Word / Office exports
+  name = name.replace(/^(?:Microsoft\s+)?PowerPoint\s+Presentation(?:\s*[-–—]\s*)?/i, '');
+  name = name.replace(/^(?:Microsoft\s+)?Word\s+Document(?:\s*[-–—]\s*)?/i, '');
+  name = name.replace(/^Microsoft\s+(?:Word|PowerPoint)\s*[-–—]\s*/i, '');
+  name = name.replace(/\.pdf$/i, '');
+  name = name.replace(/\.[a-z0-9]{2,4}$/i, '');
+  name = name.trim();
+
+  const isGeneric = !name || /^(?:pdf\.?js(\s+viewer)?|viewer|document|presentation\d*|untitled|powerpoint\s+presentation)$/i.test(name);
+
+  if (isGeneric && url) {
+    try {
+      const u = new URL(url, "https://chat.getmaterio.app");
+      const fileParam = u.searchParams.get("file");
+      if (fileParam) {
+        const fromParam = cleanDocumentTitle(fileParam);
+        if (fromParam && fromParam !== "Document") return fromParam;
+      }
+      const last = u.pathname.split("/").filter(Boolean).pop();
+      if (last && !/^(viewer\.html|index\.html)$/i.test(last)) {
+        let fromUrl = decodeURIComponent(last);
+        fromUrl = fromUrl.replace(/^(?:Microsoft\s+)?PowerPoint\s+Presentation(?:\s*[-–—]\s*)?/i, '');
+        fromUrl = fromUrl.replace(/^(?:Microsoft\s+)?Word\s+Document(?:\s*[-–—]\s*)?/i, '');
+        fromUrl = fromUrl.replace(/\.pdf$/i, '').replace(/\.[a-z0-9]{2,4}$/i, '').trim();
+        if (fromUrl && !/^(?:pdf\.?js(\s+viewer)?|viewer|document)$/i.test(fromUrl)) {
+          return fromUrl;
+        }
+      }
+    } catch (e) {
+      const parts = String(url).split(/[/\\]/).filter(Boolean);
+      const last = parts.pop() || '';
+      if (last && !/^(viewer\.html|index\.html)$/i.test(last)) {
+        let fromUrl = decodeURIComponent(last).replace(/\.pdf$/i, '').trim();
+        if (fromUrl) return fromUrl;
+      }
+    }
+  }
+
+  return name || "Document";
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   conversations: [],
   activeConversationId: null,
@@ -233,6 +277,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   
   activeDocument: null,
   setActiveDocument: (doc) => set({ activeDocument: doc }),
+
   currentPdf: null,
   dismissedPdfUrl: null,
   dismissPdfContext: () => {
@@ -250,21 +295,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return;
     }
     set({ dismissedPdfUrl: null });
-    let title = (pdf.title || "").trim();
-    if (!title || /pdf\.?js(\s+viewer)?/i.test(title)) {
-      if (pdf.url) {
-        try {
-          const u = new URL(pdf.url, "https://chat.getmaterio.app");
-          const last = u.pathname.split("/").filter(Boolean).pop();
-          if (last && !/viewer\.html/i.test(last)) {
-            title = decodeURIComponent(last).replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim();
-          }
-        } catch (e) {}
-      }
-    }
-    if (!title || /pdf\.?js(\s+viewer)?/i.test(title)) {
-      title = "Document";
-    }
+    const title = cleanDocumentTitle(pdf.title, pdf.url);
     set({ currentPdf: { ...pdf, title } });
   },
   updateCurrentPdfPage: (pageNumber) =>

@@ -6,7 +6,7 @@ import { uploadFileToSupabase } from "@/lib/supabase";
 import { getModelCounterpart, getAvailableModels } from "@/lib/providers/presets";
 import { Loader, X, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useChatStore } from "@/stores/chat";
+import { useChatStore, cleanDocumentTitle } from "@/stores/chat";
 import { useAuthStore } from "@/stores/auth";
 import { saveDraftAttachment, getDraftAttachments, deleteDraftAttachment, clearDraftAttachments } from "@/lib/draftsDb";
 import {
@@ -528,10 +528,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
 
           {/* Active PDF from Oread */}
           {currentPdf && (() => {
-            const rawTitle = (currentPdf.title || "").trim();
-            const pdfTitle = rawTitle && !/pdf\.?js(\s+viewer)?/i.test(rawTitle)
-              ? rawTitle
-              : (currentPdf.url ? decodeURIComponent(currentPdf.url.split("/").pop()?.replace(/\.pdf$/i, "") || "Document") : "Document");
+            const pdfTitle = cleanDocumentTitle(currentPdf.title, currentPdf.url);
             return (
               <div className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs">
                 <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-secondary text-secondary-foreground border border-border/50 max-w-full">
@@ -567,11 +564,7 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             onCompositionEnd={() => setIsComposing(false)}
             placeholder={
               currentPdf
-                ? `Ask anything about "${
-                    currentPdf.title && !/pdf\.?js(\s+viewer)?/i.test(currentPdf.title)
-                      ? currentPdf.title
-                      : (currentPdf.url ? decodeURIComponent(currentPdf.url.split("/").pop()?.replace(/\.pdf$/i, "") || "Document") : "Document")
-                  }"…`
+                ? `Ask anything about "${cleanDocumentTitle(currentPdf.title, currentPdf.url)}"…`
                 : "Write a message…"
             }
             disabled={disabled}
