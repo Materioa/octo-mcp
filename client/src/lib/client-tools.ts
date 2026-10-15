@@ -196,7 +196,7 @@ export interface ClientToolContext {
   onResolveUserInput?: (resolveFn: (data: any) => string) => Promise<string>;
 }
 
-function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ text?: string; pageNumber?: number; title?: string } | null> {
+function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ text?: string; pageNumber?: number; title?: string; image?: string; isScanned?: boolean } | null> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !window.parent || window.parent === window) {
       return resolve(null);
@@ -426,24 +426,37 @@ export async function executeClientTool(
       if (action === "read_page" || (!isNaN(num) && num > 0)) {
         const targetPage = (!isNaN(num) && num > 0) ? num : (currentPdf.currentPage || 1);
         let pageObj = currentPdf.pages?.find((p) => p.pageNumber === targetPage);
+        let pageImage: string | undefined = pageObj?.image;
+        let isScanned = pageObj?.isScanned || currentPdf.isScanned;
 
-        if (!pageObj) {
-          // Attempt on-demand page fetch from Oread viewer frame
+        if (!pageObj || (!pageObj.text && !pageImage)) {
+          // Attempt on-demand page fetch from Oread viewer frame (which also generates canvas snapshot if scanned)
           const viewerPage = await requestPageFromViewer(targetPage);
-          if (viewerPage && viewerPage.text) {
-            pageObj = { pageNumber: targetPage, text: viewerPage.text };
+          if (viewerPage) {
+            if (viewerPage.image) pageImage = viewerPage.image;
+            if (viewerPage.isScanned) isScanned = true;
+            pageObj = {
+              pageNumber: targetPage,
+              text: viewerPage.text || "",
+              image: viewerPage.image,
+              isScanned: viewerPage.isScanned,
+            };
             if (currentPdf.pages) {
-              currentPdf.pages.push(pageObj);
+              const existingIdx = currentPdf.pages.findIndex(p => p.pageNumber === targetPage);
+              if (existingIdx >= 0) currentPdf.pages[existingIdx] = pageObj;
+              else currentPdf.pages.push(pageObj);
             }
           }
         }
 
-        if (pageObj) {
+        if (pageObj && (pageObj.text || pageImage)) {
           return JSON.stringify({
             title: currentPdf.title,
             pageNumber: targetPage,
             totalPages: currentPdf.numPages,
-            text: pageObj.text
+            text: pageObj.text || (pageImage ? "[Scanned document page: image snapshot captured for visual inspection]" : ""),
+            image: pageImage,
+            isScanned: !!isScanned
           });
         }
 

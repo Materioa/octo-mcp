@@ -534,17 +534,23 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
               : (currentPdf.url ? decodeURIComponent(currentPdf.url.split("/").pop()?.replace(/\.pdf$/i, "") || "Document") : "Document");
             return (
               <div className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 max-w-full">
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate max-w-[200px] sm:max-w-[320px] font-medium" title={pdfTitle}>
+                <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-secondary text-secondary-foreground border border-border/50 max-w-full">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate max-w-[240px] sm:max-w-[360px] font-medium" title={pdfTitle}>
                     {pdfTitle}
                   </span>
-                  <span className="text-[11px] opacity-75 shrink-0">
-                    (p. {currentPdf.currentPage || 1}/{currentPdf.numPages})
-                  </span>
-                  <span className="text-[9px] uppercase tracking-wider font-semibold bg-primary/20 px-1.5 py-0.5 rounded shrink-0">
-                    Open PDF
-                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      useChatStore.getState().dismissPdfContext();
+                    }}
+                    className="p-0.5 rounded-full hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground transition-colors ml-0.5"
+                    title="Remove document context"
+                    aria-label="Remove document context"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </div>
               </div>
             );

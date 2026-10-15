@@ -28,7 +28,8 @@ export interface OpenPdfDocument {
   numPages: number;
   currentPage: number;
   text?: string;
-  pages?: { pageNumber: number; text: string }[];
+  pages?: { pageNumber: number; text: string; image?: string; isScanned?: boolean }[];
+  isScanned?: boolean;
 }
 
 interface ChatStore {
@@ -67,6 +68,8 @@ interface ChatStore {
   activeDocument: { url: string; format: string; title: string } | null;
   setActiveDocument: (doc: { url: string; format: string; title: string } | null) => void;
   currentPdf: OpenPdfDocument | null;
+  dismissedPdfUrl: string | null;
+  dismissPdfContext: () => void;
   setCurrentPdf: (pdf: OpenPdfDocument | null) => void;
   updateCurrentPdfPage: (pageNumber: number) => void;
   activeEraserDiagram: EraserDocument | null;
@@ -231,11 +234,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeDocument: null,
   setActiveDocument: (doc) => set({ activeDocument: doc }),
   currentPdf: null,
+  dismissedPdfUrl: null,
+  dismissPdfContext: () => {
+    const { currentPdf } = get();
+    const url = currentPdf?.url || currentPdf?.title || "dismissed";
+    set({ currentPdf: null, dismissedPdfUrl: url });
+  },
   setCurrentPdf: (pdf) => {
     if (!pdf) {
       set({ currentPdf: null });
       return;
     }
+    const { dismissedPdfUrl } = get();
+    if (dismissedPdfUrl && (pdf.url === dismissedPdfUrl || pdf.title === dismissedPdfUrl)) {
+      return;
+    }
+    set({ dismissedPdfUrl: null });
     let title = (pdf.title || "").trim();
     if (!title || /pdf\.?js(\s+viewer)?/i.test(title)) {
       if (pdf.url) {
@@ -769,6 +783,9 @@ RULES FOR THE TITLE:
           : currentPdf.text;
         pdfContext += `\n--- Document Text Content ---\n${textContent}\n`;
       }
+      if (currentPdf.isScanned) {
+        pdfContext += `\n[NOTE: This document is a scanned or image-based PDF without embedded digital text. You must use the "read_current_pdf" tool with action="read_page" to view page visual snapshots. You have vision capabilities to read scanned pages.]\n`;
+      }
       pdfContext += `</current_open_pdf>\n\n`;
       pdfContext += `DOCUMENT GROUNDING INSTRUCTIONS:
 The user has this PDF document currently open in the Oread viewer right beside you.
@@ -1085,6 +1102,21 @@ The user has this PDF document currently open in the Oread viewer right beside y
                 tool_call_id: tc.id,
                 content: JSON.stringify({ result: result }),
               });
+
+              if (tc.function.name === "read_current_pdf") {
+                try {
+                  const parsed = JSON.parse(result);
+                  if (parsed.image && typeof parsed.image === "string" && parsed.image.startsWith("data:image/")) {
+                    aiMessages.push({
+                      role: "user",
+                      content: [
+                        { type: "text", text: `[Visual snapshot of page ${parsed.pageNumber || 1} of "${currentPdf?.title || "document"}" for visual reading / OCR]:` },
+                        { type: "image_url", image_url: { url: parsed.image } }
+                      ]
+                    } as any);
+                  }
+                } catch (e) {}
+              }
             } catch (err: any) {
               if (existingTc) {
                 existingTc.error = err.message;
