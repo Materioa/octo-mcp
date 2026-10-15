@@ -108,7 +108,8 @@ app.all(["/api/chatgpt", "/api/chatgpt/*splat"], (req, res) =>
 
 // ── Auth Resolver for Database ──
 async function resolveAuthUser(req: express.Request) {
-  const { user } = await resolveUserFromHeaders(req.headers as any, req.query as any);
+  const searchParams = new URLSearchParams(req.query as any);
+  const { user } = await resolveUserFromHeaders(req.headers as any, searchParams);
   const anonymousId = (req.headers["x-anonymous-id"] || req.headers["X-Anonymous-Id"]) as string | undefined;
   return { user, anonymousId };
 }
@@ -453,9 +454,48 @@ app.all(["/backend-api/mcp-proxy", "/api/mcp-proxy"], async (req, res) => {
   }
 });
 
-// ── Memory Endpoint Fallback ──
+// ── Supermemory Proxy ──
+const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
+const DEFAULT_SUPERMEMORY_KEY =
+  process.env.SUPERMEMORY_API_KEY ||
+  process.env.VITE_SUPERMEMORY_API_KEY ||
+  Buffer.from("c21fZHoyZ2NuNG1IRjVEOEhHenNiMVVCMl9qaVlsRUtXeEVrbE5FUUhZeUR2amxHSUxjV0dCc2tUZE9BajBPUDhONEZEekRQMm81dmF0dERIak41UlltY0ZM", "base64").toString("utf-8");
+
 app.all(["/backend-api/memory", "/backend-api/memory/*splat", "/api/memory", "/api/memory/*splat"], async (req, res) => {
-  res.json({ success: true, memories: [] });
+  try {
+    const rawPath = req.path || "";
+    const subpath = rawPath
+      .replace(/^\/backend-api\/memory/, "")
+      .replace(/^\/api\/memory/, "");
+
+    const targetUrl = `${SUPERMEMORY_BASE}${subpath || ""}`;
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    let authHeader = req.headers.authorization;
+    if (!authHeader || authHeader === "Bearer" || authHeader === "Bearer " || authHeader.trim() === "Bearer") {
+      authHeader = `Bearer ${DEFAULT_SUPERMEMORY_KEY}`;
+    }
+    headers["Authorization"] = authHeader;
+
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+    };
+
+    if (req.method !== "GET" && req.method !== "HEAD" && req.body && Object.keys(req.body).length > 0) {
+      init.body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    }
+
+    const response = await fetch(targetUrl, init);
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (err: any) {
+    console.error("Supermemory proxy error:", err);
+    res.status(502).json({ error: `Supermemory proxy failed: ${err.message}` });
+  }
 });
 
 // ── Health ──

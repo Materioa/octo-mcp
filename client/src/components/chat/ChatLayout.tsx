@@ -18,6 +18,7 @@ import { EraserCanvas } from "@/components/diagrams/EraserCanvas";
 import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 import { Loader } from "lucide-react";
+import { RecentChatsPopover } from "./RecentChatsPopover";
 
 export function ChatLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -506,16 +507,25 @@ export function ChatLayout() {
                 </>
               )}
 
-              <button
-                onClick={() => {
+              <RecentChatsPopover
+                align="right"
+                side="bottom"
+                onNewChat={() => {
                   clearActiveConversation();
                   navigate("/new");
                 }}
-                className="md:hidden flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-                title="New Chat"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-              </button>
+                <button
+                  onClick={() => {
+                    clearActiveConversation();
+                    navigate("/new");
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                  title="New Chat"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                </button>
+              </RecentChatsPopover>
             </div>
           </header>
 

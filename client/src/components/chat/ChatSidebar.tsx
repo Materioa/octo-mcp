@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { SearchDialog } from "./SearchDialog";
 import { PanelLeftClose, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { RecentChatsPopover } from "./RecentChatsPopover";
 
 
 interface ChatSidebarProps {
@@ -93,33 +94,43 @@ export function ChatSidebar({ open, onToggle, onOpenSettings }: ChatSidebarProps
 
       {/* ── Middle: Actions ── */}
       <div className={cn("pb-2 space-y-1 mt-2", open ? "px-3" : "px-1.5")}>
-        <button
-          className={cn(
-            "flex w-full items-center gap-3 rounded-lg hover:bg-accent transition-colors",
-            open ? "p-2.5" : "h-11 justify-center"
-          )}
-          onClick={() => {
+        <RecentChatsPopover
+          align="left"
+          side={open ? "bottom" : "right"}
+          className="w-full"
+          onNewChat={() => {
             clearActiveConversation();
             navigate("/new");
           }}
-          title="New chat"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="shrink-0"
+          <button
+            className={cn(
+              "flex w-full items-center gap-3 rounded-lg hover:bg-accent transition-colors",
+              open ? "p-2.5" : "h-11 justify-center"
+            )}
+            onClick={() => {
+              clearActiveConversation();
+              navigate("/new");
+            }}
+            title="New chat"
           >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {open && <span className="text-sm font-medium">New chat</span>}
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {open && <span className="text-sm font-medium">New chat</span>}
+          </button>
+        </RecentChatsPopover>
         
         <button
           className={cn(

@@ -215,7 +215,11 @@ export async function resolveUserFromHeaders(
   }
 
   if (!token && searchParams) {
-    token = toTrimmedString(searchParams.get("token"));
+    if (typeof (searchParams as any).get === "function") {
+      token = toTrimmedString((searchParams as any).get("token"));
+    } else if (typeof (searchParams as any).token === "string") {
+      token = toTrimmedString((searchParams as any).token);
+    }
   }
 
   if (!token) {
