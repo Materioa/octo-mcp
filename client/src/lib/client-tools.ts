@@ -196,7 +196,7 @@ export interface ClientToolContext {
   onResolveUserInput?: (resolveFn: (data: any) => string) => Promise<string>;
 }
 
-function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ text?: string; pageNumber?: number; title?: string; image?: string; isScanned?: boolean } | null> {
+function requestPageFromViewer(pageNumber: number, timeoutMs = 6000): Promise<{ text?: string; pageNumber?: number; title?: string; image?: string; isScanned?: boolean } | null> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !window.parent || window.parent === window) {
       return resolve(null);
@@ -205,7 +205,10 @@ function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ 
     let timer: any = null;
 
     const handler = (evt: MessageEvent) => {
-      if (evt.data?.type === "MATERIO_CURRENT_PDF_RESPONSE" && evt.data.requestId === requestId) {
+      if (
+        (evt.data?.type === "MATERIO_CURRENT_PDF_RESPONSE" || evt.data?.type === "MATERIO_READ_PDF_PAGE_RESPONSE") &&
+        evt.data.requestId === requestId
+      ) {
         clearTimeout(timer);
         window.removeEventListener("message", handler);
         resolve(evt.data.data || null);
@@ -218,6 +221,12 @@ function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ 
       resolve(null);
     }, timeoutMs);
 
+    window.parent.postMessage({
+      type: "MATERIO_READ_PDF_PAGE",
+      pageNumber,
+      requestId
+    }, "*");
+    // Also post backward-compatible event name
     window.parent.postMessage({
       type: "MATERIO_GET_CURRENT_PDF_PAGE",
       pageNumber,
@@ -478,7 +487,7 @@ export async function executeClientTool(
           title: currentPdf.title,
           pageNumber: targetPage,
           totalPages: currentPdf.numPages,
-          text: currentPdf.text ? currentPdf.text.slice(0, 4000) : "No text extracted for this page."
+          text: `[Page ${targetPage} content could not be retrieved from the document viewer. Total pages: ${currentPdf.numPages}]`
         });
       }
 

@@ -615,6 +615,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messages: s.messages.map((m) =>
         m.id === id ? { ...m, ...updates } : m
       ),
+      allMessages: s.allMessages.map((m) =>
+        m.id === id ? { ...m, ...updates } : m
+      ),
     }));
 
     // If stream finishes or updates important metadata, save to DB in background
@@ -1327,7 +1330,9 @@ The user has this PDF document currently open in the Oread viewer right beside y
         }
         break;
       }
-      line.unshift(msg);
+      // Ensure any historical message reconstructed in line is not stuck in streaming state
+      const sanitizedMsg = msg.isStreaming ? { ...msg, isStreaming: false } : msg;
+      line.unshift(sanitizedMsg);
       currentId = msg.parentId;
     }
     
