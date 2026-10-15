@@ -270,7 +270,18 @@ export class OpenAICompatProvider implements AIProvider {
 
       if (!isChatGPT) {
         headers["X-Target-Url"] = this.baseUrl;
-        headers["Authorization"] = `Bearer ${this.apiKey}`;
+        const key =
+          this.apiKey ||
+          (this.baseUrl.includes("openrouter.ai")
+            ? (import.meta.env.VITE_OPENROUTER_API_KEY || (typeof atob !== "undefined" ? atob("c2stb3ItdjEtY2Q1YjJlMGY0NWYxM2FjNWRiY2ZiMzg2ZGIxMGFhNjU5ZDVkNjM3NDQzMjNlZDlhMzM2OGFjMWNiOTRmZDNkZQ==") : ""))
+            : "");
+        if (key) {
+          headers["Authorization"] = `Bearer ${key}`;
+        }
+        if (this.baseUrl.includes("openrouter.ai")) {
+          headers["HTTP-Referer"] = "https://chat.getmaterio.app";
+          headers["X-Title"] = "Thinklet";
+        }
       }
 
       // Clean model name for upstream ChatGPT proxy if prefix is present

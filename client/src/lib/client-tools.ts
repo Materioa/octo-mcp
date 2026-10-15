@@ -115,7 +115,7 @@ export const CLIENT_TOOLS: ClientToolDefinition[] = [
   },
   {
     name: "generate_eraser_diagram",
-    description: "Generate, visualize, or edit architecture diagrams, cloud infrastructure, flowcharts, sequence diagrams, and multi-tier systems using the Eraser Diagrams protocol. The output is rendered in an interactive visual canvas where the user can visually edit, drag, recolor, add shapes, and export as PNG or SVG.",
+    description: "Generate and visualize architecture diagrams, cloud infrastructure, flowcharts, sequence diagrams, and multi-tier systems using the Eraser Diagrams protocol. The output is rendered as a clean, interactive visual architecture canvas in the conversation with zoom, pan, and PNG/SVG export.",
     inputSchema: {
       type: "object",
       properties: {

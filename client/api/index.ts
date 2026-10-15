@@ -280,6 +280,11 @@ app.post(["/backend-api/db/api-keys", "/api/db/api-keys"], async (req, res) => {
 });
 
 // ── AI Completion / Models Proxy ──
+const SERVER_OPENROUTER_KEY =
+  process.env.OPENROUTER_API_KEY ||
+  process.env.VITE_OPENROUTER_API_KEY ||
+  Buffer.from("c2stb3ItdjEtY2Q1YjJlMGY0NWYxM2FjNWRiY2ZiMzg2ZGIxMGFhNjU5ZDVkNjM3NDQzMjNlZDlhMzM2OGFjMWNiOTRmZDNkZQ==", "base64").toString("utf-8");
+
 app.post(["/backend-api/chat/completions", "/api/chat/completions"], async (req, res) => {
   try {
     const targetUrl = (req.headers["x-target-url"] || req.query.targetUrl) as string;
@@ -293,8 +298,29 @@ app.post(["/backend-api/chat/completions", "/api/chat/completions"], async (req,
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (req.headers.authorization) {
-      headers["Authorization"] = req.headers.authorization;
+
+    let authHeader = req.headers.authorization;
+    if (
+      !authHeader ||
+      authHeader === "Bearer" ||
+      authHeader === "Bearer " ||
+      authHeader === "Bearer undefined" ||
+      authHeader === "Bearer null" ||
+      authHeader.trim() === "Bearer"
+    ) {
+      if (endpoint.includes("openrouter.ai")) {
+        authHeader = `Bearer ${SERVER_OPENROUTER_KEY}`;
+      } else {
+        authHeader = undefined;
+      }
+    }
+    if (authHeader) {
+      headers["Authorization"] = authHeader;
+    }
+
+    if (endpoint.includes("openrouter.ai")) {
+      headers["HTTP-Referer"] = "https://chat.getmaterio.app";
+      headers["X-Title"] = "Thinklet";
     }
 
     const response = await fetch(endpoint, {
@@ -336,8 +362,29 @@ app.get(["/backend-api/chat/models", "/api/chat/models"], async (req, res) => {
       : `${targetUrl.replace(/\/+$/, "")}/models`;
 
     const headers: Record<string, string> = {};
-    if (req.headers.authorization) {
-      headers["Authorization"] = req.headers.authorization;
+
+    let authHeader = req.headers.authorization;
+    if (
+      !authHeader ||
+      authHeader === "Bearer" ||
+      authHeader === "Bearer " ||
+      authHeader === "Bearer undefined" ||
+      authHeader === "Bearer null" ||
+      authHeader.trim() === "Bearer"
+    ) {
+      if (endpoint.includes("openrouter.ai")) {
+        authHeader = `Bearer ${SERVER_OPENROUTER_KEY}`;
+      } else {
+        authHeader = undefined;
+      }
+    }
+    if (authHeader) {
+      headers["Authorization"] = authHeader;
+    }
+
+    if (endpoint.includes("openrouter.ai")) {
+      headers["HTTP-Referer"] = "https://chat.getmaterio.app";
+      headers["X-Title"] = "Thinklet";
     }
 
     const response = await fetch(endpoint, {

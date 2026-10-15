@@ -438,15 +438,6 @@ export function ChatLayout() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={() => openEraserCanvas()}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-accent text-foreground transition-colors"
-                title="Open Eraser Diagrams Canvas"
-              >
-                <Layers className="w-3.5 h-3.5 text-blue-500" />
-                <span className="hidden sm:inline">Eraser Canvas</span>
-              </button>
-
               {!isIncognito && (
                 !activeConversationId ? (
                   <button
