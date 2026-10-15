@@ -155,9 +155,8 @@ export class OpenAICompatProvider implements AIProvider {
   ): Promise<void> {
     this.abortController = new AbortController();
 
-    // In dev, Vite proxies /api → localhost:3001. In production, we need the absolute URL.
-    const apiBase = import.meta.env.VITE_API_URL
-      || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+    const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+    const apiBase = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
     
     const isChatGPT = this.baseUrl.includes("/backend-api/chatgpt") || this.baseUrl.includes("/api/chatgpt") || this.model.startsWith("chatgpt:") || this.model.startsWith("chatgpt");
 

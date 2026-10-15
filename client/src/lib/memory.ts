@@ -7,8 +7,8 @@ const memDb = new Dexie("MCPMemoryDB") as Dexie & {
 memDb.version(1).stores({
   memories: "id, createdAt",
 });
-const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
+const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+const defaultApiUrl = isNativeApp ? "https://chat.getmaterio.app" : "";
 const SUPERMEMORY_API = (import.meta.env.VITE_API_URL || defaultApiUrl) + "/backend-api/memory";
 
 export class MemoryManager {

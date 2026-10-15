@@ -48,8 +48,8 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
     } else if (currentProviderId === 'chatgpt' && !models) {
       const fetchChatgptModels = async () => {
         try {
-          const apiBase = import.meta.env.VITE_API_URL
-            || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+          const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+          const apiBase = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
           const response = await fetch(`${apiBase}/backend-api/chatgpt/models`, {
             credentials: "include"
           });
@@ -70,8 +70,8 @@ export function ModelSelector({ value, onChange, providerId, models, placement =
         const baseUrl = preset.baseUrl || settings.aiProvider.baseUrl;
         if (!key || !baseUrl) return;
         try {
-          const apiBase = import.meta.env.VITE_API_URL
-            || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+          const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+          const apiBase = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
           const proxyUrl = `${apiBase}/backend-api/chat/models`;
 
           const response = await fetch(proxyUrl, {

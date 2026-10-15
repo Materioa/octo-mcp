@@ -21,19 +21,31 @@
     },
     {
       "source": "/backend-api/:path*",
-      "destination": "https://mcp.getmaterio.app/backend-api/:path*"
+      "destination": "/api/index"
+    },
+    {
+      "source": "/backend-api",
+      "destination": "/api/index"
     },
     {
       "source": "/api/chatgpt/:path*",
-      "destination": "https://mcp.getmaterio.app/api/chatgpt/:path*"
+      "destination": "/api/index"
     },
     {
       "source": "/api/chat/:path*",
-      "destination": "https://mcp.getmaterio.app/api/chat/:path*"
+      "destination": "/api/index"
     },
     {
       "source": "/api/db/:path*",
-      "destination": "https://mcp.getmaterio.app/api/db/:path*"
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/mcp-proxy",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/api/memory/:path*",
+      "destination": "/api/index"
     },
     {
       "source": "/share/:id",

@@ -28,7 +28,8 @@ export function LoginDialog({ open, onOpenChange, message }: LoginDialogProps) {
     window.location.href = `${authUrl}/login?callback=${callbackUrl}`;
   };
 
-  const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+  const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+  const apiBase = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
   const {
     status,
     user,

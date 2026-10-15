@@ -3,8 +3,8 @@ import { persist } from "zustand/middleware";
 import type { Settings, ProviderId, Skill, CustomConnector } from "@/types";
 import { getPreset } from "@/lib/providers/presets";
 
-const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-const API_URL = import.meta.env.VITE_API_URL || (isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app");
+const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+const API_URL = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
 
 interface SettingsStore extends Settings {
   mcpEnvironment: "production" | "development";

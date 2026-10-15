@@ -3,8 +3,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { MCPTool, CustomConnector } from "@/types";
 
-const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
+const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+const defaultApiUrl = isNativeApp ? "https://chat.getmaterio.app" : (typeof window !== "undefined" ? window.location.origin : "http://localhost:3001");
 const API_URL = import.meta.env.VITE_API_URL || defaultApiUrl;
 
 export interface ConnectOptions {

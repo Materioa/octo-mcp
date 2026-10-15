@@ -2,7 +2,8 @@ import type { Conversation, Message } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-const defaultApiUrl = isLocal ? "http://localhost:3001" : "https://mcp.getmaterio.app";
+const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+const defaultApiUrl = isNativeApp ? "https://chat.getmaterio.app" : "";
 const API_BASE = (import.meta.env.VITE_API_URL || defaultApiUrl) + "/backend-api/db";
 
 async function authedFetch(url: string, init?: RequestInit): Promise<Response> {

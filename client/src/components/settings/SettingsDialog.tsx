@@ -23,7 +23,8 @@ import { SkillsTab } from "@/components/settings/SkillsTab";
 import { useLoginWithChatGPT } from "@opencoredev/loginwithchatgpt-react";
 
 function ChatGPTLoginPanel() {
-  const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "" : "https://mcp.getmaterio.app");
+  const isNativeApp = typeof window !== "undefined" && (window.location.protocol === "tauri:" || window.location.protocol === "capacitor:");
+  const apiBase = import.meta.env.VITE_API_URL || (isNativeApp ? "https://chat.getmaterio.app" : "");
   const settings = useSettingsStore();
   const {
     status,

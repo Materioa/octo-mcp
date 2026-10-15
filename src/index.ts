@@ -772,8 +772,8 @@ async function handleChatGPTRequest(req: express.Request, res: express.Response,
   }
 }
 
-app.all(["/api/chatgpt", "/api/chatgpt/*"], (req, res) => handleChatGPTRequest(req, res, chatgptAuth.handler));
-app.all(["/backend-api/chatgpt", "/backend-api/chatgpt/*"], (req, res) => handleChatGPTRequest(req, res, backendChatgptAuth.handler));
+app.all(["/api/chatgpt", "/api/chatgpt/*splat"], (req, res) => handleChatGPTRequest(req, res, chatgptAuth.handler));
+app.all(["/backend-api/chatgpt", "/backend-api/chatgpt/*splat"], (req, res) => handleChatGPTRequest(req, res, backendChatgptAuth.handler));
 
 // ── Database Routes (Conversations, Messages, Connectors, Skills, API Keys) ──
 async function resolveAuthUser(req: express.Request) {
