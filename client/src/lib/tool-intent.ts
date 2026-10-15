@@ -23,6 +23,9 @@ function truncate(str: string, maxLength: number = 36): string {
 function cleanDocTitle(title?: string | null): string {
   if (!title) return "";
   let cleaned = title.trim();
+  if (/pdf\.?js(\s+viewer)?/i.test(cleaned)) {
+    return "document";
+  }
   // Strip path if full path is passed
   cleaned = cleaned.split(/[/\\]/).pop() || cleaned;
   // If it ends with .pdf, we can keep or strip, keeping it is helpful for context
@@ -175,9 +178,19 @@ export function formatToolIntent(
 
   // 1. read_current_pdf tool
   if (name === "read_current_pdf") {
-    const action = args.action;
-    const pageNumber = args.pageNumber;
-    const query = args.query;
+    let action = args.action;
+    const pageNumber = args.pageNumber !== undefined ? args.pageNumber : args.page;
+    const query = args.query || args.search;
+
+    if (!action) {
+      if (pageNumber !== undefined && pageNumber !== null && !isNaN(Number(pageNumber))) {
+        action = "read_page";
+      } else if (query) {
+        action = "search_text";
+      } else {
+        action = "get_current_page";
+      }
+    }
 
     if (action === "get_current_page") {
       if (isPast) {

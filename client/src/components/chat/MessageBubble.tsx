@@ -180,6 +180,16 @@ export const MessageBubble = React.memo(function MessageBubble({
   // Clean any stray closing tags that leaked into the content
   cleanContent = cleanContent.replace(/<\/(?:thought|think)>/gi, "").trim();
 
+  // Strip raw tool tokens / pseudo-tags from display
+  cleanContent = cleanContent
+    .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, "")
+    .replace(/<\|tool_call_start\|>[\s\S]*/gi, "")
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+    .replace(/<tool_call>[\s\S]*/gi, "")
+    .replace(/```(?:tool_call|tool)[\s\S]*?```/gi, "")
+    .replace(/\[(?:read_current_pdf|ask_user_input_v0|save_to_memory)\([^\)]*\)\]/gi, "")
+    .trim();
+
   const otherToolCalls = useMemo(() => {
     return (message.toolCalls || []).filter(
       (tc) => tc.name !== "ask_user_input_v0" && tc.name !== "save_to_memory" && tc.name !== "generate_eraser_diagram"

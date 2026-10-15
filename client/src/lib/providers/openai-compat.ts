@@ -234,16 +234,14 @@ export class OpenAICompatProvider implements AIProvider {
       const isFreeModel = lowerModel === "openrouter/free" || lowerModel.endsWith(":free");
 
       const isToolsSupported = 
-        !isFreeModel && (
-          lowerUrl.includes("openai.com") || 
-          lowerUrl.includes("anthropic.com") || 
-          lowerUrl.includes("googleapis.com") || 
-          lowerUrl.includes("openrouter.ai") ||
-          lowerUrl.includes("deepseek.com") ||
-          lowerUrl.includes("groq.com") ||
-          lowerUrl.includes("/backend-api/chatgpt") ||
-          lowerUrl.includes("/api/chatgpt")
-        );
+        lowerUrl.includes("openai.com") || 
+        lowerUrl.includes("anthropic.com") || 
+        lowerUrl.includes("googleapis.com") || 
+        lowerUrl.includes("openrouter.ai") ||
+        lowerUrl.includes("deepseek.com") ||
+        lowerUrl.includes("groq.com") ||
+        lowerUrl.includes("/backend-api/chatgpt") ||
+        lowerUrl.includes("/api/chatgpt");
 
       if (isToolsSupported) {
         body.messages = cleanMessages;
@@ -289,7 +287,7 @@ export class OpenAICompatProvider implements AIProvider {
         body.model = body.model.replace(/^chatgpt:/, "");
       }
 
-      const res = await fetch(proxyUrl, {
+      let res = await fetch(proxyUrl, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
@@ -299,7 +297,24 @@ export class OpenAICompatProvider implements AIProvider {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`AI API error ${res.status}: ${text}`);
+        if (res.status === 400 && body.tools && (text.includes("tool") || text.includes("function") || text.includes("schema") || text.includes("not supported"))) {
+          console.warn("[OpenAICompatProvider] Provider rejected tools schema. Retrying without tools.");
+          delete body.tools;
+          body.messages = sanitizeMessagesForNonToolProvider(cleanMessages);
+          res = await fetch(proxyUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+            signal: this.abortController.signal,
+            credentials: isChatGPT ? "include" : "same-origin",
+          });
+          if (!res.ok) {
+            const retryText = await res.text();
+            throw new Error(`AI API error ${res.status}: ${retryText}`);
+          }
+        } else {
+          throw new Error(`AI API error ${res.status}: ${text}`);
+        }
       }
 
       const reader = res.body?.getReader();

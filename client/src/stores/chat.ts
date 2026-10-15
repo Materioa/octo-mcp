@@ -81,6 +81,129 @@ interface ChatStore {
   draftPinnedMcpId?: string | undefined;
 }
 
+function parseFunctionArgs(rawArgs: string): Record<string, any> {
+  const trimmed = rawArgs.trim();
+  if (!trimmed) return {};
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (e) {}
+  }
+  
+  const args: Record<string, any> = {};
+  const regex = /([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([0-9]+(?:\.[0-9]+)?)|(true|false)|([a-zA-Z0-9_-]+))/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(trimmed)) !== null) {
+    const key = match[1];
+    let val: any;
+    if (match[2] !== undefined) val = match[2];
+    else if (match[3] !== undefined) val = match[3];
+    else if (match[4] !== undefined) val = Number(match[4]);
+    else if (match[5] !== undefined) val = match[5].toLowerCase() === "true";
+    else if (match[6] !== undefined) val = match[6];
+    if (key) {
+      args[key] = val;
+    }
+  }
+  return args;
+}
+
+function parseInnerToolCall(inner: string): { id: string; name: string; args: Record<string, any> } | null {
+  const trimmed = inner.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const obj = JSON.parse(trimmed);
+      const name = obj.name || obj.tool || obj.function;
+      const args = obj.arguments || obj.parameters || obj.args || {};
+      if (name) {
+        return {
+          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          name: String(name),
+          args: typeof args === "string" ? JSON.parse(args) : args,
+        };
+      }
+    } catch (e) {}
+  }
+
+  const fnMatch = trimmed.match(/^(?:\[)?([a-zA-Z0-9_-]+)\(([\s\S]*?)\)(?:\])?$/);
+  if (fnMatch && fnMatch[1] && fnMatch[2] !== undefined) {
+    const name = fnMatch[1];
+    const argsStr = fnMatch[2];
+    return {
+      id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      args: parseFunctionArgs(argsStr),
+    };
+  }
+
+  return null;
+}
+
+function extractTextToolCalls(text: string): {
+  toolCalls: { id: string; name: string; args: Record<string, any> }[];
+  cleanedText: string;
+} {
+  const toolCalls: { id: string; name: string; args: Record<string, any> }[] = [];
+  let cleaned = text;
+
+  // 1. <|tool_call_start|>...<|tool_call_end|>
+  const toolCallStartEndRegex = /<\|tool_call_start\|>([\s\S]*?)<\|tool_call_end\|>/g;
+  let match: RegExpExecArray | null;
+  while ((match = toolCallStartEndRegex.exec(text)) !== null) {
+    const fullMatch = match[0];
+    const inner = (match[1] || "").trim();
+    const parsed = parseInnerToolCall(inner);
+    if (parsed) {
+      toolCalls.push(parsed);
+      cleaned = cleaned.replace(fullMatch, "");
+    }
+  }
+
+  // 2. <tool_call>...</tool_call>
+  const xmlToolCallRegex = /<tool_call>([\s\S]*?)<\/tool_call>/g;
+  while ((match = xmlToolCallRegex.exec(cleaned)) !== null) {
+    const fullMatch = match[0];
+    const inner = (match[1] || "").trim();
+    const parsed = parseInnerToolCall(inner);
+    if (parsed) {
+      toolCalls.push(parsed);
+      cleaned = cleaned.replace(fullMatch, "");
+    }
+  }
+
+  // 3. ```tool_call...```
+  const codeBlockToolCallRegex = /```(?:tool_call|tool)[\r\n]+([\s\S]*?)```/g;
+  while ((match = codeBlockToolCallRegex.exec(cleaned)) !== null) {
+    const fullMatch = match[0];
+    const inner = (match[1] || "").trim();
+    const parsed = parseInnerToolCall(inner);
+    if (parsed) {
+      toolCalls.push(parsed);
+      cleaned = cleaned.replace(fullMatch, "");
+    }
+  }
+
+  // 4. Standalone bracket calls: [read_current_pdf(page=32)]
+  const bracketCallRegex = /\[([a-zA-Z0-9_-]+)\(([\s\S]*?)\)\]/g;
+  while ((match = bracketCallRegex.exec(cleaned)) !== null) {
+    const fullMatch = match[0];
+    const funcName = match[1];
+    const argsStr = match[2];
+    if (funcName && argsStr !== undefined) {
+      if (isClientTool(funcName) || mcpClient.getToolServerId(funcName) !== undefined || funcName === "read_current_pdf") {
+        toolCalls.push({
+          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          name: funcName,
+          args: parseFunctionArgs(argsStr),
+        });
+        cleaned = cleaned.replace(fullMatch, "");
+      }
+    }
+  }
+
+  return { toolCalls, cleanedText: cleaned.trim() };
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   conversations: [],
   activeConversationId: null,
@@ -108,7 +231,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   activeDocument: null,
   setActiveDocument: (doc) => set({ activeDocument: doc }),
   currentPdf: null,
-  setCurrentPdf: (pdf) => set({ currentPdf: pdf }),
+  setCurrentPdf: (pdf) => {
+    if (!pdf) {
+      set({ currentPdf: null });
+      return;
+    }
+    let title = (pdf.title || "").trim();
+    if (!title || /pdf\.?js(\s+viewer)?/i.test(title)) {
+      if (pdf.url) {
+        try {
+          const u = new URL(pdf.url, "https://chat.getmaterio.app");
+          const last = u.pathname.split("/").filter(Boolean).pop();
+          if (last && !/viewer\.html/i.test(last)) {
+            title = decodeURIComponent(last).replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim();
+          }
+        } catch (e) {}
+      }
+    }
+    if (!title || /pdf\.?js(\s+viewer)?/i.test(title)) {
+      title = "Document";
+    }
+    set({ currentPdf: { ...pdf, title } });
+  },
   updateCurrentPdfPage: (pageNumber) =>
     set((state) => ({
       currentPdf: state.currentPdf ? { ...state.currentPdf, currentPage: pageNumber } : null,
@@ -454,11 +598,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { messages, generatingConversationIds, isSending, updateMessage } = get();
     if (isSending || generatingConversationIds.includes(conversationId)) return;
 
-    // Helper: strip <thought>, <thinking>, <Thought process> etc. from display
+    // Helper: strip <thought>, <thinking>, <Thought process>, pseudo-tool tokens etc. from display
     const stripThinking = (text: string): string => {
       return text
         .replace(/<(?:thought|thinking|Thought process)[^>]*>[\s\S]*?<\/(?:thought|thinking|Thought process)>/gi, "")
         .replace(/<(?:thought|thinking|Thought process)[^>]*>[\s\S]*/gi, "") // unclosed thinking tag — hide everything after it
+        .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, "")
+        .replace(/<\|tool_call_start\|>[\s\S]*/gi, "")
+        .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+        .replace(/<tool_call>[\s\S]*/gi, "")
+        .replace(/```(?:tool_call|tool)[\s\S]*?```/gi, "")
+        .replace(/\[(?:read_current_pdf|ask_user_input_v0|save_to_memory)\([^\)]*\)\]/gi, "")
         .trim();
     };
 
@@ -801,6 +951,37 @@ The user has this PDF document currently open in the Oread viewer right beside y
             }
           }
         );
+
+        // Check if model emitted textual tool calls (e.g. <|tool_call_start|>, <tool_call>, or [read_current_pdf(...)])
+        if (pendingToolCalls.length === 0 && fullResponse) {
+          const extracted = extractTextToolCalls(fullResponse);
+          if (extracted.toolCalls.length > 0) {
+            fullResponse = extracted.cleanedText;
+            for (const etc of extracted.toolCalls) {
+              const tcObj: AIToolCall = {
+                id: etc.id,
+                type: "function",
+                function: {
+                  name: etc.name,
+                  arguments: JSON.stringify(etc.args),
+                },
+              };
+              pendingToolCalls.push(tcObj);
+              toolCallMap.set(etc.id, {
+                id: etc.id,
+                name: etc.name,
+                args: etc.args,
+                status: "pending",
+              });
+            }
+            if (get().activeConversationId === conversationId) {
+              updateMessage(aiMessageId, {
+                content: stripThinking(fullResponse),
+                toolCalls: Array.from(toolCallMap.values()),
+              });
+            }
+          }
+        }
 
         if (pendingToolCalls.length > 0) {
           const historyToolCalls = pendingToolCalls.map(tc => {

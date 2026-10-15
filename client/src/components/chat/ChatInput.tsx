@@ -527,22 +527,28 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
           )}
 
           {/* Active PDF from Oread */}
-          {currentPdf && (
-            <div className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 max-w-full">
-                <FileText className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate max-w-[200px] sm:max-w-[320px] font-medium" title={currentPdf.title}>
-                  {currentPdf.title}
-                </span>
-                <span className="text-[11px] opacity-75 shrink-0">
-                  (p. {currentPdf.currentPage || 1}/{currentPdf.numPages})
-                </span>
-                <span className="text-[9px] uppercase tracking-wider font-semibold bg-primary/20 px-1.5 py-0.5 rounded shrink-0">
-                  Open PDF
-                </span>
+          {currentPdf && (() => {
+            const rawTitle = (currentPdf.title || "").trim();
+            const pdfTitle = rawTitle && !/pdf\.?js(\s+viewer)?/i.test(rawTitle)
+              ? rawTitle
+              : (currentPdf.url ? decodeURIComponent(currentPdf.url.split("/").pop()?.replace(/\.pdf$/i, "") || "Document") : "Document");
+            return (
+              <div className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 max-w-full">
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate max-w-[200px] sm:max-w-[320px] font-medium" title={pdfTitle}>
+                    {pdfTitle}
+                  </span>
+                  <span className="text-[11px] opacity-75 shrink-0">
+                    (p. {currentPdf.currentPage || 1}/{currentPdf.numPages})
+                  </span>
+                  <span className="text-[9px] uppercase tracking-wider font-semibold bg-primary/20 px-1.5 py-0.5 rounded shrink-0">
+                    Open PDF
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Textarea row */}
           <textarea
@@ -553,7 +559,15 @@ export function ChatInput({ onSend, onStop, disabled, isSending, initialValue, i
             onPaste={handlePaste}
             onCompositionStart={() => setIsComposing(true)}
             onCompositionEnd={() => setIsComposing(false)}
-            placeholder={currentPdf ? `Ask anything about "${currentPdf.title}"…` : "Write a message…"}
+            placeholder={
+              currentPdf
+                ? `Ask anything about "${
+                    currentPdf.title && !/pdf\.?js(\s+viewer)?/i.test(currentPdf.title)
+                      ? currentPdf.title
+                      : (currentPdf.url ? decodeURIComponent(currentPdf.url.split("/").pop()?.replace(/\.pdf$/i, "") || "Document") : "Document")
+                  }"…`
+                : "Write a message…"
+            }
             disabled={disabled}
             rows={1}
             className={`w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[15px] leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${value.length === 0 ? 'select-none' : 'select-text'}`}

@@ -30,12 +30,15 @@ export const CLIENT_TOOLS: ClientToolDefinition[] = [
           type: "number",
           description: "The 1-based page number to read (for 'read_page')."
         },
+        page: {
+          type: "number",
+          description: "Alias for pageNumber."
+        },
         query: {
           type: "string",
           description: "Search keyword or phrase to search within the document (for 'search_text')."
         }
-      },
-      required: ["action"]
+      }
     }
   },
   {
@@ -191,6 +194,36 @@ export interface ClientToolContext {
   isTemporary?: boolean;
   onUpdateEraserDiagram?: (diagram: EraserDocument) => void;
   onResolveUserInput?: (resolveFn: (data: any) => string) => Promise<string>;
+}
+
+function requestPageFromViewer(pageNumber: number, timeoutMs = 2500): Promise<{ text?: string; pageNumber?: number; title?: string } | null> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !window.parent || window.parent === window) {
+      return resolve(null);
+    }
+    const requestId = `page_req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    let timer: any = null;
+
+    const handler = (evt: MessageEvent) => {
+      if (evt.data?.type === "MATERIO_CURRENT_PDF_RESPONSE" && evt.data.requestId === requestId) {
+        clearTimeout(timer);
+        window.removeEventListener("message", handler);
+        resolve(evt.data.data || null);
+      }
+    };
+
+    window.addEventListener("message", handler);
+    timer = setTimeout(() => {
+      window.removeEventListener("message", handler);
+      resolve(null);
+    }, timeoutMs);
+
+    window.parent.postMessage({
+      type: "MATERIO_GET_CURRENT_PDF_PAGE",
+      pageNumber,
+      requestId
+    }, "*");
+  });
 }
 
 export async function executeClientTool(
@@ -365,7 +398,19 @@ export async function executeClientTool(
         });
       }
 
-      const { action, pageNumber, query } = args;
+      let { action, pageNumber, page, query, search } = args || {};
+      const num = Number(pageNumber !== undefined ? pageNumber : page);
+
+      if (!action) {
+        if (!isNaN(num) && num > 0) {
+          action = "read_page";
+        } else if (query || search) {
+          action = "search_text";
+          query = query || search;
+        } else {
+          action = "get_current_page";
+        }
+      }
 
       if (action === "get_current_page") {
         const pageNum = currentPdf.currentPage || 1;
@@ -378,27 +423,54 @@ export async function executeClientTool(
         });
       }
 
-      if (action === "read_page") {
-        const num = Number(pageNumber) || currentPdf.currentPage || 1;
-        const pageObj = currentPdf.pages?.find((p) => p.pageNumber === num);
+      if (action === "read_page" || (!isNaN(num) && num > 0)) {
+        const targetPage = (!isNaN(num) && num > 0) ? num : (currentPdf.currentPage || 1);
+        let pageObj = currentPdf.pages?.find((p) => p.pageNumber === targetPage);
+
+        if (!pageObj) {
+          // Attempt on-demand page fetch from Oread viewer frame
+          const viewerPage = await requestPageFromViewer(targetPage);
+          if (viewerPage && viewerPage.text) {
+            pageObj = { pageNumber: targetPage, text: viewerPage.text };
+            if (currentPdf.pages) {
+              currentPdf.pages.push(pageObj);
+            }
+          }
+        }
+
         if (pageObj) {
           return JSON.stringify({
             title: currentPdf.title,
-            pageNumber: num,
+            pageNumber: targetPage,
             totalPages: currentPdf.numPages,
             text: pageObj.text
           });
         }
+
+        // Fallback: look for section in fullText
+        if (currentPdf.text) {
+          const pageHeaderRegex = new RegExp(`--- Page ${targetPage} ---([\\s\\S]*?)(?:--- Page \\d+ ---|$)`, "i");
+          const pageMatch = currentPdf.text.match(pageHeaderRegex);
+          if (pageMatch && pageMatch[1]?.trim()) {
+            return JSON.stringify({
+              title: currentPdf.title,
+              pageNumber: targetPage,
+              totalPages: currentPdf.numPages,
+              text: pageMatch[1].trim()
+            });
+          }
+        }
+
         return JSON.stringify({
           title: currentPdf.title,
-          pageNumber: num,
+          pageNumber: targetPage,
           totalPages: currentPdf.numPages,
           text: currentPdf.text ? currentPdf.text.slice(0, 4000) : "No text extracted for this page."
         });
       }
 
-      if (action === "search_text" && query) {
-        const q = String(query).toLowerCase();
+      if (action === "search_text" && (query || search)) {
+        const q = String(query || search).toLowerCase();
         const matches: any[] = [];
         if (currentPdf.pages && currentPdf.pages.length > 0) {
           for (const p of currentPdf.pages) {
@@ -417,7 +489,7 @@ export async function executeClientTool(
 
         return JSON.stringify({
           title: currentPdf.title,
-          query,
+          query: query || search,
           matchCount: matches.length,
           matches: matches.length > 0 ? matches : "No matches found in the document."
         });
