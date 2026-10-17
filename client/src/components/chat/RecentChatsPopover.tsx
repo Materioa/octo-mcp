@@ -91,7 +91,7 @@ export function RecentChatsPopover({
       {isOpen && (
         <div
           className={cn(
-            "absolute z-50 min-w-[210px] max-w-[280px] rounded-xl bg-[#232326] text-neutral-100 border border-neutral-700/60 shadow-2xl p-1.5 backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-150",
+            "absolute z-50 min-w-[210px] max-w-[280px] rounded-xl bg-popover text-popover-foreground border border-border shadow-2xl p-1.5 backdrop-blur-md animate-in fade-in-0 zoom-in-95 duration-150",
             side === "bottom" && "top-full mt-1.5",
             side === "right" && "left-full ml-2 top-0",
             align === "left" && "left-0",
@@ -100,7 +100,7 @@ export function RecentChatsPopover({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <div className="px-3 pt-2 pb-1.5 text-xs font-semibold text-neutral-400 select-none">
+          <div className="px-3 pt-2 pb-1.5 text-xs font-semibold text-muted-foreground select-none">
             Recents
           </div>
 
@@ -119,8 +119,8 @@ export function RecentChatsPopover({
                     className={cn(
                       "w-full text-left px-3 py-1.5 text-[13px] font-medium rounded-lg transition-colors truncate block",
                       isActive
-                        ? "bg-neutral-800 text-white font-semibold"
-                        : "text-neutral-300 hover:text-white hover:bg-neutral-800/80"
+                        ? "bg-accent text-accent-foreground font-semibold"
+                        : "text-foreground/80 hover:text-foreground hover:bg-accent/70"
                     )}
                     title={conv.title}
                   >
@@ -129,7 +129,7 @@ export function RecentChatsPopover({
                 );
               })
             ) : (
-              <div className="px-3 py-2 text-xs text-neutral-500 italic select-none">
+              <div className="px-3 py-2 text-xs text-muted-foreground italic select-none">
                 No recent chats
               </div>
             )}

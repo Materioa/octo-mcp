@@ -185,23 +185,32 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 animate-in fade-in zoom-in-95 duration-200">
           <button
             onClick={() => scrollToBottom(true)}
-            className="group relative flex h-10 w-10 items-center justify-center rounded-full bg-[#242422]/95 hover:bg-[#2c2c28] text-white/90 hover:text-white border border-white/10 shadow-lg active:scale-95 transition-all overflow-hidden focus:outline-none backdrop-blur-sm cursor-pointer"
+            className="group relative flex h-10 w-10 items-center justify-center rounded-full bg-background/75 hover:bg-background/90 dark:bg-[#222220]/75 dark:hover:bg-[#2a2a28]/90 backdrop-blur-md text-foreground border border-black/15 dark:border-white/20 shadow-lg active:scale-95 transition-all overflow-hidden focus:outline-none cursor-pointer"
             title="Go to bottom"
             aria-label="Scroll to bottom"
           >
             {/* Glowing gradient inside circle at bottom part when responding */}
             {isSending && (
               <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
+                {/* Expansive living glowing core covering bottom half */}
                 <div 
-                  className="absolute -bottom-2.5 left-1/2 w-8 h-5 rounded-[50%] blur-[2px] opacity-95 animate-bottom-glow pointer-events-none"
+                  className="absolute -bottom-2.5 left-1/2 w-14 h-9 rounded-[50%] blur-[3px] animate-live-glow pointer-events-none"
                   style={{
-                    background: "radial-gradient(ellipse at bottom, #b8270a 0%, rgba(184, 39, 10, 0.75) 45%, rgba(184, 39, 10, 0.2) 75%, transparent 100%)"
+                    background: "radial-gradient(ellipse at bottom, #b8270a 0%, rgba(184, 39, 10, 0.85) 35%, rgba(184, 39, 10, 0.4) 65%, transparent 85%)"
                   }}
                 />
+                {/* Secondary undulating wave for organic live feel */}
                 <div 
-                  className="absolute bottom-0 left-0 right-0 h-3 pointer-events-none"
+                  className="absolute -bottom-1 left-1/2 w-12 h-7 rounded-[50%] blur-[2px] animate-live-wave pointer-events-none"
                   style={{
-                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.55) 0%, transparent 100%)"
+                    background: "radial-gradient(circle at 50% 120%, rgba(225, 50, 18, 0.9) 0%, rgba(184, 39, 10, 0.6) 50%, transparent 80%)"
+                  }}
+                />
+                {/* Ambient bottom rim light */}
+                <div 
+                  className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none"
+                  style={{
+                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.75) 0%, rgba(184, 39, 10, 0.25) 60%, transparent 100%)"
                   }}
                 />
               </div>
@@ -218,7 +227,7 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
               strokeWidth="2" 
               strokeLinecap="round" 
               strokeLinejoin="round"
-              className="relative z-10 transition-transform duration-150 group-hover:translate-y-0.5"
+              className="relative z-10 text-foreground transition-transform duration-150 group-hover:translate-y-0.5"
             >
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <polyline points="19 12 12 19 5 12"></polyline>
