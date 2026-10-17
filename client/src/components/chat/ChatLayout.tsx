@@ -326,7 +326,7 @@ export function ChatLayout() {
 
   return (
     <div
-      className={cn("flex h-[100dvh] text-foreground relative w-full transition-all duration-300 print:h-auto print:bg-white", isIncognito ? "flex-col p-1.5 md:p-2" : "flex-row bg-background")}
+      className={cn("flex h-full h-[100dvh] text-foreground relative w-full print:h-auto print:bg-white", isIncognito ? "flex-col p-1.5 md:p-2" : "flex-row bg-background")}
       style={isIncognito ? { backgroundColor: "var(--incognito-frame)" } : undefined}
     >
       {isIncognito && (
@@ -364,7 +364,7 @@ export function ChatLayout() {
       )}
 
       <div className={cn(
-        "flex flex-1 overflow-hidden relative transition-all duration-300",
+        "flex flex-1 overflow-hidden relative",
         isIncognito && "bg-background rounded-2xl border dark:border-white/20 shadow-2xl"
       )}>
         {sidebarOpen && (
@@ -373,7 +373,7 @@ export function ChatLayout() {
             onClick={() => setSidebarOpen(false)}
           />
         )}
-        <main className={cn("flex flex-col relative h-full transition-all duration-300", activeDocument ? "w-full md:w-3/5" : "w-full")}>
+        <main className={cn("flex flex-col relative h-full transition-[width] duration-300 ease-in-out", activeDocument ? "w-full md:w-3/5" : "w-full")}>
           {/* Main chat header (Thinklet v) */}
           <header className="flex h-12 shrink-0 items-center px-4 gap-2 justify-between md:justify-start print:hidden">
             {!sidebarOpen && !isIncognito && !hideSidebarIcon && (

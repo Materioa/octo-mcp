@@ -11,7 +11,7 @@ const ScrollArea = React.forwardRef<HTMLDivElement, ScrollAreaProps>(
       <div ref={ref} className={cn("relative overflow-hidden", className)} {...props}>
         <div
           ref={viewportRef}
-          className="h-full w-full overflow-y-auto overflow-x-hidden"
+          className="h-full w-full overflow-y-auto overflow-x-hidden [overscroll-behavior-y:contain] [-webkit-overflow-scrolling:touch]"
         >
           {children}
         </div>

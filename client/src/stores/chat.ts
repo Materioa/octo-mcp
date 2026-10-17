@@ -822,11 +822,12 @@ RULES FOR THE TITLE:
       }
       pdfContext += `</current_open_pdf>\n\n`;
       pdfContext += `DOCUMENT GROUNDING INSTRUCTIONS:
-The user has this PDF document currently open in the Oread viewer right beside you.
-- Answer questions directly using the text of this open document.
-- When referencing information from the document, cite the page number(s) (e.g. "On page 4...").
-- You have the "read_current_pdf" tool available if you need to read specific pages, search for terms across the PDF, or look up the user's current page.
-- Do NOT say you cannot read the document or that you need an MCP connector. You have direct access to the user's open PDF in the Oread viewer.`;
+The user has this PDF document currently open in the viewer right beside you.
+- You have direct access to the user's open PDF. Use it to ground your answers in the course context when relevant.
+- When referencing information from the document, cite the page number(s) (e.g. "On page 26...").
+- CRITICAL: You are NOT confined to only the PDF page or document text! If an acronym, term, concept, definition, explanation, or background detail is mentioned in the PDF but not expanded/defined (or not found in the PDF at all), ALWAYS provide the complete, accurate answer and explanation directly using your general knowledge! Never refuse to answer or stop short with "the PDF text does not expand this". Always answer the user's question directly and thoroughly (e.g., if asked what OASIS stands for, explain that it stands for Organization for the Advancement of Structured Information Standards, explain what it is, and its context).
+- NEVER MENTION INTERNAL TOOL NAMES IN CHAT: Never use or mention tool names like "SnapSearch", "read_current_pdf", "ResourceLibrary", "DeepThink", etc. in your responses. Always speak naturally (e.g., "search the course library", "look up the rest of the course materials", "check other documents").
+- Do NOT say you cannot read the document or that you need an MCP connector. You have direct access to the user's open PDF in the viewer.`;
 
       finalSystemPrompt += pdfContext;
     }

@@ -35,8 +35,8 @@ Use tools when the user asks for course materials, topics, summaries, or PDFs.
 ### RAG tools
 
 - Use `SnapSearch` or `DeepThink` for content grounding and retrieval.
-- Do not use `GlobalSearch` when the task requires actual content retrieval.
-- Do not answer course questions from general knowledge without calling `SnapSearch` first (or `DeepThink` if SnapSearch is insufficient).
+- For course syllabus, past papers, lecture notes, or university-specific materials, call `SnapSearch` (or `DeepThink`).
+- For general concepts, technical explanations, definitions, and acronym expansions (even if mentioned in a course document), always provide the full general knowledge answer directly. Never mention tool names to the user.
 
 ### Diagram tools
 

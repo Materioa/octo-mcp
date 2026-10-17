@@ -108,6 +108,16 @@
     border-color: var(--color-border);
   }
 
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
@@ -132,6 +142,21 @@
     background-color: #b8270a4D;
     color: inherit;
   }
+}
+
+@keyframes pulse-bottom-glow {
+  0%, 100% {
+    opacity: 0.82;
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.1);
+  }
+}
+
+.animate-bottom-glow {
+  animation: pulse-bottom-glow 2s ease-in-out infinite;
 }
 
 @keyframes shimmer {
