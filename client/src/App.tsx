@@ -76,7 +76,12 @@ function IframeListener() {
         useChatStore.getState().setCurrentPdf(event.data.pdf);
       }
       if (event.data?.type === "MATERIO_PAGE_CHANGED" && typeof event.data.pageNumber === "number") {
-        useChatStore.getState().updateCurrentPdfPage(event.data.pageNumber);
+        useChatStore.getState().updateCurrentPdfPage(
+          event.data.pageNumber,
+          event.data.text,
+          event.data.image,
+          event.data.isScanned
+        );
       }
       if (event.data?.type === "MATERIO_AUTH" && event.data.token) {
         useAuthStore.getState().setAuth(event.data.token, event.data.user);

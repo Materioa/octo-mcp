@@ -71,7 +71,7 @@ interface ChatStore {
   dismissedPdfUrl: string | null;
   dismissPdfContext: () => void;
   setCurrentPdf: (pdf: OpenPdfDocument | null) => void;
-  updateCurrentPdfPage: (pageNumber: number) => void;
+  updateCurrentPdfPage: (pageNumber: number, text?: string, image?: string, isScanned?: boolean) => void;
   activeEraserDiagram: EraserDocument | null;
   isEraserCanvasOpen: boolean;
   openEraserCanvas: (doc?: EraserDocument) => void;
@@ -298,10 +298,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const title = cleanDocumentTitle(pdf.title, pdf.url);
     set({ currentPdf: { ...pdf, title } });
   },
-  updateCurrentPdfPage: (pageNumber) =>
-    set((state) => ({
-      currentPdf: state.currentPdf ? { ...state.currentPdf, currentPage: pageNumber } : null,
-    })),
+  updateCurrentPdfPage: (pageNumber, text, image, isScanned) =>
+    set((state) => {
+      if (!state.currentPdf) return state;
+      const pages = state.currentPdf.pages ? [...state.currentPdf.pages] : [];
+      if (text || image) {
+        const existingIdx = pages.findIndex(p => p.pageNumber === pageNumber);
+        const pageItem = { pageNumber, text: text || "", image, isScanned: !!isScanned };
+        if (existingIdx >= 0) pages[existingIdx] = pageItem;
+        else pages.push(pageItem);
+      }
+      return {
+        currentPdf: {
+          ...state.currentPdf,
+          currentPage: pageNumber,
+          pages
+        }
+      };
+    }),
   activeEraserDiagram: null,
   isEraserCanvasOpen: false,
   openEraserCanvas: (doc) =>
@@ -827,20 +841,28 @@ RULES FOR THE TITLE:
       if (currentPdf.url) {
         pdfContext += `Document URL: ${currentPdf.url}\n`;
       }
+
+      // Explicitly inject the text of the user's active page so the model always has it right away
+      const activePage = currentPdf.pages?.find(p => p.pageNumber === currentPdf.currentPage);
+      if (activePage?.text && activePage.text.trim()) {
+        pdfContext += `\n--- CONTENT OF USER'S CURRENTLY VIEWING PAGE (Page ${currentPdf.currentPage}) ---\n${activePage.text}\n`;
+      }
+
       if (currentPdf.text) {
         const textContent = currentPdf.text.length > 50000
           ? currentPdf.text.slice(0, 50000) + "\n\n[... Additional pages accessible via the read_current_pdf tool ...]"
           : currentPdf.text;
         pdfContext += `\n--- Document Text Content ---\n${textContent}\n`;
       }
-      if (currentPdf.isScanned) {
-        pdfContext += `\n[NOTE: This document is a scanned or image-based PDF without embedded digital text. You must use the "read_current_pdf" tool with action="read_page" to view page visual snapshots. You have vision capabilities to read scanned pages.]\n`;
+      if (currentPdf.isScanned || activePage?.isScanned) {
+        pdfContext += `\n[NOTE: This document or current page is scanned or image-based without embedded digital text. You must use the "read_current_pdf" tool with action="read_page" or "get_current_page" to view page visual snapshots. You have vision capabilities to read scanned pages.]\n`;
       }
       pdfContext += `</current_open_pdf>\n\n`;
       pdfContext += `DOCUMENT GROUNDING INSTRUCTIONS:
 The user has this PDF document currently open in the viewer right beside you.
-- You have direct access to the user's open PDF. Use it to ground your answers in the course context when relevant.
-- When referencing information from the document, cite the page number(s) (e.g. "On page 26...").
+- You have direct access to the user's open PDF. The user is currently looking at Page ${currentPdf.currentPage}.
+- When answering questions about what the user is reading or what is on the page, consult the "CONTENT OF USER'S CURRENTLY VIEWING PAGE (Page ${currentPdf.currentPage})" above. Never say "page ${currentPdf.currentPage} is not captured in the extracted text", never say "want me to try loading page ${currentPdf.currentPage}", and NEVER promise to pull a page without answering directly.
+- When referencing information from the document, cite the page number(s) (e.g. "On page ${currentPdf.currentPage}...").
 - CRITICAL: You are NOT confined to only the PDF page or document text! If an acronym, term, concept, definition, explanation, or background detail is mentioned in the PDF but not expanded/defined (or not found in the PDF at all), ALWAYS provide the complete, accurate answer and explanation directly using your general knowledge! Never refuse to answer or stop short with "the PDF text does not expand this". Always answer the user's question directly and thoroughly (e.g., if asked what OASIS stands for, explain that it stands for Organization for the Advancement of Structured Information Standards, explain what it is, and its context).
 - NEVER MENTION INTERNAL TOOL NAMES IN CHAT: Never use or mention tool names like "SnapSearch", "read_current_pdf", "ResourceLibrary", "DeepThink", etc. in your responses. Always speak naturally (e.g., "search the course library", "look up the rest of the course materials", "check other documents").
 - Do NOT say you cannot read the document or that you need an MCP connector. You have direct access to the user's open PDF in the viewer.`;

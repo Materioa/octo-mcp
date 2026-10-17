@@ -290,7 +290,15 @@ export function ChatLayout() {
   );
 
   const isIncognito = searchParams.get("incognito") === "true";
-  const [hideSidebarIcon, setHideSidebarIcon] = useState(() => searchParams.get("hide-sidebar-icon") === "true");
+  const [hideSidebarIcon, setHideSidebarIcon] = useState(() => {
+    if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+      return true;
+    }
+    try {
+      if (sessionStorage.getItem("thinklet_hide_sidebar") === "true") return true;
+    } catch (e) {}
+    return searchParams.get("hide-sidebar-icon") === "true";
+  });
 
   const renameConversation = useChatStore(s => s.renameConversation);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -301,6 +309,9 @@ export function ChatLayout() {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && typeof customEvent.detail.hide === "boolean") {
         setHideSidebarIcon(customEvent.detail.hide);
+        try {
+          sessionStorage.setItem("thinklet_hide_sidebar", String(customEvent.detail.hide));
+        } catch (err) {}
       }
     };
     window.addEventListener("materio-hide-sidebar-icon", handleHideSidebar);

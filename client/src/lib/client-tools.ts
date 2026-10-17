@@ -423,12 +423,36 @@ export async function executeClientTool(
 
       if (action === "get_current_page") {
         const pageNum = currentPdf.currentPage || 1;
-        const pageObj = currentPdf.pages?.find((p) => p.pageNumber === pageNum);
+        let pageObj = currentPdf.pages?.find((p) => p.pageNumber === pageNum);
+        let pageImage: string | undefined = pageObj?.image;
+        let isScanned = pageObj?.isScanned || currentPdf.isScanned;
+
+        if (!pageObj || (!pageObj.text && !pageImage)) {
+          const viewerPage = await requestPageFromViewer(pageNum);
+          if (viewerPage) {
+            if (viewerPage.image) pageImage = viewerPage.image;
+            if (viewerPage.isScanned) isScanned = true;
+            pageObj = {
+              pageNumber: pageNum,
+              text: viewerPage.text || "",
+              image: viewerPage.image,
+              isScanned: viewerPage.isScanned,
+            };
+            if (currentPdf.pages) {
+              const existingIdx = currentPdf.pages.findIndex(p => p.pageNumber === pageNum);
+              if (existingIdx >= 0) currentPdf.pages[existingIdx] = pageObj;
+              else currentPdf.pages.push(pageObj);
+            }
+          }
+        }
+
         return JSON.stringify({
           title: currentPdf.title,
           currentPage: pageNum,
           totalPages: currentPdf.numPages,
-          text: pageObj ? pageObj.text : (currentPdf.text ? currentPdf.text.slice(0, 3000) : "No text extracted for this page.")
+          text: pageObj?.text || (pageImage ? "[Scanned page: visual snapshot captured for inspection]" : `No text extracted for page ${pageNum}.`),
+          image: pageImage,
+          isScanned: !!isScanned
         });
       }
 
