@@ -116,13 +116,24 @@ export function ChatLayout() {
         });
       }
     } else {
+      // If landing at /new on initial mount, restore last active conversation if present
+      if (!prevIdRef.current && searchParams.get("incognito") !== "true" && !searchParams.get("new")) {
+        try {
+          const lastId = localStorage.getItem("thinklet_last_active_conv");
+          if (lastId) {
+            navigate(`/c/${lastId}${location.search}`, { replace: true });
+            return;
+          }
+        } catch (e) {}
+      }
+
       // Only clear if the user actively navigated from an existing conversation to /new
       if (prevIdRef.current && searchParams.get("incognito") !== "true") {
         clearActiveConversation();
       }
     }
     prevIdRef.current = id;
-  }, [id, setActiveConversation, clearActiveConversation, navigate]);
+  }, [id, setActiveConversation, clearActiveConversation, navigate, searchParams, location.search]);
 
   // Automatically collapse sidebar on mobile
   useEffect(() => {

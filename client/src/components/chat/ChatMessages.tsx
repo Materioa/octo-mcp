@@ -189,35 +189,35 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
             title="Go to bottom"
             aria-label="Scroll to bottom"
           >
-            {/* Layer 0: Glow Layer (strictly UNDERNEATH the heavy blur layer) */}
+            {/* Layer 0: Glow Layer (strictly UNDERNEATH the frosted glass layer, confined to bottom) */}
             {isSending && (
               <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none z-0">
-                {/* Expansive living glowing core with heavy optical blur */}
+                {/* Focused living glowing core strictly in the bottom crescent */}
                 <div 
-                  className="absolute -bottom-2.5 left-1/2 w-16 h-11 rounded-[50%] blur-[12px] animate-live-glow pointer-events-none"
+                  className="absolute -bottom-1 left-1/2 w-8 h-4 rounded-[50%] blur-[3.5px] animate-live-glow pointer-events-none"
                   style={{
-                    background: "radial-gradient(ellipse at bottom, #b8270a 0%, rgba(184, 39, 10, 0.9) 35%, rgba(184, 39, 10, 0.45) 65%, transparent 95%)"
+                    background: "radial-gradient(ellipse at 50% 100%, #b8270a 0%, rgba(184, 39, 10, 0.85) 30%, rgba(184, 39, 10, 0.2) 60%, transparent 80%)"
                   }}
                 />
-                {/* Secondary living wave with heavy optical blur */}
+                {/* Secondary subtle wave */}
                 <div 
-                  className="absolute -bottom-1 left-1/2 w-14 h-9 rounded-[50%] blur-[10px] animate-live-wave pointer-events-none"
+                  className="absolute -bottom-0.5 left-1/2 w-6 h-3 rounded-[50%] blur-[2.5px] animate-live-wave pointer-events-none"
                   style={{
-                    background: "radial-gradient(circle at 50% 120%, rgba(235, 55, 20, 0.95) 0%, rgba(184, 39, 10, 0.7) 50%, transparent 85%)"
+                    background: "radial-gradient(circle at 50% 100%, rgba(220, 50, 15, 0.8) 0%, rgba(184, 39, 10, 0.35) 50%, transparent 80%)"
                   }}
                 />
                 {/* Ambient bottom rim light */}
                 <div 
-                  className="absolute bottom-0 left-0 right-0 h-5 blur-[4px] pointer-events-none"
+                  className="absolute bottom-0 left-0 right-0 h-2 blur-[1.5px] pointer-events-none"
                   style={{
-                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.8) 0%, rgba(184, 39, 10, 0.3) 60%, transparent 100%)"
+                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.6) 0%, transparent 100%)"
                   }}
                 />
               </div>
             )}
 
-            {/* Layer 1: Heavy Blur & Frosted Glass Layer (sits ABOVE the glow to diffuse it beautifully) */}
-            <div className="absolute inset-0 rounded-full backdrop-blur-2xl bg-white/75 hover:bg-white/90 dark:bg-[#1e1e1c]/75 dark:hover:bg-[#262624]/90 transition-colors z-10 pointer-events-none" />
+            {/* Layer 1: Frosted Glass Layer (sits ABOVE the glow to diffuse it beautifully while keeping top half crisp) */}
+            <div className="absolute inset-0 rounded-full backdrop-blur-md bg-white/80 hover:bg-white/90 dark:bg-[#1e1e1c]/80 dark:hover:bg-[#262624]/90 transition-colors z-10 pointer-events-none" />
 
             {/* Layer 2: Inner subtle rim reflection */}
             <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/5 dark:ring-white/10 z-10 pointer-events-none" />

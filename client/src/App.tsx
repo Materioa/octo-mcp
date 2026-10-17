@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Loader } from "lucide-react";
 import { OAuthCallback } from "@/components/OAuthCallback";
 import { AuthCallback } from "@/components/auth/AuthCallback";
@@ -27,7 +27,22 @@ function isTrustedOrigin(origin: string): boolean {
 
 function IframeListener() {
   const navigate = useNavigate();
+  const location = useLocation();
   
+  useEffect(() => {
+    // Notify parent frame (e.g. Oread viewer) of active chat route so it never loses active chat state
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: "THINKLET_ROUTE_CHANGED",
+          pathname: location.pathname,
+          path: location.pathname,
+          url: window.location.href,
+        }, "*");
+      }
+    } catch (e) {}
+  }, [location.pathname]);
+
   useEffect(() => {
     // Proactively request currently open PDF from parent viewer (e.g. Oread / PDF.js)
     try {

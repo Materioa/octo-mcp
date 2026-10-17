@@ -359,6 +359,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Background DB save (do not await to keep UI instant)
     if (!isTemporary) {
       saveConversation(conversation).catch(console.error);
+      try {
+        localStorage.setItem("thinklet_last_active_conv", id);
+      } catch (e) {}
     }
     
     return id;
@@ -383,7 +386,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return false;
     }
     
-    if (!conv.isTemporary) document.title = conv.title;
+    if (!conv.isTemporary) {
+      document.title = conv.title;
+      try {
+        localStorage.setItem("thinklet_last_active_conv", id);
+      } catch (e) {}
+    }
     
     const messages = await getMessages(id);
     
@@ -467,11 +475,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   clearActiveConversation: () => {
     set({ activeConversationId: null, messages: [], allMessages: [], draftPinnedMcpId: undefined });
     document.title = "Thinklet";
+    try {
+      localStorage.removeItem("thinklet_last_active_conv");
+    } catch (e) {}
   },
 
   deleteConversation: async (id) => {
     await dbDeleteConversation(id);
     const { activeConversationId } = get();
+    if (activeConversationId === id) {
+      try {
+        localStorage.removeItem("thinklet_last_active_conv");
+      } catch (e) {}
+    }
     set((s) => ({
       conversations: s.conversations.filter((c) => c.id !== id),
       ...(activeConversationId === id
