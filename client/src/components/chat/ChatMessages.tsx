@@ -185,38 +185,44 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 animate-in fade-in zoom-in-95 duration-200">
           <button
             onClick={() => scrollToBottom(true)}
-            className="group relative flex h-10 w-10 items-center justify-center rounded-full bg-background/75 hover:bg-background/90 dark:bg-[#222220]/75 dark:hover:bg-[#2a2a28]/90 backdrop-blur-md text-foreground border border-black/15 dark:border-white/20 shadow-lg active:scale-95 transition-all overflow-hidden focus:outline-none cursor-pointer"
+            className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-black/10 dark:border-white/20 shadow-lg hover:shadow-xl active:scale-95 transition-all overflow-hidden focus:outline-none cursor-pointer"
             title="Go to bottom"
             aria-label="Scroll to bottom"
           >
-            {/* Glowing gradient inside circle at bottom part when responding */}
+            {/* Layer 0: Glow Layer (strictly UNDERNEATH the heavy blur layer) */}
             {isSending && (
-              <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
-                {/* Expansive living glowing core covering bottom half */}
+              <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none z-0">
+                {/* Expansive living glowing core with heavy optical blur */}
                 <div 
-                  className="absolute -bottom-2.5 left-1/2 w-14 h-9 rounded-[50%] blur-[3px] animate-live-glow pointer-events-none"
+                  className="absolute -bottom-2.5 left-1/2 w-16 h-11 rounded-[50%] blur-[12px] animate-live-glow pointer-events-none"
                   style={{
-                    background: "radial-gradient(ellipse at bottom, #b8270a 0%, rgba(184, 39, 10, 0.85) 35%, rgba(184, 39, 10, 0.4) 65%, transparent 85%)"
+                    background: "radial-gradient(ellipse at bottom, #b8270a 0%, rgba(184, 39, 10, 0.9) 35%, rgba(184, 39, 10, 0.45) 65%, transparent 95%)"
                   }}
                 />
-                {/* Secondary undulating wave for organic live feel */}
+                {/* Secondary living wave with heavy optical blur */}
                 <div 
-                  className="absolute -bottom-1 left-1/2 w-12 h-7 rounded-[50%] blur-[2px] animate-live-wave pointer-events-none"
+                  className="absolute -bottom-1 left-1/2 w-14 h-9 rounded-[50%] blur-[10px] animate-live-wave pointer-events-none"
                   style={{
-                    background: "radial-gradient(circle at 50% 120%, rgba(225, 50, 18, 0.9) 0%, rgba(184, 39, 10, 0.6) 50%, transparent 80%)"
+                    background: "radial-gradient(circle at 50% 120%, rgba(235, 55, 20, 0.95) 0%, rgba(184, 39, 10, 0.7) 50%, transparent 85%)"
                   }}
                 />
                 {/* Ambient bottom rim light */}
                 <div 
-                  className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none"
+                  className="absolute bottom-0 left-0 right-0 h-5 blur-[4px] pointer-events-none"
                   style={{
-                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.75) 0%, rgba(184, 39, 10, 0.25) 60%, transparent 100%)"
+                    background: "linear-gradient(to top, rgba(184, 39, 10, 0.8) 0%, rgba(184, 39, 10, 0.3) 60%, transparent 100%)"
                   }}
                 />
               </div>
             )}
 
-            {/* Down arrow icon matching user screenshot */}
+            {/* Layer 1: Heavy Blur & Frosted Glass Layer (sits ABOVE the glow to diffuse it beautifully) */}
+            <div className="absolute inset-0 rounded-full backdrop-blur-2xl bg-white/75 hover:bg-white/90 dark:bg-[#1e1e1c]/75 dark:hover:bg-[#262624]/90 transition-colors z-10 pointer-events-none" />
+
+            {/* Layer 2: Inner subtle rim reflection */}
+            <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/5 dark:ring-white/10 z-10 pointer-events-none" />
+
+            {/* Layer 3: Down arrow icon (on top of blur layer, crisp and sharp) */}
             <svg 
               xmlns="http://www.w3.org/2000/svg" 
               width="18" 
@@ -227,7 +233,7 @@ export function ChatMessages({ onRetry }: ChatMessagesProps) {
               strokeWidth="2" 
               strokeLinecap="round" 
               strokeLinejoin="round"
-              className="relative z-10 text-foreground transition-transform duration-150 group-hover:translate-y-0.5"
+              className="relative z-20 text-neutral-800 dark:text-neutral-100 transition-transform duration-150 group-hover:translate-y-0.5"
             >
               <line x1="12" y1="5" x2="12" y2="19"></line>
               <polyline points="19 12 12 19 5 12"></polyline>

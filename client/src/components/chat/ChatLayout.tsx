@@ -104,6 +104,7 @@ export function ChatLayout() {
     }
   }, [location.pathname]);
 
+  const prevIdRef = useRef<string | undefined>(id);
   useEffect(() => {
     if (id) {
       if (id !== useChatStore.getState().activeConversationId) {
@@ -115,11 +116,13 @@ export function ChatLayout() {
         });
       }
     } else {
-      if (searchParams.get("incognito") !== "true") {
+      // Only clear if the user actively navigated from an existing conversation to /new
+      if (prevIdRef.current && searchParams.get("incognito") !== "true") {
         clearActiveConversation();
       }
     }
-  }, [id, setActiveConversation, clearActiveConversation, searchParams, navigate]);
+    prevIdRef.current = id;
+  }, [id, setActiveConversation, clearActiveConversation, navigate]);
 
   // Automatically collapse sidebar on mobile
   useEffect(() => {

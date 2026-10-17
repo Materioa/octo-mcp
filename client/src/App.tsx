@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { useSettingsStore } from "@/stores/settings";
 import { useAuthStore } from "@/stores/auth";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { Loader } from "lucide-react";
 import { OAuthCallback } from "@/components/OAuthCallback";
 import { AuthCallback } from "@/components/auth/AuthCallback";
@@ -194,7 +194,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
+    <>
       <GlobalAlert />
       <IframeListener />
       <Routes>
@@ -208,6 +208,6 @@ export default function App() {
         <Route path="/callback" element={<AuthCallback />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
       </Routes>
-    </BrowserRouter>
+    </>
   );
 }
